@@ -1,9 +1,9 @@
 from importlib.metadata import version, PackageNotFoundError
 
-__app_name__ = "reflexio"
+__package_name__ = "reflexio-client"
 
 try:
-    __version__ = version(__app_name__)
+    __version__ = version(__package_name__)
 except PackageNotFoundError:
     # Package is not installed (e.g., running from source without installing)
     __version__ = "0.0.0-dev"
