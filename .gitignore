@@ -166,8 +166,8 @@ cython_debug/
 .pytest_cache
 .DS_Store
 # Ignore claude settings but keep commands for repo-wide skills
-# .claude/*
-# !.claude/commands/
+.claude/*
+!.claude/commands/
 .playwright-mcp/
 
 # local storage
