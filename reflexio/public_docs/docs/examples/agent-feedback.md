@@ -1,0 +1,852 @@
+# Agent Feedback Examples
+
+This guide provides comprehensive examples for collecting, analyzing, and acting on agent feedback in Reflexio. The feedback system enables you to systematically capture how your agent performs from user interactions and aggregate insights for continuous improvement.
+
+## Overview
+
+Reflexio's feedback system operates in two layers:
+
+1. **Raw Feedbacks**: Individual feedback items extracted from each user interaction based on your configured criteria
+2. **Aggregated Feedbacks**: Consolidated insights from multiple raw feedbacks, surfacing patterns and actionable recommendations
+
+This two-layer approach ensures you can both investigate individual interactions and identify broader trends across your user base.
+
+## Setup
+
+```python
+from reflexio import ReflexioClient
+
+# Initialize and authenticate (login automatically sets the API key)
+client = ReflexioClient(url_endpoint="http://127.0.0.1:8081/")
+token = client.login("your_email@example.com", "your_password")
+# token.api_key contains your API key - save it for future use (it never expires)
+
+# Or initialize with a previously saved API key (more efficient - skips login)
+# client = ReflexioClient(api_key=token.api_key, url_endpoint="http://127.0.0.1:8081/")
+```
+
+## Configuring Feedback Extraction
+
+Before collecting feedback, you need to configure what feedback to extract. Each `AgentFeedbackConfig` defines a specific type of feedback to capture from user interactions.
+
+### Basic Feedback Configuration
+
+```python
+# Configure feedback extraction for customer satisfaction
+satisfaction_feedback = {
+    "feedback_name": "customer_satisfaction",
+    "feedback_definition_prompt": """
+    Analyze the user's response to determine their satisfaction level with the agent's help.
+    Look for:
+    - Explicit expressions of satisfaction or frustration
+    - Whether the user's question was answered completely
+    - Signs of confusion or repeated questions
+    - Positive acknowledgments like "thanks" or "that's helpful"
+    """
+}
+
+# Apply configuration
+config = client.get_config()
+config.agent_feedback_configs = [satisfaction_feedback]
+client.set_config(config)
+```
+
+### Multiple Feedback Types
+
+```python
+# Configure multiple feedback types for comprehensive analysis
+feedback_configs = [
+    {
+        "feedback_name": "response_quality",
+        "feedback_definition_prompt": """
+        Evaluate the quality of the agent's responses:
+        - Accuracy: Was the information provided correct?
+        - Completeness: Did it fully address the user's question?
+        - Clarity: Was the response easy to understand?
+        - Relevance: Was the response on-topic?
+        """,
+        "metadata_definition_prompt": """
+        Extract metadata:
+        - quality_score: 1-5 rating
+        - issues_found: list of specific problems
+        - strengths: list of positive aspects
+        """
+    },
+    {
+        "feedback_name": "task_completion",
+        "feedback_definition_prompt": """
+        Determine if the agent successfully helped the user complete their intended task:
+        - Did the user achieve their goal?
+        - Were there any blockers or failures?
+        - How many attempts were needed?
+        """,
+        "metadata_definition_prompt": """
+        Extract metadata:
+        - task_completed: boolean
+        - attempts_required: number
+        - blocking_issues: list of issues that prevented completion
+        """
+    },
+    {
+        "feedback_name": "user_sentiment",
+        "feedback_definition_prompt": """
+        Analyze the user's emotional state throughout the conversation:
+        - Starting sentiment (neutral, positive, negative, frustrated)
+        - Ending sentiment
+        - Key moments that changed sentiment
+        """,
+        "metadata_definition_prompt": """
+        Extract metadata:
+        - initial_sentiment: string
+        - final_sentiment: string
+        - sentiment_change: improved/unchanged/worsened
+        """
+    }
+]
+
+config = client.get_config()
+config.agent_feedback_configs = feedback_configs
+client.set_config(config)
+```
+
+### Configuring Feedback Aggregation
+
+```python
+# Configure how raw feedbacks are aggregated into actionable insights
+aggregator_config = {
+    "min_feedback_threshold": 5,  # Minimum raw feedbacks before aggregation
+    "refresh_count": 10  # Re-aggregate after this many new feedbacks
+}
+
+# Apply aggregator to specific feedback type
+feedback_with_aggregator = {
+    "feedback_name": "pain_points",
+    "feedback_definition_prompt": """
+    Identify user pain points and frustrations:
+    - Features that don't work as expected
+    - Missing capabilities users ask for
+    - Confusing interactions or workflows
+    - Repeated user complaints
+    """,
+    "feedback_aggregator_config": aggregator_config
+}
+
+config = client.get_config()
+config.agent_feedback_configs = [feedback_with_aggregator]
+client.set_config(config)
+```
+
+## Collecting Feedback
+
+Feedback is automatically extracted when you publish interactions. Ensure your agent version is set for proper tracking.
+
+### Publishing Interactions for Feedback
+
+```python
+# Publish interaction with agent version for feedback tracking
+response = client.publish_interaction(
+    user_id="user_123",
+    interactions=[
+        {"role": "User", "content": "How do I reset my password?"},
+        {"role": "Agent", "content": "To reset your password, go to Settings > Security > Reset Password. You'll receive an email with a reset link."},
+        {"role": "User", "content": "Perfect, that worked! Thanks!"}
+    ],
+    source="support_chat",
+    agent_version="v2.1.0",  # Important for tracking feedback by version
+    wait_for_response=True,
+)
+```
+
+### Multi-Turn Conversation Feedback
+
+```python
+# Complex multi-turn conversation for richer feedback
+conversation = [
+    {"role": "User", "content": "I need help with my order #12345"},
+    {"role": "Agent", "content": "I'd be happy to help with order #12345. Let me look that up for you."},
+    {"role": "User", "content": "It says delivered but I never received it"},
+    {"role": "Agent", "content": "I see the tracking shows it was delivered yesterday. Let me check with the carrier for more details. Can you confirm your delivery address?"},
+    {"role": "User", "content": "123 Main St, Apt 4B"},
+    {"role": "Agent", "content": "The package was left at the building's front desk. Could you check there?"},
+    {"role": "User", "content": "Found it! Thank you so much for your help!"}
+]
+
+client.publish_interaction(
+    user_id="customer_456",
+    interactions=conversation,
+    source="order_support",
+    agent_version="v2.1.0",
+    request_group="order_issues_batch_001",
+    wait_for_response=True,
+)
+```
+
+## Retrieving Raw Feedbacks
+
+Raw feedbacks are individual feedback items extracted from each interaction. Use these for detailed analysis of specific conversations.
+
+### Get All Raw Feedbacks
+
+```python
+# Retrieve all raw feedbacks
+response = client.get_raw_feedbacks()
+
+print(f"Total raw feedbacks: {len(response.raw_feedbacks)}")
+
+for feedback in response.raw_feedbacks:
+    print(f"\nFeedback ID: {feedback.raw_feedback_id}")
+    print(f"Feedback Name: {feedback.feedback_name}")
+    print(f"Agent Version: {feedback.agent_version}")
+    print(f"Request ID: {feedback.request_id}")
+    print(f"Content: {feedback.feedback_content}")
+    print("-" * 50)
+```
+
+### Filter Raw Feedbacks by Name
+
+```python
+# Get raw feedbacks for a specific feedback type
+response = client.get_raw_feedbacks(
+    feedback_name="response_quality",
+    limit=100
+)
+
+print(f"Found {len(response.raw_feedbacks)} response quality feedbacks")
+
+# Analyze the feedbacks
+quality_scores = []
+for feedback in response.raw_feedbacks:
+    print(f"Request: {feedback.request_id}")
+    print(f"Feedback: {feedback.feedback_content[:200]}...")
+    print("-" * 30)
+```
+
+### Filter by Status
+
+```python
+# Get only current (active) raw feedbacks
+current_feedbacks = client.get_raw_feedbacks(
+    status_filter=[None],  # None represents CURRENT status
+    limit=50
+)
+
+# Get pending raw feedbacks (from rerun operations)
+pending_feedbacks = client.get_raw_feedbacks(
+    status_filter=[Status.PENDING],
+    limit=50
+)
+
+# Get archived raw feedbacks
+archived_feedbacks = client.get_raw_feedbacks(
+    status_filter=[Status.ARCHIVED],
+    limit=50
+)
+
+print(f"Current: {len(current_feedbacks.raw_feedbacks)}")
+print(f"Pending: {len(pending_feedbacks.raw_feedbacks)}")
+print(f"Archived: {len(archived_feedbacks.raw_feedbacks)}")
+```
+
+## Retrieving Aggregated Feedbacks
+
+Aggregated feedbacks consolidate multiple raw feedbacks into actionable insights. These are more suitable for decision-making and trend analysis.
+
+### Get All Aggregated Feedbacks
+
+```python
+# Retrieve aggregated feedbacks
+response = client.get_feedbacks()
+
+print(f"Total aggregated feedbacks: {len(response.feedbacks)}")
+
+for feedback in response.feedbacks:
+    print(f"\nFeedback ID: {feedback.feedback_id}")
+    print(f"Name: {feedback.feedback_name}")
+    print(f"Agent Version: {feedback.agent_version}")
+    print(f"Status: {feedback.feedback_status.value}")
+    print(f"Content: {feedback.feedback_content}")
+    print(f"Metadata: {feedback.feedback_metadata}")
+    print("-" * 50)
+```
+
+### Filter by Feedback Name
+
+```python
+# Get aggregated feedbacks for a specific type
+response = client.get_feedbacks(
+    feedback_name="pain_points",
+    limit=50
+)
+
+print("Aggregated Pain Points:")
+for feedback in response.feedbacks:
+    print(f"\n[{feedback.feedback_status.value}] {feedback.feedback_content}")
+```
+
+### Using Cache for Efficiency
+
+```python
+# First call - fetches from API
+feedbacks = client.get_feedbacks(feedback_name="response_quality")
+
+# Second call with same params - uses cache
+cached_feedbacks = client.get_feedbacks(feedback_name="response_quality")
+
+# Force refresh to bypass cache
+fresh_feedbacks = client.get_feedbacks(
+    feedback_name="response_quality",
+    force_refresh=True
+)
+```
+
+## Analyzing Feedback Data
+
+### Feedback Volume Analysis
+
+```python
+from datetime import datetime
+from collections import defaultdict
+
+# Get all raw feedbacks
+response = client.get_raw_feedbacks(limit=500)
+
+# Analyze by feedback type
+feedback_by_type = defaultdict(list)
+for feedback in response.raw_feedbacks:
+    feedback_by_type[feedback.feedback_name].append(feedback)
+
+print("Feedback Distribution by Type:")
+for feedback_name, feedbacks in sorted(
+    feedback_by_type.items(), key=lambda x: len(x[1]), reverse=True
+):
+    print(f"  {feedback_name}: {len(feedbacks)} feedbacks")
+```
+
+### Agent Version Comparison
+
+```python
+# Compare feedback across agent versions
+version_feedbacks = defaultdict(list)
+
+response = client.get_raw_feedbacks(
+    feedback_name="response_quality",
+    limit=500
+)
+
+for feedback in response.raw_feedbacks:
+    version_feedbacks[feedback.agent_version].append(feedback)
+
+print("Feedback Count by Agent Version:")
+for version, feedbacks in sorted(version_feedbacks.items()):
+    print(f"  {version}: {len(feedbacks)} feedbacks")
+
+# Identify versions with the most feedback
+most_feedback_version = max(version_feedbacks.items(), key=lambda x: len(x[1]))
+print(f"\nMost feedback: {most_feedback_version[0]} ({len(most_feedback_version[1])} feedbacks)")
+```
+
+### Temporal Analysis
+
+```python
+from datetime import datetime, timedelta
+
+response = client.get_raw_feedbacks(limit=1000)
+
+# Group by date
+daily_feedback = defaultdict(int)
+for feedback in response.raw_feedbacks:
+    date = datetime.fromtimestamp(feedback.created_at).date()
+    daily_feedback[date] += 1
+
+print("Daily Feedback Volume (last 7 days):")
+today = datetime.now().date()
+for i in range(7):
+    date = today - timedelta(days=i)
+    count = daily_feedback.get(date, 0)
+    bar = "#" * (count // 5)  # Simple visualization
+    print(f"  {date}: {count:4d} {bar}")
+```
+
+### Feedback Status Distribution
+
+```python
+# Analyze aggregated feedback approval rates
+response = client.get_feedbacks(limit=200)
+
+status_counts = defaultdict(int)
+for feedback in response.feedbacks:
+    status_counts[feedback.feedback_status.value] += 1
+
+print("Aggregated Feedback Status Distribution:")
+total = len(response.feedbacks)
+for status, count in status_counts.items():
+    percentage = (count / total * 100) if total > 0 else 0
+    print(f"  {status}: {count} ({percentage:.1f}%)")
+```
+
+## Production Patterns
+
+### Monitoring Feedback Health
+
+```python
+def check_feedback_health(client, min_daily_feedbacks=10):
+    """
+    Monitor feedback collection health.
+
+    Args:
+        client: ReflexioClient instance
+        min_daily_feedbacks: Minimum expected daily feedbacks
+    """
+    from datetime import datetime, timedelta
+
+    response = client.get_raw_feedbacks(limit=100)
+
+    # Check if we're collecting feedback
+    if not response.raw_feedbacks:
+        print("WARNING: No raw feedbacks found!")
+        return False
+
+    # Check recent activity
+    today = datetime.now()
+    yesterday = today - timedelta(days=1)
+    yesterday_ts = int(yesterday.timestamp())
+
+    recent_count = sum(
+        1 for f in response.raw_feedbacks if f.created_at > yesterday_ts
+    )
+
+    if recent_count < min_daily_feedbacks:
+        print(f"WARNING: Only {recent_count} feedbacks in last 24h (expected {min_daily_feedbacks}+)")
+        return False
+
+    print(f"Feedback health OK: {recent_count} feedbacks in last 24h")
+    return True
+
+
+# Run health check
+check_feedback_health(client)
+```
+
+### Automated Feedback Report
+
+```python
+def generate_feedback_report(client, feedback_name=None, days=7):
+    """
+    Generate a comprehensive feedback report.
+
+    Args:
+        client: ReflexioClient instance
+        feedback_name: Optional filter by feedback type
+        days: Number of days to include in report
+    """
+    from datetime import datetime, timedelta
+    from collections import defaultdict
+
+    # Get raw feedbacks
+    raw_response = client.get_raw_feedbacks(
+        limit=1000,
+        feedback_name=feedback_name
+    )
+
+    # Get aggregated feedbacks
+    agg_response = client.get_feedbacks(
+        limit=200,
+        feedback_name=feedback_name
+    )
+
+    # Calculate metrics
+    cutoff = datetime.now() - timedelta(days=days)
+    cutoff_ts = int(cutoff.timestamp())
+
+    recent_raw = [f for f in raw_response.raw_feedbacks if f.created_at > cutoff_ts]
+
+    # Version breakdown
+    versions = defaultdict(int)
+    for f in recent_raw:
+        versions[f.agent_version] += 1
+
+    # Print report
+    print(f"\n{'='*60}")
+    print(f"FEEDBACK REPORT - Last {days} Days")
+    if feedback_name:
+        print(f"Filtered by: {feedback_name}")
+    print(f"{'='*60}")
+
+    print(f"\nRAW FEEDBACKS:")
+    print(f"  Total (all time): {len(raw_response.raw_feedbacks)}")
+    print(f"  Recent ({days} days): {len(recent_raw)}")
+    print(f"  Daily average: {len(recent_raw) / days:.1f}")
+
+    print(f"\nAGGREGATED FEEDBACKS:")
+    print(f"  Total: {len(agg_response.feedbacks)}")
+
+    status_counts = defaultdict(int)
+    for f in agg_response.feedbacks:
+        status_counts[f.feedback_status.value] += 1
+    for status, count in status_counts.items():
+        print(f"  {status}: {count}")
+
+    print(f"\nBY AGENT VERSION:")
+    for version, count in sorted(versions.items(), key=lambda x: x[1], reverse=True):
+        print(f"  {version}: {count}")
+
+    print(f"\n{'='*60}\n")
+
+
+# Generate report
+generate_feedback_report(client, feedback_name="response_quality", days=30)
+```
+
+### Version-Specific Feedback Analysis
+
+```python
+def analyze_version_feedback(client, agent_version):
+    """
+    Deep analysis of feedback for a specific agent version.
+
+    Args:
+        client: ReflexioClient instance
+        agent_version: Agent version to analyze
+    """
+    # Get all raw feedbacks (we'll filter client-side for version)
+    response = client.get_raw_feedbacks(limit=500)
+
+    # Filter by version
+    version_feedbacks = [
+        f for f in response.raw_feedbacks if f.agent_version == agent_version
+    ]
+
+    if not version_feedbacks:
+        print(f"No feedbacks found for version {agent_version}")
+        return
+
+    print(f"\nAnalysis for Agent Version: {agent_version}")
+    print(f"Total feedbacks: {len(version_feedbacks)}")
+
+    # Group by feedback type
+    by_type = defaultdict(list)
+    for f in version_feedbacks:
+        by_type[f.feedback_name].append(f)
+
+    print("\nBreakdown by feedback type:")
+    for feedback_type, feedbacks in by_type.items():
+        print(f"\n  {feedback_type}: {len(feedbacks)} feedbacks")
+
+        # Show sample feedback content
+        if feedbacks:
+            sample = feedbacks[0]
+            content_preview = sample.feedback_content[:150]
+            print(f"    Sample: {content_preview}...")
+
+
+# Analyze specific version
+analyze_version_feedback(client, "v2.1.0")
+```
+
+### Continuous Improvement Workflow
+
+```python
+def identify_improvement_areas(client, top_n=5):
+    """
+    Identify top areas for agent improvement based on feedback.
+
+    Args:
+        client: ReflexioClient instance
+        top_n: Number of top issues to return
+    """
+    # Get aggregated feedbacks
+    response = client.get_feedbacks(limit=100)
+
+    # Focus on approved feedbacks (validated insights)
+    approved = [
+        f for f in response.feedbacks
+        if f.feedback_status == FeedbackStatus.APPROVED
+    ]
+
+    print(f"\nTop {top_n} Validated Improvement Areas:")
+    print("-" * 50)
+
+    for i, feedback in enumerate(approved[:top_n], 1):
+        print(f"\n{i}. [{feedback.feedback_name}]")
+        print(f"   {feedback.feedback_content}")
+        if feedback.feedback_metadata:
+            print(f"   Metadata: {feedback.feedback_metadata}")
+
+
+# Identify improvement areas
+identify_improvement_areas(client, top_n=5)
+```
+
+### A/B Testing with Feedback
+
+```python
+def compare_versions_feedback(client, version_a, version_b, feedback_name):
+    """
+    Compare feedback between two agent versions for A/B testing.
+
+    Args:
+        client: ReflexioClient instance
+        version_a: First agent version
+        version_b: Second agent version
+        feedback_name: Feedback type to compare
+    """
+    # Get raw feedbacks for the specific feedback type
+    response = client.get_raw_feedbacks(
+        feedback_name=feedback_name,
+        limit=500
+    )
+
+    # Split by version
+    feedbacks_a = [f for f in response.raw_feedbacks if f.agent_version == version_a]
+    feedbacks_b = [f for f in response.raw_feedbacks if f.agent_version == version_b]
+
+    print(f"\nA/B Test Comparison: {feedback_name}")
+    print(f"{'='*50}")
+    print(f"\n{version_a}:")
+    print(f"  Total feedbacks: {len(feedbacks_a)}")
+
+    print(f"\n{version_b}:")
+    print(f"  Total feedbacks: {len(feedbacks_b)}")
+
+    # Calculate feedback per request (proxy for feedback rate)
+    if feedbacks_a:
+        unique_requests_a = len(set(f.request_id for f in feedbacks_a))
+        print(f"\n{version_a} unique requests: {unique_requests_a}")
+
+    if feedbacks_b:
+        unique_requests_b = len(set(f.request_id for f in feedbacks_b))
+        print(f"{version_b} unique requests: {unique_requests_b}")
+
+    return {
+        "version_a": {"version": version_a, "count": len(feedbacks_a)},
+        "version_b": {"version": version_b, "count": len(feedbacks_b)},
+    }
+
+
+# Compare two versions
+results = compare_versions_feedback(client, "v2.0.0", "v2.1.0", "response_quality")
+```
+
+## Domain-Specific Configurations
+
+### E-commerce Support Feedback
+
+```python
+ecommerce_configs = [
+    {
+        "feedback_name": "order_resolution",
+        "feedback_definition_prompt": """
+        Evaluate how effectively the agent resolved order-related issues:
+        - Order status inquiries
+        - Shipping problems
+        - Return/refund requests
+        - Payment issues
+        """,
+        "feedback_aggregator_config": {
+            "min_feedback_threshold": 3,
+            "refresh_count": 5
+        }
+    },
+    {
+        "feedback_name": "product_recommendations",
+        "feedback_definition_prompt": """
+        Assess the quality of product recommendations:
+        - Relevance to user needs
+        - Price appropriateness
+        - Availability of recommended items
+        - User acceptance of recommendations
+        """
+    },
+    {
+        "feedback_name": "checkout_assistance",
+        "feedback_definition_prompt": """
+        Evaluate help provided during checkout:
+        - Promo code application
+        - Payment method guidance
+        - Shipping option explanation
+        - Cart management assistance
+        """
+    }
+]
+
+config = client.get_config()
+config.agent_feedback_configs = ecommerce_configs
+client.set_config(config)
+```
+
+### Technical Support Feedback
+
+```python
+tech_support_configs = [
+    {
+        "feedback_name": "troubleshooting_effectiveness",
+        "feedback_definition_prompt": """
+        Evaluate the agent's troubleshooting capabilities:
+        - Problem identification accuracy
+        - Solution relevance
+        - Step-by-step guidance clarity
+        - Issue resolution rate
+        """,
+        "metadata_definition_prompt": """
+        Extract:
+        - problem_category: type of technical issue
+        - steps_provided: number of troubleshooting steps
+        - resolved: boolean
+        - escalation_needed: boolean
+        """
+    },
+    {
+        "feedback_name": "technical_accuracy",
+        "feedback_definition_prompt": """
+        Assess the technical accuracy of agent responses:
+        - Correct terminology usage
+        - Accurate system information
+        - Valid configuration guidance
+        - Appropriate security practices
+        """
+    },
+    {
+        "feedback_name": "documentation_referrals",
+        "feedback_definition_prompt": """
+        Evaluate how well the agent references documentation:
+        - Appropriate documentation links
+        - Relevant knowledge base articles
+        - Accurate API documentation references
+        - Helpful tutorial suggestions
+        """
+    }
+]
+
+config = client.get_config()
+config.agent_feedback_configs = tech_support_configs
+client.set_config(config)
+```
+
+### Healthcare Assistant Feedback
+
+```python
+healthcare_configs = [
+    {
+        "feedback_name": "symptom_understanding",
+        "feedback_definition_prompt": """
+        Evaluate the agent's understanding of reported symptoms:
+        - Accurate symptom capture
+        - Appropriate follow-up questions
+        - Proper symptom categorization
+        - Recognition of urgency levels
+        """
+    },
+    {
+        "feedback_name": "guidance_appropriateness",
+        "feedback_definition_prompt": """
+        Assess the appropriateness of health guidance:
+        - Safe general health information
+        - Appropriate disclaimers
+        - Proper referral to professionals
+        - Avoidance of medical diagnosis
+        """
+    },
+    {
+        "feedback_name": "empathy_and_support",
+        "feedback_definition_prompt": """
+        Evaluate emotional support provided:
+        - Empathetic responses
+        - Patient communication style
+        - Acknowledgment of concerns
+        - Supportive language use
+        """
+    }
+]
+
+config = client.get_config()
+config.agent_feedback_configs = healthcare_configs
+client.set_config(config)
+```
+
+## Best Practices
+
+### 1. Start with Clear Feedback Definitions
+
+```python
+# Good: Specific, measurable criteria
+good_config = {
+    "feedback_name": "response_helpfulness",
+    "feedback_definition_prompt": """
+    Rate the helpfulness of the agent's response:
+    - Does it directly answer the user's question?
+    - Is the information actionable?
+    - Are next steps clear?
+    - Did the user express satisfaction?
+    """
+}
+
+# Avoid: Vague definitions
+# bad_config = {
+#     "feedback_name": "quality",
+#     "feedback_definition_prompt": "Is the response good?"
+# }
+```
+
+### 2. Use Appropriate Aggregation Thresholds
+
+```python
+# For high-volume use cases
+high_volume_config = {
+    "min_feedback_threshold": 10,  # Need enough data for patterns
+    "refresh_count": 20  # Update frequently with new data
+}
+
+# For low-volume or critical feedback
+low_volume_config = {
+    "min_feedback_threshold": 3,  # Aggregate sooner
+    "refresh_count": 5  # Refresh more often
+}
+```
+
+### 3. Version Your Agents Consistently
+
+```python
+# Always include agent version for tracking
+client.publish_interaction(
+    user_id="user_123",
+    interactions=[...],
+    agent_version="v2.1.0",  # Consistent versioning
+    source="production",
+)
+
+# Use semantic versioning
+# v2.1.0 - major.minor.patch
+# v2.1.0-beta - for testing
+# v2.1.0-exp-prompt-change - for experiments
+```
+
+### 4. Regular Feedback Review Cycle
+
+```python
+def weekly_feedback_review(client):
+    """Implement a weekly feedback review process."""
+
+    # Get pending aggregated feedbacks for review
+    response = client.get_feedbacks(
+        status_filter=[Status.PENDING],
+        limit=50
+    )
+
+    print(f"Feedbacks pending review: {len(response.feedbacks)}")
+
+    for feedback in response.feedbacks:
+        print(f"\n[{feedback.feedback_name}] {feedback.feedback_content}")
+        print(f"Agent Version: {feedback.agent_version}")
+        # In production, you'd have a UI or API to approve/reject
+
+
+# Run weekly
+weekly_feedback_review(client)
+```
+
+## Related Documentation
+
+- [Agent Evaluation Examples](./agent-evaluation.md)
+- [User Profiles Examples](./user-profiles.md)
+- [Request Management](./request-management.md)
+- [Client API Reference](../api-reference/client.md)

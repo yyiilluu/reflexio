@@ -1,0 +1,437 @@
+# Configuration Guide
+
+This guide explains all configuration options available in Reflexio. Configuration controls how profiles are extracted, feedback is generated, and agent performance is evaluated.
+
+## Overview
+
+Reflexio uses a centralized `Config` object that contains settings for:
+
+- **Storage** - Where data is stored (local, S3, or Supabase)
+- **Profile Extraction** - How user profiles are generated from interactions
+- **Agent Feedback** - How feedback is collected and aggregated
+- **Agent Success Evaluation** - How agent performance is measured
+
+## Getting and Setting Configuration
+
+It is recommended to configure Reflexio using the web portal under the Settings page. You can also configure programmatically:
+
+```python
+from reflexio import ReflexioClient
+
+client = ReflexioClient(url_endpoint="http://127.0.0.1:8081/")
+
+# Get current configuration
+config = client.get_config()
+
+# Modify configuration
+config.profile_extractor_configs = [...]
+
+# Save configuration
+client.set_config(config)
+```
+
+## General Settings
+
+General settings control storage, agent context, and extraction parameters.
+
+### Storage Configuration
+
+Storage configuration determines where Reflexio stores data. Supabase storage is the preferred option:
+
+#### Supabase Storage
+
+Stores data in Supabase. Best for production deployments with managed infrastructure.
+
+```python
+from reflexio_commons.config_schema import StorageConfigSupabase
+
+storage = StorageConfigSupabase(
+    url="https://your-project.supabase.co",
+    key="your_anon_key",
+    db_url="postgresql://..."
+)
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `url` | str | Supabase project URL |
+| `key` | str | Supabase anon/public key |
+| `db_url` | str | PostgreSQL connection string |
+
+---
+
+### Agent Context
+
+Optionally provide global context about the agent's environment that should be shared across all extractors and evaluations.
+
+```python
+config.agent_context_prompt = """
+This agent is a customer service representative for an e-commerce platform.
+The agent helps customers with:
+- Product inquiries and recommendations
+- Order tracking and status updates
+- Returns and refunds
+- Technical support for the website
+"""
+```
+
+---
+
+### Extraction Window Configuration
+
+Reflexio uses a sliding window to batch interactions for extraction. This controls how many interactions are processed together and how frequently extraction runs.
+
+```python
+config.extraction_window_size = 10  # Number of interactions per extraction
+config.extraction_window_stride = 5  # New interactions before next extraction
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `extraction_window_size` | int | Number of interactions included in each extraction batch |
+| `extraction_window_stride` | int | Number of new interactions that trigger the next extraction |
+
+**Example:** With `window_size=10` and `stride=5`:
+
+- First extraction processes interactions 1-10
+- After 5 new interactions arrive, next extraction processes interactions 6-15
+- After 5 more, next extraction processes interactions 11-20
+
+This overlapping window ensures context continuity between extractions while avoiding redundant processing of every single interaction.
+
+---
+
+## Extractor Settings
+
+Extractor settings define how Reflexio extracts profiles, collects feedback, and evaluates agent success.
+
+### Profile Extractor Configuration
+
+Profile extractors automatically generate user profiles from interactions. Each extractor defines what information to look for and how to categorize it.
+
+```python
+from reflexio_commons.config_schema import ProfileExtractorConfig
+
+profile_config = ProfileExtractorConfig(
+    # Required: Unique name for this extractor
+    extractor_name="customer_info",
+    # Required: What information to extract
+    profile_content_definition_prompt="""
+Extract the following user information:
+- Name and contact details
+- Preferences and interests
+- Goals and intent
+""",
+    # Optional: Context about the interaction type
+    context_prompt="""
+This is a conversation between a sales agent and a potential customer.
+Extract any relevant customer information.
+""",
+    # Optional: How to categorize extracted profiles
+    metadata_definition_prompt="""
+Categorize extracted profiles as one of:
+- 'basic_info': Name, contact, demographics
+- 'preferences': Likes, dislikes, style preferences
+- 'intent': Goals, purchase intent, timeline
+""",
+    # Optional: Only process interactions from these sources
+    request_sources_enabled=["chat", "email"],
+    # Optional: Require manual triggering instead of auto extraction
+    manual_trigger=False
+)
+```
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `extractor_name` | str | Yes | - | Unique name identifier for this extractor. Used to reference specific extractors in `rerun_profile_generation` |
+| `profile_content_definition_prompt` | str | Yes | - | Describes what user information to extract from interactions |
+| `context_prompt` | str | No | None | Provides context about the interaction type to improve extraction accuracy |
+| `metadata_definition_prompt` | str | No | None | Defines metadata categories to attach to profiles for filtering and organization |
+| `should_extract_profile_prompt_override` | str | No | None | Custom logic to determine when profile extraction should run |
+| `request_sources_enabled` | list[str] | No | None | Limits extraction to specific sources (e.g., "chat", "email"). If not set, processes all sources |
+| `manual_trigger` | bool | No | False | If True, skip auto extraction and require manual triggering via `rerun_profile_generation` |
+
+#### Multiple Profile Extractors
+
+Configure multiple extractors when you need to capture different types of information separately. Each extractor runs independently and can have its own source filters.
+
+```python
+# Extractor for demographics - runs on all sources
+demographics_config = ProfileExtractorConfig(
+    extractor_name="demographics",
+    profile_content_definition_prompt="Extract name, age, location, occupation",
+)
+
+# Extractor for preferences - only from chat interactions
+preferences_config = ProfileExtractorConfig(
+    extractor_name="preferences",
+    profile_content_definition_prompt="Extract product preferences, style choices, budget range",
+    metadata_definition_prompt="choose from 'style_preference' or 'budget_preference'",
+    request_sources_enabled=["chat"]
+)
+
+# Extractor that requires manual triggering
+sentiment_config = ProfileExtractorConfig(
+    extractor_name="sentiment_analysis",
+    profile_content_definition_prompt="Extract user sentiment and emotional state",
+    manual_trigger=True  # Only runs when explicitly triggered
+)
+
+config.profile_extractor_configs = [demographics_config, preferences_config, sentiment_config]
+
+# Later, run only specific extractors manually:
+client.rerun_profile_generation(
+    user_id="user_123",
+    extractor_names=["sentiment_analysis"],
+    wait_for_response=True
+)
+```
+
+---
+
+### Agent Feedback Configuration
+
+Feedback configuration defines how Reflexio learns from user interactions to improve agent behavior. The feedback system works in two stages:
+
+1. **Raw Feedback** - Extracted from each interaction and stored per user/agent version
+2. **Aggregated Feedback** - Consolidated from multiple raw feedbacks into actionable insights for agent improvement
+
+```python
+from reflexio_commons.config_schema import (
+    AgentFeedbackConfig,
+    FeedbackAggregatorConfig
+)
+
+feedback_config = AgentFeedbackConfig(
+    # Required: Unique name for this feedback type
+    feedback_name="customer_satisfaction",
+    # Required: What feedback to extract from interactions
+    feedback_definition_prompt="""
+Analyze the interaction and extract feedback about:
+- Was the customer satisfied with the response?
+- What could have been done better?
+- Any specific complaints or praise?
+""",
+    # Optional: How to categorize the feedback
+    metadata_definition_prompt="""
+Rate satisfaction: 'positive', 'neutral', 'negative'
+""",
+    # Optional: When to aggregate raw feedbacks
+    feedback_aggregator_config=FeedbackAggregatorConfig(
+        min_feedback_threshold=5,
+        refresh_count=3
+    )
+)
+```
+
+#### AgentFeedbackConfig
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `feedback_name` | str | Yes | Unique identifier for this feedback type |
+| `feedback_definition_prompt` | str | Yes | Describes what feedback to extract from each interaction |
+| `metadata_definition_prompt` | str | No | Defines metadata categories to attach to feedback for filtering and organization |
+| `feedback_aggregator_config` | FeedbackAggregatorConfig | No | Controls when raw feedbacks are aggregated into insights |
+
+#### FeedbackAggregatorConfig
+
+Controls when raw feedbacks are aggregated into consolidated insights.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `min_feedback_threshold` | int | 2 | Minimum raw feedbacks required before first aggregation runs |
+| `refresh_count` | int | 2 | Number of new raw feedbacks that trigger re-aggregation |
+
+**Example:** With `min_feedback_threshold=5` and `refresh_count=3`:
+
+- First aggregation runs after 5 raw feedbacks are collected
+- Re-aggregation runs every 3 new feedbacks (at 8, 11, 14, etc.)
+
+---
+
+### Agent Success Configuration
+
+Success configuration defines how Reflexio evaluates whether the agent achieved its goals in each interaction.
+
+**Best Practice:** Define success based on user outcomes and goals, not technical implementation details. Focus on what the user accomplished rather than how the agent responded.
+
+```python
+from reflexio_commons.config_schema import (
+    AgentSuccessConfig,
+    ToolUseConfig
+)
+
+success_config = AgentSuccessConfig(
+    # Required: Unique name for this evaluation
+    evaluation_name="booking_success",
+    # Required: Define what success looks like (focus on user outcomes)
+    success_definition_prompt="""
+Evaluate if the agent successfully:
+1. Understood the customer's booking request
+2. Provided accurate availability information
+3. Completed the booking or explained next steps
+4. Left the customer satisfied
+
+A successful interaction ends with either:
+- A confirmed booking
+- Clear next steps agreed upon
+- Customer explicitly stating they're satisfied
+""",
+    # Optional: Tools available to the agent (provides context for evaluation)
+    tool_can_use=[
+        ToolUseConfig(
+            tool_name="check_availability",
+            tool_description="Check room/service availability for given dates"
+        ),
+        ToolUseConfig(
+            tool_name="create_booking",
+            tool_description="Create a new booking for the customer"
+        )
+    ],
+    # Optional: Actions the agent can take (provides context for evaluation)
+    action_space=[
+        "greet_customer",
+        "ask_clarifying_questions",
+        "provide_recommendations",
+        "confirm_booking",
+        "handle_objections"
+    ],
+    # Optional: How to categorize outcomes
+    metadata_definition_prompt="""
+Classify outcome as:
+- 'booking_completed': Customer completed a booking
+- 'booking_pending': Customer will return to complete
+- 'booking_cancelled': Customer decided not to book
+- 'information_only': Customer was just browsing
+""",
+    # Optional: Evaluate only a portion of interactions (0.5 = 50%)
+    sampling_rate=0.5
+)
+```
+
+#### AgentSuccessConfig
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `evaluation_name` | str | Yes | - | Unique identifier for this evaluation type |
+| `success_definition_prompt` | str | Yes | - | Describes what constitutes a successful interaction (focus on user outcomes) |
+| `tool_can_use` | list[ToolUseConfig] | No | None | Tools available to the agent, providing context for more accurate evaluation |
+| `action_space` | list[str] | No | None | Actions the agent can take, providing context for more accurate evaluation |
+| `metadata_definition_prompt` | str | No | None | Defines categories to classify evaluation outcomes |
+| `sampling_rate` | float | No | 1.0 | Fraction of interactions to evaluate (0.0-1.0). Use lower values during development to reduce API costs |
+
+#### ToolUseConfig
+
+Describes tools available to the agent. This provides the evaluator with context about what actions were possible during the interaction.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `tool_name` | str | Name of the tool |
+| `tool_description` | str | Description of what the tool does |
+
+---
+
+## Complete Configuration Example
+
+```python
+from reflexio import ReflexioClient
+from reflexio_commons.config_schema import (
+    Config,
+    StorageConfigLocal,
+    ProfileExtractorConfig,
+    AgentFeedbackConfig,
+    FeedbackAggregatorConfig,
+    AgentSuccessConfig,
+    ToolUseConfig
+)
+
+client = ReflexioClient(url_endpoint="http://127.0.0.1:8081/")
+
+# Get current config
+config = client.get_config()
+
+# Configure storage
+config.storage_config = StorageConfigLocal(dir_path="./data")
+
+# Configure agent context
+config.agent_context_prompt = """
+Customer service agent for an online booking platform.
+Helps users book hotels, flights, and activities.
+"""
+
+# Configure profile extraction
+config.profile_extractor_configs = [
+    ProfileExtractorConfig(
+        extractor_name="traveler_profile",
+        profile_content_definition_prompt="""
+        Extract: name, travel preferences, budget range,
+        frequent destinations, loyalty program status
+        """,
+        context_prompt="Travel booking conversation",
+        metadata_definition_prompt="category: 'traveler_profile'"
+    )
+]
+
+# Configure feedback collection
+config.agent_feedback_configs = [
+    AgentFeedbackConfig(
+        feedback_name="booking_experience",
+        feedback_definition_prompt="""
+        Was the booking process smooth? Any pain points?
+        Did the agent provide helpful recommendations?
+        """,
+        feedback_aggregator_config=FeedbackAggregatorConfig(
+            min_feedback_threshold=10,
+            refresh_count=5
+        )
+    )
+]
+
+# Configure success evaluation
+config.agent_success_configs = [
+    AgentSuccessConfig(
+        evaluation_name="booking_completion",
+        success_definition_prompt="""
+        Success: Customer completed a booking or has clear next steps.
+        Failure: Customer left confused, frustrated, or without resolution.
+        """,
+        tool_can_use=[
+            ToolUseConfig(
+                tool_name="search_availability",
+                tool_description="Search available options"
+            ),
+            ToolUseConfig(
+                tool_name="create_reservation",
+                tool_description="Create a new reservation"
+            )
+        ],
+        sampling_rate=1.0
+    )
+]
+
+# Configure extraction windows
+config.extraction_window_size = 20
+config.extraction_window_stride = 10
+
+# Save configuration
+client.set_config(config)
+```
+
+## Best Practices
+
+1. **Start with profile extraction** - Configure `profile_extractor_configs` first to ensure user data is captured correctly
+
+2. **Use specific prompts** - Be explicit about what to extract. Vague prompts lead to inconsistent results
+
+3. **Test with sampling** - Use `sampling_rate < 1.0` during development to reduce API costs
+
+4. **Monitor feedback thresholds** - Set `min_feedback_threshold` high enough to get meaningful aggregations
+
+5. **Filter by source** - Use `request_sources_enabled` to process only relevant interaction types
+
+6. **Iterate on definitions** - Review extracted profiles and adjust prompts based on results
+
+## Next Steps
+
+- [Quick Start Guide](quickstart.md) - Basic usage examples
+- [API Reference](../api-reference/client.md) - Complete method documentation

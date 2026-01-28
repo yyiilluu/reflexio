@@ -1,0 +1,507 @@
+# Understanding User Profiles
+
+User profiles are Reflexio's intelligent memory system - they represent what the system has learned about each user through their interactions, enabling personalized experiences and long-term memory across sessions.
+
+## What Are User Profiles?
+
+**User profiles are configurable, persistent memory for each user that Reflexio automatically extracts from their interactions.** Unlike simple data storage, profiles are living, evolving representations of user characteristics, preferences, and context that enable truly personalized agent interactions.
+
+Think of profiles as your agent's memory of each user - not just what they've said, but what it means in terms of their needs, preferences, and characteristics.
+
+## How Profiles Differ from Interactions
+
+| Aspect | Interactions | User Profiles |
+|--------|-------------|---------------|
+| **Purpose** | Raw input data | Processed insights |
+| **Scope** | Individual events | User-wide patterns |
+| **Lifetime** | Permanent record | Evolving understanding |
+| **Content** | Exact user input | Extracted meaning |
+| **Usage** | Historical reference | Active personalization |
+
+## The Profile Extraction Process
+
+### 1. Configurable AI Analysis
+
+Reflexio uses AI prompts that you configure to analyze interactions and extract relevant user information:
+
+```python
+ProfileExtractorConfig(
+    profile_content_definition_prompt="""
+    Extract the following user information:
+    - Personal preferences and interests
+    - Communication style and tone preferences
+    - Product or service needs and requirements
+    - Budget constraints or financial considerations
+    - Technical skill level and expertise
+    - Goals and objectives
+    """,
+    context_prompt="You are analyzing customer service conversations to build comprehensive user profiles",
+    should_extract_profile_prompt_override="when the interaction contains personal information, preferences, or user characteristics that would help personalize future interactions"
+)
+```
+
+### 2. Intelligent Information Synthesis
+
+The AI doesn't just copy text - it understands and synthesizes:
+
+**User says:** *"I'm a freelance graphic designer working mostly with small businesses. I need something portable but powerful enough for Photoshop and video editing. My budget is tight - around $1500 max."*
+
+**Profile extracted:** *"Professional graphic designer specializing in small business clients. Requires portable, high-performance laptop for Adobe Creative Suite and video editing. Budget-conscious with $1500 maximum budget constraint."*
+
+### 3. Automatic Deduplication and Updates
+
+Reflexio intelligently manages profile evolution:
+- **New information** updates existing profiles
+- **Contradictory information** is resolved through AI analysis
+- **Redundant information** is deduplicated automatically
+- **Outdated information** can be automatically expired
+
+## Types of Profile Information
+
+### Personal Characteristics
+
+```python
+# Examples of personal information in profiles
+personal_profiles = [
+    "User prefers informal, friendly communication style",
+    "Name is Sarah, works in marketing for a tech startup",
+    "Located in Pacific timezone, prefers morning meetings",
+    "Has accessibility needs - requires screen reader compatibility"
+]
+```
+
+### Preferences and Interests
+
+```python
+# Preference-based profiles
+preference_profiles = [
+    "Strongly prefers eco-friendly and sustainable products",
+    "Interested in outdoor activities, particularly hiking and camping",
+    "Prefers detailed technical explanations over simplified summaries",
+    "Values local businesses and artisanal products"
+]
+```
+
+### Behavioral Patterns
+
+```python
+# Behavior-based profiles
+behavioral_profiles = [
+    "Typically researches extensively before making purchases",
+    "Tends to ask for multiple options and comparisons",
+    "Responds well to visual examples and demonstrations",
+    "Prefers to complete tasks in single focused sessions"
+]
+```
+
+### Contextual Information
+
+```python
+# Context-aware profiles
+contextual_profiles = [
+    "Currently planning a wedding, focused on photography services",
+    "Recently started a new job, learning project management tools",
+    "Moving to a new city next month, researching local services",
+    "Working on a tight deadline for a client presentation"
+]
+```
+
+## Profile Lifecycle Management
+
+### Creation and Initial Extraction
+
+```python
+# When a user first interacts
+client.publish_interaction(
+    user_id="new_user_alice",
+    interactions=[
+        InteractionData(
+            role="User",
+            content="Hi, I'm Alice. I run a small bakery and I'm looking for an accounting software that's easy to use."
+        )
+    ],
+    source="initial_consultation",
+    request_group="first_contact"
+)
+
+# Reflexio automatically extracts:
+# - "Name is Alice"
+# - "Owns a small bakery business"
+# - "Needs easy-to-use accounting software"
+# - "Prefers simplicity over advanced features"
+```
+
+### Profile Evolution Through New Interactions
+
+```python
+# Later interaction provides more context
+client.publish_interaction(
+    user_id="new_user_alice",
+    interactions=[
+        InteractionData(
+            role="User",
+            content="Actually, I should mention I'm not very tech-savvy. I mostly use my phone for business stuff."
+        )
+    ],
+    source="follow_up_conversation",
+    request_group="first_contact"
+)
+
+# Reflexio updates profiles:
+# - "Low technical expertise, prefers mobile-friendly solutions"
+# - "Primarily uses mobile devices for business operations"
+```
+
+### Profile Validation and Conflict Resolution
+
+When new information conflicts with existing profiles, Reflexio uses AI to resolve:
+
+```python
+# Original profile: "Budget-conscious, looking for economical solutions"
+# New interaction: "Money isn't really an issue, I want the best quality"
+#
+# AI resolution: "Initially price-sensitive but willing to invest in quality solutions for business needs"
+```
+
+### Profile Expiration and Cleanup
+
+```python
+# Profiles can have time-to-live settings
+ProfileTimeToLive.ONE_MONTH   # Profile expires after 30 days
+ProfileTimeToLive.ONE_YEAR    # Profile expires after 1 year
+ProfileTimeToLive.INFINITY    # Profile never expires (default)
+```
+
+## Profile Sources and Attribution
+
+### Source-Based Organization
+
+Every profile tracks its origin, enabling source-specific analysis:
+
+```python
+# Search profiles from specific sources
+support_profiles = client.search_profiles(
+    user_id="user_123",
+    query="technical issues and problems",
+    source="support_chat"  # Only profiles from support interactions
+)
+
+sales_profiles = client.search_profiles(
+    user_id="user_123",
+    query="product interests and preferences",
+    source="sales_inquiry"  # Only profiles from sales interactions
+)
+```
+
+### Attribution and Traceability
+
+```python
+# Each profile includes full attribution
+for profile in user_profiles:
+    print(f"Profile: {profile.profile_content}")
+    print(f"Generated from interaction: {profile.generated_from_request_id}")
+    print(f"Source: {profile.source}")
+    print(f"Created: {profile.last_modified_timestamp}")
+    print(f"Custom metadata: {profile.custom_features}")
+```
+
+## Semantic Search and Retrieval
+
+### Natural Language Queries
+
+Profiles support semantic search using natural language:
+
+```python
+# Search using conversational queries
+technical_profiles = client.search_profiles(
+    user_id="user_123",
+    query="programming languages and technical skills",
+    threshold=0.7
+)
+
+lifestyle_profiles = client.search_profiles(
+    user_id="user_123",
+    query="hobbies interests and personal activities",
+    threshold=0.6
+)
+```
+
+### Threshold-Based Precision Control
+
+```python
+# High precision search (strict matching)
+exact_matches = client.search_profiles(
+    user_id="user_123",
+    query="Python programming Django framework",
+    threshold=0.9  # Very high threshold
+)
+
+# Broader search (loose matching)
+related_matches = client.search_profiles(
+    user_id="user_123",
+    query="web development backend",
+    threshold=0.6  # Lower threshold for broader results
+)
+```
+
+## Domain-Specific Profile Configuration
+
+### E-commerce Personalization
+
+```python
+ecommerce_extractor = ProfileExtractorConfig(
+    profile_content_definition_prompt="""
+    Extract customer shopping information:
+    - Product categories of interest
+    - Brand preferences and loyalties
+    - Price sensitivity and budget ranges
+    - Shopping frequency and patterns
+    - Size, color, and style preferences
+    - Delivery and shipping preferences
+    - Payment method preferences
+    - Gift-giving occasions and recipients
+    """,
+    context_prompt="Analyzing e-commerce customer interactions for personalized shopping experiences",
+    should_extract_profile_prompt_override="when customer mentions products, brands, preferences, or shopping-related information"
+)
+```
+
+### Educational Platform Profiles
+
+```python
+education_extractor = ProfileExtractorConfig(
+    profile_content_definition_prompt="""
+    Extract student learning information:
+    - Learning goals and academic objectives
+    - Subject matter interests and strengths
+    - Preferred learning styles (visual, auditory, hands-on)
+    - Current skill and knowledge levels
+    - Learning pace and time preferences
+    - Challenges and areas of difficulty
+    - Career aspirations and motivations
+    - Study habits and schedule preferences
+    """,
+    context_prompt="Analyzing student interactions to create personalized learning experiences",
+    should_extract_profile_prompt_override="when student discusses learning goals, challenges, preferences, or academic topics"
+)
+```
+
+### Healthcare and Wellness
+
+```python
+healthcare_extractor = ProfileExtractorConfig(
+    profile_content_definition_prompt="""
+    Extract relevant health and wellness information:
+    - Health goals and wellness objectives
+    - Lifestyle factors affecting health
+    - Exercise and activity preferences
+    - Dietary preferences and restrictions
+    - Communication style preferences for health topics
+    - Preventive care interests and concerns
+    - Stress management and mental health considerations
+    """,
+    context_prompt="Analyzing patient interactions while maintaining strict privacy and confidentiality",
+    should_extract_profile_prompt_override="when patient mentions health goals, lifestyle factors, or wellness preferences"
+)
+```
+
+## Using Profiles for Personalization
+
+### Dynamic Response Customization
+
+```python
+def get_personalized_response(user_id, query_context):
+    # Get relevant user profiles
+    user_profiles = client.search_profiles(
+        user_id=user_id,
+        query=query_context,
+        threshold=0.7
+    )
+
+    # Extract personalization factors
+    communication_style = "formal"  # default
+    expertise_level = "beginner"   # default
+
+    for profile in user_profiles.user_profiles:
+        content = profile.profile_content.lower()
+
+        if "casual" in content or "informal" in content:
+            communication_style = "casual"
+        elif "technical" in content or "expert" in content:
+            expertise_level = "advanced"
+
+    # Customize response based on profiles
+    if communication_style == "casual" and expertise_level == "advanced":
+        return "Hey! Since you're technically savvy, here's the detailed breakdown..."
+    elif communication_style == "formal" and expertise_level == "beginner":
+        return "I'd be happy to help. Let me explain this step by step..."
+
+    return f"Response customized for {communication_style} {expertise_level} user"
+```
+
+### Content Filtering and Recommendations
+
+```python
+def get_content_recommendations(user_id):
+    # Get user interest profiles
+    interest_profiles = client.search_profiles(
+        user_id=user_id,
+        query="interests hobbies preferences",
+        threshold=0.6
+    )
+
+    # Extract interests for content matching
+    user_interests = []
+    for profile in interest_profiles.user_profiles:
+        # Use AI or NLP to extract specific interests
+        # This is simplified - in production, use proper extraction
+        if "photography" in profile.profile_content.lower():
+            user_interests.append("photography")
+        if "travel" in profile.profile_content.lower():
+            user_interests.append("travel")
+
+    # Return personalized content recommendations
+    return {
+        "interests": user_interests,
+        "recommended_content": f"Content matching: {', '.join(user_interests)}"
+    }
+```
+
+## Profile Analytics and Insights
+
+### User Journey Analysis
+
+```python
+# Analyze how user profiles evolve over time
+change_log = client.get_profile_change_log()
+
+user_journey = {}
+for change in change_log.profile_change_logs:
+    if change.user_id == "target_user_id":
+        user_journey[change.created_at] = {
+            "added": [p.profile_content for p in change.added_profiles],
+            "removed": [p.profile_content for p in change.removed_profiles],
+            "request_id": change.request_id
+        }
+
+print("User Profile Evolution:")
+for timestamp, changes in sorted(user_journey.items()):
+    print(f"Time: {timestamp}")
+    print(f"Request: {changes['request_id']}")
+    if changes['added']:
+        print(f"New insights: {changes['added']}")
+    if changes['removed']:
+        print(f"Updated from: {changes['removed']}")
+```
+
+### Cohort Analysis
+
+```python
+def analyze_user_cohorts(user_ids):
+    """Analyze common characteristics across user groups."""
+    all_profiles = {}
+
+    for user_id in user_ids:
+        profiles = client.get_profiles(
+            user_id=user_id,
+            top_k=20
+        )
+        all_profiles[user_id] = profiles.user_profiles
+
+    # Find common themes
+    common_themes = {}
+    for user_id, profiles in all_profiles.items():
+        for profile in profiles:
+            # Extract keywords (simplified)
+            words = profile.profile_content.lower().split()
+            for word in words:
+                if len(word) > 4:  # Filter short words
+                    if word not in common_themes:
+                        common_themes[word] = set()
+                    common_themes[word].add(user_id)
+
+    # Find themes common to multiple users
+    shared_themes = {
+        theme: users for theme, users in common_themes.items()
+        if len(users) > 1
+    }
+
+    return shared_themes
+```
+
+## Privacy and Data Management
+
+### Privacy-Conscious Profile Management
+
+```python
+def audit_sensitive_profiles(user_id):
+    """Identify and manage potentially sensitive profile information."""
+
+    sensitive_profiles = client.search_profiles(
+        user_id=user_id,
+        query="personal information contact details private sensitive",
+        threshold=0.8
+    )
+
+    privacy_actions = []
+    for profile in sensitive_profiles.user_profiles:
+        # Check for sensitive information patterns
+        content_lower = profile.profile_content.lower()
+        sensitive_patterns = [
+            "email", "phone", "address", "ssn", "credit card",
+            "password", "personal", "private", "confidential"
+        ]
+
+        found_sensitive = [
+            pattern for pattern in sensitive_patterns
+            if pattern in content_lower
+        ]
+
+        if found_sensitive:
+            privacy_actions.append({
+                "profile_id": profile.profile_id,
+                "content": profile.profile_content,
+                "sensitive_elements": found_sensitive,
+                "action": "review_required"
+            })
+
+    return privacy_actions
+
+# Usage
+privacy_audit = audit_sensitive_profiles("user_123")
+for action in privacy_audit:
+    print(f"Profile {action['profile_id']} contains: {action['sensitive_elements']}")
+    # Take appropriate action (redact, delete, flag for review)
+```
+
+### GDPR and Data Retention Compliance
+
+```python
+def implement_data_retention_policy(user_id, retention_days=365):
+    """Implement data retention policies for compliance."""
+
+    # Get all user profiles
+    all_profiles = client.get_profiles(
+        user_id=user_id,
+        top_k=1000
+    )
+
+    # Calculate retention cutoff
+    retention_cutoff = int((datetime.now() - timedelta(days=retention_days)).timestamp())
+
+    expired_profiles = [
+        profile for profile in all_profiles.user_profiles
+        if profile.last_modified_timestamp < retention_cutoff
+    ]
+
+    # Delete expired profiles
+    for profile in expired_profiles:
+        client.delete_profile(
+            user_id=user_id,
+            profile_id=profile.profile_id
+        )
+
+    print(f"Deleted {len(expired_profiles)} expired profiles for user {user_id}")
+```
+
+User profiles are the intelligent memory that makes your agents truly personal and context-aware. By configuring profile extraction to match your domain and use cases, you enable agents that remember, learn, and adapt to each user's unique needs and preferences.

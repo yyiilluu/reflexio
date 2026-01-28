@@ -1,0 +1,578 @@
+"""Service to generate user profiles from interactions"""
+
+from dataclasses import dataclass
+import logging
+import uuid
+from typing import Any, Optional
+
+from reflexio_commons.api_schema.service_schemas import (
+    DeleteUserProfileRequest,
+    RerunProfileGenerationRequest,
+    RerunProfileGenerationResponse,
+    ManualProfileGenerationRequest,
+    ManualProfileGenerationResponse,
+    UpgradeProfilesResponse,
+    DowngradeProfilesResponse,
+    UserProfile,
+    Status,
+)
+from reflexio_commons.config_schema import ProfileExtractorConfig
+from reflexio.server.services.profile.profile_extractor import ProfileExtractor
+from reflexio.server.services.profile.profile_generation_service_utils import (
+    ProfileGenerationRequest,
+    ProfileUpdates,
+)
+from reflexio.server.services.base_generation_service import (
+    BaseGenerationService,
+    StatusChangeOperation,
+)
+
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class ProfileGenerationServiceConfig:
+    """Runtime configuration for profile generation service shared across all extractors.
+
+    Attributes:
+        user_id: The user ID
+        request_id: The request ID
+        source: Source of the interactions (triggering source)
+        existing_data: Existing profiles for the user
+        allow_manual_trigger: Whether to allow extractors with manual_trigger=True
+        output_pending_status: Whether to output profiles with PENDING status
+        extractor_names: Optional list of extractor names to filter which extractors run
+        rerun_start_time: Optional start time filter for rerun flows (Unix timestamp)
+        rerun_end_time: Optional end time filter for rerun flows (Unix timestamp)
+        auto_run: True for regular flow (checks stride), False for rerun/manual (skips stride)
+    """
+
+    user_id: str
+    request_id: str
+    source: Optional[str] = None
+    existing_data: Any = None
+    allow_manual_trigger: bool = False
+    output_pending_status: bool = False
+    extractor_names: Optional[list[str]] = None
+    rerun_start_time: Optional[int] = None
+    rerun_end_time: Optional[int] = None
+    auto_run: bool = True
+
+
+class ProfileGenerationService(
+    BaseGenerationService[
+        ProfileExtractorConfig,
+        ProfileExtractor,
+        ProfileGenerationServiceConfig,
+        ProfileGenerationRequest,
+    ]
+):
+    """Service to generate user profiles from interactions"""
+
+    def __init__(
+        self,
+        llm_client,
+        request_context,
+        allow_manual_trigger: bool = False,
+        output_pending_status: bool = False,
+    ) -> None:
+        """
+        Initialize the profile generation service.
+
+        Args:
+            llm_client: Unified LLM client supporting both OpenAI and Claude
+            request_context: Request context with storage, configurator, and org_id
+            allow_manual_trigger: Whether to allow extractors with manual_trigger=True
+            output_pending_status: Whether to output profiles with PENDING status (for rerun)
+        """
+        super().__init__(llm_client=llm_client, request_context=request_context)
+        self.allow_manual_trigger = allow_manual_trigger
+        self.output_pending_status = output_pending_status
+
+    def _load_generation_service_config(
+        self, request: ProfileGenerationRequest
+    ) -> ProfileGenerationServiceConfig:
+        """
+        Extract parameters from ProfileGenerationRequest.
+
+        Args:
+            request: ProfileGenerationRequest containing request interaction groups and metadata
+
+        Returns:
+            ProfileGenerationServiceConfig object
+        """
+        # Get existing profiles for the user
+        # When output_pending_status is True (rerun mode), only include pending profiles as existing data
+        # This allows the LLM to generate fresh profiles instead of just mentioning current ones
+        if self.output_pending_status:
+            existing_profiles = self.storage.get_user_profile(
+                request.user_id, status_filter=[Status.PENDING]
+            )
+        else:
+            existing_profiles = self.storage.get_user_profile(request.user_id)
+
+        return ProfileGenerationServiceConfig(
+            user_id=request.user_id,
+            request_id=request.request_id,
+            source=request.source,
+            existing_data=existing_profiles,
+            allow_manual_trigger=self.allow_manual_trigger,
+            output_pending_status=self.output_pending_status,
+            extractor_names=getattr(request, "extractor_names", None),
+            rerun_start_time=request.rerun_start_time,
+            rerun_end_time=request.rerun_end_time,
+            auto_run=request.auto_run,
+        )
+
+    def _process_results(self, results: list[ProfileUpdates]) -> None:
+        """
+        Process and apply profile updates.
+
+        Args:
+            results: List of ProfileUpdates from extractors
+        """
+        user_id = self.service_config.user_id
+        source = self.service_config.source
+        request_id = self.service_config.request_id
+
+        # Set source and status for all profiles
+        for update in results:
+            if update and update.add_profiles:
+                for profile in update.add_profiles:
+                    profile.source = source
+                    # Set status to Status.PENDING if output_pending_status is True, otherwise None
+                    profile.status = (
+                        Status.PENDING if self.output_pending_status else None
+                    )
+
+        # Deduplicate if multiple extractors were enabled
+        if len(results) > 1:
+            from reflexio.server.services.profile.profile_deduplicator import (
+                ProfileDeduplicator,
+            )
+
+            deduplicator = ProfileDeduplicator(
+                request_context=self.request_context,
+                llm_client=self.client,
+            )
+            results = deduplicator.deduplicate(results, user_id, request_id)
+
+        # Apply updates
+        for profile_update in results:
+            try:
+                self._apply_profiles_for_user(user_id, profile_update)
+            except Exception as e:
+                logger.error(
+                    "Failed to apply profile update for user id: %s due to %s, exception type: %s",
+                    user_id,
+                    str(e),
+                    type(e).__name__,
+                )
+                continue
+
+    def check_and_update_profiles(self, profiles: list[UserProfile]):
+        """check if the profiles are expired and update them if they are"""
+        raise NotImplementedError
+
+    # ===============================
+    # private methods
+    # ===============================
+
+    def _apply_profiles_for_user(self, user_id: str, profile_updates: ProfileUpdates):
+        """apply profile updates for user
+
+        Args:
+            user_id (str): _description_
+            profile_updates (ProfileUpdates): _description_
+        """
+        # delete profiles based on profile_updates
+        for tobe_removed_profile in profile_updates.delete_profiles:
+            delete_user_profile_request = DeleteUserProfileRequest(
+                user_id=user_id,
+                profile_id=tobe_removed_profile.profile_id,
+            )
+            self.storage.delete_user_profile(delete_user_profile_request)
+        # add profiles based on profile_updates
+        self.storage.add_user_profile(user_id, profile_updates.add_profiles)
+        # mention profiles based on profile_updates
+        for mentioned_profile in profile_updates.mention_profiles:
+            self.storage.update_user_profile_by_id(
+                user_id, mentioned_profile.profile_id, mentioned_profile
+            )
+
+    def _load_extractor_configs(self) -> list[ProfileExtractorConfig]:
+        """
+        Load profile extractor configs from configurator.
+
+        Returns:
+            list[ProfileExtractorConfig]: List of profile extractor configuration objects from YAML
+        """
+        return self.configurator.get_config().profile_extractor_configs
+
+    def _create_extractor(
+        self,
+        extractor_config: ProfileExtractorConfig,
+        service_config: ProfileGenerationServiceConfig,
+    ) -> ProfileExtractor:
+        """
+        Create a ProfileExtractor instance from configuration.
+
+        Args:
+            extractor_config: ProfileExtractorConfig configuration object from YAML
+            service_config: ProfileGenerationServiceConfig containing runtime parameters
+
+        Returns:
+            ProfileExtractor instance
+        """
+        return ProfileExtractor(
+            request_context=self.request_context,
+            llm_client=self.client,
+            extractor_config=extractor_config,
+            service_config=service_config,
+            agent_context=self.configurator.get_agent_context(),
+        )
+
+    def _get_service_name(self) -> str:
+        """
+        Get the name of the service for logging and operation state tracking.
+
+        Returns:
+            Service name string - "rerun_profile_generation" for rerun operations,
+            "profile_generation" for regular operations
+        """
+        if self.output_pending_status:
+            return "rerun_profile_generation"
+        return "profile_generation"
+
+    def _should_track_in_progress(self) -> bool:
+        """
+        Profile generation should track in-progress state to prevent duplicates.
+
+        Returns:
+            bool: True - profile generation tracks in-progress state
+        """
+        return True
+
+    def _get_in_progress_state_key(self, request: ProfileGenerationRequest) -> str:
+        """
+        Get the operation state key for in-progress tracking.
+
+        Profile generation is user-scoped, so the key includes user_id.
+
+        Args:
+            request: The ProfileGenerationRequest
+
+        Returns:
+            str: Key in format "profile_generation_in_progress::{org_id}::{user_id}"
+        """
+        return f"profile_generation_in_progress::{self.org_id}::{request.user_id}"
+
+    # ===============================
+    # Rerun hook implementations (override base class methods)
+    # ===============================
+
+    def _get_rerun_user_ids(self, request: RerunProfileGenerationRequest) -> list[str]:
+        """Get user IDs to process. Extractors collect their own data.
+
+        Identifies unique user_ids with interactions matching the filters.
+
+        Args:
+            request: RerunProfileGenerationRequest with optional filters
+
+        Returns:
+            List of user IDs to process
+        """
+        requests_dict = self.storage.get_request_groups(
+            user_id=request.user_id,
+            start_time=(
+                int(request.start_time.timestamp()) if request.start_time else None
+            ),
+            end_time=(int(request.end_time.timestamp()) if request.end_time else None),
+            top_k=None,
+        )
+
+        # Get unique user_ids - extractors will collect their own data
+        user_ids: set[str] = set()
+        for request_group_requests in requests_dict.values():
+            for rig in request_group_requests:
+                # Apply source filter if provided
+                if request.source and rig.request.source != request.source:
+                    continue
+                user_ids.add(rig.request.user_id)
+
+        return list(user_ids)
+
+    def _build_rerun_request_params(
+        self, request: RerunProfileGenerationRequest
+    ) -> dict:
+        """Build request params dict for operation state tracking.
+
+        Args:
+            request: Original rerun request
+
+        Returns:
+            Dictionary of request parameters
+        """
+        return {
+            "user_id": request.user_id,
+            "start_time": request.start_time.isoformat()
+            if request.start_time
+            else None,
+            "end_time": request.end_time.isoformat() if request.end_time else None,
+            "source": request.source,
+            "extractor_names": request.extractor_names,
+        }
+
+    def _create_run_request_for_item(
+        self,
+        user_id: str,
+        request: RerunProfileGenerationRequest,
+    ) -> ProfileGenerationRequest:
+        """Create ProfileGenerationRequest for a single user.
+
+        Passes filter constraints instead of data - extractors collect their own.
+
+        Args:
+            user_id: The user ID to process
+            request: The original rerun request
+
+        Returns:
+            ProfileGenerationRequest for this user with filter constraints
+        """
+        return ProfileGenerationRequest(
+            user_id=user_id,
+            request_id=f"rerun_{uuid.uuid4().hex[:8]}",
+            source=request.source,
+            extractor_names=request.extractor_names,
+            # Pass filter constraints instead of data
+            rerun_start_time=int(request.start_time.timestamp())
+            if request.start_time
+            else None,
+            rerun_end_time=int(request.end_time.timestamp())
+            if request.end_time
+            else None,
+            auto_run=False,  # Rerun skips stride check
+        )
+
+    def _create_rerun_response(
+        self, success: bool, msg: str, count: int
+    ) -> RerunProfileGenerationResponse:
+        """Create RerunProfileGenerationResponse.
+
+        Args:
+            success: Whether the operation succeeded
+            msg: Status message
+            count: Number of profiles generated
+
+        Returns:
+            RerunProfileGenerationResponse
+        """
+        return RerunProfileGenerationResponse(
+            success=success,
+            msg=msg,
+            profiles_generated=count,
+        )
+
+    def _get_generated_count(self, request: RerunProfileGenerationRequest) -> int:
+        """Get the count of profiles generated during rerun.
+
+        Counts profiles with PENDING status, optionally filtered by user_id.
+
+        Args:
+            request: The rerun request object
+
+        Returns:
+            Number of profiles generated
+        """
+        profiles = self.storage.get_user_profile(
+            user_id=request.user_id,
+            status_filter=[Status.PENDING],
+        )
+        return len(profiles)
+
+    # ===============================
+    # Upgrade/Downgrade hook implementations (override base class methods)
+    # ===============================
+
+    def _has_items_with_status(self, status, request) -> bool:
+        """Check if profiles exist with given status.
+
+        Args:
+            status: The status to check for (None for CURRENT)
+            request: The upgrade/downgrade request object
+
+        Returns:
+            bool: True if any matching profiles exist
+        """
+        user_ids = self.storage.get_user_ids_with_status(status=status)
+        return len(user_ids) > 0
+
+    def _delete_items_by_status(self, status, request) -> int:
+        """Delete profiles with given status.
+
+        Args:
+            status: The status of profiles to delete
+            request: The upgrade/downgrade request object
+
+        Returns:
+            int: Number of profiles deleted
+        """
+        return self.storage.delete_all_profiles_by_status(status=status)
+
+    def _update_items_status(
+        self, old_status, new_status, request, user_ids=None
+    ) -> int:
+        """Update profiles from old_status to new_status.
+
+        Args:
+            old_status: The current status to match (None for CURRENT)
+            new_status: The new status to set (None for CURRENT)
+            request: The upgrade/downgrade request object
+            user_ids: Optional pre-computed list of user IDs to filter by
+
+        Returns:
+            int: Number of profiles updated
+        """
+        return self.storage.update_all_profiles_status(
+            old_status, new_status, user_ids=user_ids
+        )
+
+    def _get_affected_user_ids_for_upgrade(self, request) -> Optional[list[str]]:
+        """Get user IDs to filter by for upgrade operations.
+
+        Args:
+            request: The upgrade request object
+
+        Returns:
+            Optional[list[str]]: List of user IDs with PENDING profiles, or None for no filtering
+        """
+        if hasattr(request, "only_affected_users") and request.only_affected_users:
+            return self.storage.get_user_ids_with_status(Status.PENDING)
+        return None
+
+    def _get_affected_user_ids_for_downgrade(self, request) -> Optional[list[str]]:
+        """Get user IDs to filter by for downgrade operations.
+
+        Args:
+            request: The downgrade request object
+
+        Returns:
+            Optional[list[str]]: List of user IDs with ARCHIVED profiles, or None for no filtering
+        """
+        if hasattr(request, "only_affected_users") and request.only_affected_users:
+            return self.storage.get_user_ids_with_status(Status.ARCHIVED)
+        return None
+
+    def _create_status_change_response(self, operation, success, counts, msg):
+        """Create upgrade or downgrade response object for profiles.
+
+        Args:
+            operation: The operation type (UPGRADE or DOWNGRADE)
+            success: Whether the operation succeeded
+            counts: Dictionary of counts
+            msg: Status message
+
+        Returns:
+            UpgradeProfilesResponse or DowngradeProfilesResponse
+        """
+        if operation == StatusChangeOperation.UPGRADE:
+            return UpgradeProfilesResponse(
+                success=success,
+                profiles_deleted=counts.get("deleted", 0),
+                profiles_archived=counts.get("archived", 0),
+                profiles_promoted=counts.get("promoted", 0),
+                message=msg,
+            )
+        else:  # DOWNGRADE
+            return DowngradeProfilesResponse(
+                success=success,
+                profiles_demoted=counts.get("demoted", 0),
+                profiles_restored=counts.get("restored", 0),
+                message=msg,
+            )
+
+    # ===============================
+    # Manual Regular Generation (window-sized, CURRENT output)
+    # ===============================
+
+    def run_manual_regular(
+        self, request: ManualProfileGenerationRequest
+    ) -> ManualProfileGenerationResponse:
+        """
+        Run profile generation with window-sized interactions and CURRENT output.
+
+        This is a manual trigger that behaves like regular generation
+        (uses extraction_window_size, outputs CURRENT profiles) but only runs
+        profile extraction (not feedback or agent success).
+
+        Each extractor collects its own data using its configured window_size.
+        No operation state tracking - runs synchronously.
+
+        Args:
+            request: ManualProfileGenerationRequest with optional user_id, source, and extractor_names
+
+        Returns:
+            ManualProfileGenerationResponse with success status and count
+        """
+        # 1. Get users to process
+        if request.user_id:
+            user_ids = [request.user_id]
+        else:
+            user_ids = self.storage.get_all_user_ids()
+
+        if not user_ids:
+            return ManualProfileGenerationResponse(
+                success=True,
+                msg="No users found to process",
+                profiles_generated=0,
+            )
+
+        processed_users = 0
+        for user_id in user_ids:
+            try:
+                # 2. Create ProfileGenerationRequest - extractors collect their own data
+                profile_request = ProfileGenerationRequest(
+                    user_id=user_id,
+                    request_id=f"manual_{uuid.uuid4().hex[:8]}",
+                    source=request.source,
+                    extractor_names=request.extractor_names,
+                    auto_run=False,  # Manual skips stride check
+                )
+                self.run(profile_request)
+                processed_users += 1
+
+            except Exception as e:
+                logger.error(
+                    "Failed to run manual profile generation for user %s: %s",
+                    user_id,
+                    str(e),
+                )
+                continue
+
+        # 3. Count generated profiles (CURRENT status = None)
+        total_profiles = self._count_manual_generated(request)
+
+        return ManualProfileGenerationResponse(
+            success=True,
+            msg=f"Generated {total_profiles} profiles for {processed_users} user(s)",
+            profiles_generated=total_profiles,
+        )
+
+    def _count_manual_generated(self, request: ManualProfileGenerationRequest) -> int:
+        """
+        Count profiles generated during manual regular generation.
+
+        Counts profiles with CURRENT status (None), optionally filtered by user_id.
+
+        Args:
+            request: The manual generation request object
+
+        Returns:
+            Number of profiles with CURRENT status
+        """
+        profiles = self.storage.get_user_profile(
+            user_id=request.user_id,
+            status_filter=[None],  # CURRENT profiles
+        )
+        return len(profiles)

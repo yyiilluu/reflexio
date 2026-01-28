@@ -1,0 +1,118 @@
+# Reflexio
+Description: AI agent memory system that makes AI agents personalized and self-improving from user interactions.
+
+## Main Components
+
+| Directory | Description | Details |
+|-----------|-------------|---------|
+| `reflexio/server/` | FastAPI backend - processes interactions, generates profiles, extracts feedback | [README](reflexio/server/README.md) |
+| `reflexio/reflexio_lib/` | Core library - `Reflexio` orchestrator connecting API to services | `reflexio_lib.py` |
+| `reflexio/reflexio_client/` | Python SDK for interacting with Reflexio API | [README](reflexio/README.md) |
+| `reflexio/reflexio_commons/` | Shared schemas and configuration models | [README](reflexio/README.md) |
+| `reflexio/website/` | Next.js frontend - profiles, interactions, feedbacks, evaluations, auth UI | `app/`, `components/` |
+| `supabase/` | Local Supabase - user data (profiles, interactions, feedbacks), atomic lock RPC | Migrations |
+| `supabase_login/` | Cloud Supabase - authentication (organizations, API keys) | [README](supabase_login/README.md) |
+| `docs/` | Deployment guides | AWS ECS, Supabase migration, AWS SES email setup |
+
+## Architecture
+
+```
+Client (SDK/Web)
+  -> FastAPI (server/api.py)
+    -> get_reflexio() (server/cache/)
+      -> Reflexio (reflexio_lib/)
+        -> GenerationService (server/services/)
+          ├─> ProfileGenerationService -> ProfileExtractor(s) -> Storage
+          ├─> FeedbackGenerationService -> FeedbackExtractor(s) -> Storage
+          └─> AgentSuccessEvaluationService -> Evaluator(s) -> Storage
+```
+
+## Quick Start
+
+```shell
+poetry install
+source $(poetry env info --path)/bin/activate
+./run_services.sh   # Starts API (8081), Website (8080), Docs (8082)
+./stop_services.sh  # Stop all services
+```
+
+**Package Setup:**
+
+For local development (editable install):
+```shell
+pip install -e reflexio/reflexio_commons/
+pip install -e reflexio/reflexio_client/
+```
+
+Or install from PyPI:
+```shell
+pip install reflexio-commons reflexio
+```
+
+**Self-Host Mode** (no database, no auth):
+```shell
+# Set SELF_HOST=true in .env
+./run_services.sh  # Data stored in reflexio/data/
+```
+
+## Database Setup
+
+**User Data (Local Supabase):**
+```shell
+supabase start && supabase db reset  # Start and create schema
+```
+
+**Cloud Auth (supabase_login/):**
+- Separate cloud Supabase for organization credentials
+- See `supabase_login/README.md`
+
+## Development
+
+```shell
+docker compose -f ./docker-compose-local.yaml up -d --build
+```
+
+**Testing:**
+```python
+import reflexio
+client = reflexio.ReflexioClient(url_endpoint="http://127.0.0.1:8081/")
+token = await client.login("local_supabase", "s")
+client.api_key = token.api_key
+```
+See `notebooks/reflexio_cookbook.ipynb` and `reflexio/tests/readme.md`
+
+## Deployment
+
+**AWS ECS (cost-optimized):** See `docs/aws-ecs-deployment-minimal.md`
+
+**Docker:**
+```shell
+docker build -t reflexio-amd64:latest -f Dockerfile.base .
+sh reflexio/scripts/deploy_ecs.sh
+```
+
+## Publishing
+
+```shell
+# Update versions in pyproject.toml files first
+cd reflexio/reflexio_commons && poetry build && poetry publish
+cd reflexio/reflexio_client && poetry build && poetry publish
+```
+
+## Key Rules
+
+**Reflexio**:
+- **NEVER instantiate `Reflexio()` directly** in API endpoints
+- **ALWAYS use** `get_reflexio()` from `server/cache/`
+
+**Storage**:
+- **NEVER import SupabaseStorage/LocalJsonStorage directly**
+- **ALWAYS use** `request_context.storage` (type: BaseStorage)
+
+**LLM**:
+- **NEVER import OpenAIClient/ClaudeClient directly**
+- **ALWAYS use** `LiteLLMClient` (uses LiteLLM for multi-provider support)
+
+**Prompts**:
+- **NEVER hardcode prompts**
+- **ALWAYS use** `request_context.prompt_manager.render_prompt(prompt_id, variables)`

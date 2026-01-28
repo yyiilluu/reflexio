@@ -1,0 +1,321 @@
+# Basic Usage
+
+This guide walks you through the core features of the Reflexio Web Portal. Learn how to navigate the interface, view your data, and perform common operations.
+
+---
+
+## Dashboard Page
+
+The Dashboard provides a high-level overview of your Reflexio system at a glance.
+
+![Dashboard Overview](../assets/screenshots/dashboard-overview.png)
+
+### Key Features
+
+- **Real-time statistics** — View current counts for all major data types
+- **Quick navigation** — Click on any card to navigate to the detailed page
+- **System health** — Monitor overall system activity at a glance
+
+---
+
+## Interactions Page
+
+The Interactions page displays all recorded conversations between users and your agent.
+
+![Interactions Page](../assets/screenshots/interactions-page.png)
+
+### Viewing Interactions
+
+1. Navigate to the **Interactions** page from the sidebar
+2. Browse the list of interaction records
+3. Click on any interaction row to expand and view details
+
+### Filtering and Search
+
+Use the filter panel to narrow down results:
+
+| Filter | Description |
+|--------|-------------|
+| **Search** | Search by content, user ID, or request ID |
+| **User ID** | Filter by specific user |
+| **Source** | Filter by interaction source (e.g., API, manual) |
+| **Date Range** | Filter by time period |
+
+---
+
+## User Profiles Page
+
+The Profiles page shows extracted user profiles and allows you to manage them.
+
+![Profiles Page](../assets/screenshots/profiles-page.png)
+
+### Viewing Profiles
+
+1. Navigate to the **Profiles** page from the sidebar
+2. Browse the list of extracted profiles
+3. Click on a profile row to expand and view full details
+
+### Filtering Profiles
+
+| Filter | Description |
+|--------|-------------|
+| **Search** | Search by profile content or user ID |
+| **User ID** | View profiles for a specific user |
+| **Extractor** | Filter by extractor name |
+| **Status** | Filter by current, pending, or archived |
+
+### Profile Status Tabs
+
+Profiles are organized into three status categories:
+
+| Tab | Description |
+|-----|-------------|
+| **Current** | Active profiles in use |
+| **Pending** | New profiles awaiting review |
+| **Archived** | Previously used profiles |
+
+### Managing Profiles
+
+**Rerun Profile Extraction:**
+
+![Rerun Extraction Modal](../assets/screenshots/profiles-rerun-modal.png){: style="max-width: 50%;" }
+
+1. Click **Rerun Extraction** on the Current tab
+2. Select the extractor name
+3. Optionally set a date range
+4. Click **Rerun** to start extraction
+
+**Adopt Pending Profiles:**
+
+1. Switch to the **Pending** tab
+2. Review the pending profiles
+3. Click **Adopt All Pending Profiles** to promote them to current status
+
+**Restore Archived Profiles:**
+
+1. Switch to the **Archived** tab
+2. Click **Restore All Archived Profiles** to move them back to current
+
+---
+
+## Feedback Page
+
+The Feedback page allows you to view, manage, and analyze agent feedback data.
+
+![Feedback Page](../assets/screenshots/feedback-page.png)
+
+### Understanding Feedback Types
+
+Reflexio handles two types of feedback:
+
+| Type | Description |
+|------|-------------|
+| **Raw Feedback** | Individual feedback items extracted from interactions |
+| **Aggregated Feedback** | Consolidated insights from clustering raw feedbacks |
+
+### Viewing Feedbacks
+
+The page has four tabs:
+
+| Tab | Description |
+|-----|-------------|
+| **Aggregated** | View clustered feedback summaries |
+| **Current Raw** | View active raw feedback items |
+| **Pending Raw** | View newly generated raw feedbacks |
+| **Archived Raw** | View archived raw feedbacks |
+
+### Filtering Feedbacks
+
+| Filter | Description |
+|--------|-------------|
+| **Search** | Search by feedback content or metadata |
+| **Agent Version** | Filter by agent version |
+| **Feedback Type** | Filter by feedback name |
+| **Status** | Filter aggregated by approved/rejected/pending |
+
+### Managing Aggregated Feedback
+
+**Approve or Reject Feedback:**
+
+1. Expand an aggregated feedback item
+2. Click **Approve** or **Reject** to update its status
+3. Status updates are saved immediately
+
+**Run Feedback Aggregation:**
+
+1. Click **Run Aggregation** on the Aggregated tab
+2. Enter the **Agent Version** (required)
+3. Enter the **Feedback Name** (required)
+4. Click **Run Aggregation** to cluster raw feedbacks
+
+### Managing Raw Feedback
+
+**Rerun Feedback Generation:**
+
+![Rerun Feedback Modal](../assets/screenshots/feedback-rerun-modal.png){: style="max-width: 50%;" }
+
+1. Switch to the **Current Raw** tab
+2. Click **Rerun Generation**
+3. Enter the **Agent Version** (required)
+4. Optionally enter feedback name and date range
+5. Click **Rerun Feedback Generation**
+
+**Adopt Pending Raw Feedbacks:**
+
+1. Switch to the **Pending Raw** tab
+2. Click **Adopt Pending Raw Feedbacks**
+3. Confirm the action in the dialog
+
+This promotes pending feedbacks to current and archives existing current feedbacks.
+
+---
+
+## Evaluation Page
+
+The Evaluation page displays agent success evaluation results and performance metrics.
+
+![Evaluation Page](../assets/screenshots/evaluation-page.png)
+
+### Statistics Overview
+
+View key metrics at a glance:
+
+| Metric | Description |
+|--------|-------------|
+| **Total Evaluations** | Number of evaluations completed |
+| **Success Rate** | Percentage of successful evaluations |
+| **Regular vs Shadow** | Win rate comparing regular vs shadow responses |
+
+### Viewing Evaluation Details
+
+Click on a failed evaluation or one with comparison data to expand:
+
+**Failure Details Tab:**
+
+![Evaluation Failure Details](../assets/screenshots/evaluation-failure-details.png)
+
+**Shadow Comparison Tab:**
+
+![Evaluation Shadow Comparison](../assets/screenshots/evaluation-shadow-comparison.png)
+
+### Filtering Evaluations
+
+| Filter | Description |
+|--------|-------------|
+| **Search** | Search by request ID, version, or failure type |
+| **Agent Version** | Filter by specific version |
+| **Status** | Show only successes or failures |
+
+---
+
+## Settings Page
+
+The Settings page allows you to configure the Reflexio system.
+
+![Settings Page](../assets/screenshots/settings-page.png)
+
+### General Settings Tab
+
+**Storage Configuration:**
+
+Configure where Reflexio stores data:
+
+| Storage Type | Configuration |
+|--------------|---------------|
+| **Local** | Set directory path |
+| **AWS S3** | Set region, path, access key, secret key |
+| **Supabase** | Set URL, API key, database URL |
+
+**Agent Context:**
+
+Define your agent's working environment:
+
+1. Enter a description of the agent's purpose
+2. Describe available tools and capabilities
+3. Define the action space
+
+**Extraction Parameters:**
+
+| Parameter | Description |
+|-----------|-------------|
+| **Window Size** | Number of interactions per extraction window |
+| **Window Stride** | Number of interactions to skip between windows |
+
+### Extractor Settings Tab
+
+**Profile Extractors:**
+
+![Profile Extractor Config](../assets/screenshots/settings-profile-extractor.png)
+
+Configure how user profiles are extracted:
+
+1. Click **Add Profile Extractor**
+2. Enter an **Extractor Name** (e.g., `user_preferences`)
+3. Toggle **Auto/Manual** mode for trigger type
+4. Define the **Profile Content** prompt
+5. Optionally add context, metadata prompts, and source filters
+6. Click **Save Configuration**
+
+**Agent Feedback:**
+
+Configure feedback collection:
+
+1. Click **Add Agent Feedback**
+2. Enter a **Feedback Name** (e.g., `task_completion`)
+3. Define the **Feedback Definition** prompt
+4. Set **Min Feedback Threshold** for clustering
+5. Set **Refresh Count** for aggregation trigger
+6. Click **Save Configuration**
+
+**Agent Success Evaluations:**
+
+Define success criteria for evaluations:
+
+1. Click **Add Success Evaluation**
+2. Enter an **Evaluation Name**
+3. Define the **Success Definition** prompt
+4. Adjust the **Sampling Rate** (percentage of interactions to evaluate)
+5. Add available tools and actions
+6. Click **Save Configuration**
+
+### Workflow Visualization Tab
+
+![Workflow Visualization](../assets/screenshots/settings-workflow.png)
+
+View a visual diagram of your configuration:
+
+- See how requests flow through the system
+- Understand the relationship between extractors
+- Click on nodes for detailed information
+
+### Saving Configuration
+
+1. Make your changes in any tab
+2. Click **Save Configuration** in the header or footer
+3. Wait for the success confirmation message
+
+!!! warning "Important"
+    Always save your configuration after making changes. Unsaved changes will be lost if you navigate away.
+
+---
+
+## Quick Reference
+
+### Common Actions
+
+| Action | Where | Steps |
+|--------|-------|-------|
+| View interaction details | Interactions | Click on a row |
+| Filter by user | Any list page | Select user from dropdown |
+| Approve feedback | Feedbacks > Aggregated | Expand row, click Approve |
+| Rerun extraction | Profiles | Click Rerun Extraction |
+| Add extractor | Settings > Extractors | Click Add Profile Extractor |
+| View failure details | Evaluations | Click on failed evaluation |
+
+### Tips for Effective Use
+
+1. **Start with Dashboard** — Get an overview before diving into details
+2. **Use filters liberally** — Narrow results to find what you need quickly
+3. **Review pending items regularly** — Adopt pending profiles and feedbacks
+4. **Monitor evaluations** — Track success rates to identify improvement areas
+5. **Experiment in Settings** — Test different extractor configurations

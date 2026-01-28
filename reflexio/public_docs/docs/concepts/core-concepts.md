@@ -1,0 +1,335 @@
+# Core Concepts
+
+This page explains the fundamental concepts in Reflexio that power intelligent agent memory and personalization.
+
+## Interactions
+
+**Interactions are the primary inputs that users publish to Reflexio**, representing any form of user activity or communication with your system. Think of interactions as the raw material from which Reflexio builds its understanding of users and their behavior.
+
+### What Are Interactions?
+
+Interactions capture the complete context of user engagement, including:
+
+- **Conversational exchanges** between users and agents
+- **User actions** like clicks, scrolls, and form submissions
+- **Visual content** such as images users share or view
+- **Contextual information** about what users are doing when they interact
+
+### Types of Interactions
+
+#### Text-Based Interactions
+```python
+InteractionData(
+    role="User",
+    content="I'm looking for a laptop for software development",
+    user_action=UserActionType.NONE
+)
+```
+These capture conversational content, questions, comments, and any textual communication.
+
+#### Action-Based Interactions
+```python
+InteractionData(
+    user_action=UserActionType.CLICK,
+    user_action_description="clicked 'Add to Cart' for MacBook Pro",
+    content=""
+)
+```
+These track user behavior like button clicks, page navigation, form submissions, and other interface interactions.
+
+#### Visual Interactions
+```python
+InteractionData(
+    content="I love this design!",
+    image_encoding=base64_image_data,
+    interacted_image_url="https://example.com/design.jpg"
+)
+```
+These include images users share, screenshots they provide, or visual content they're viewing when they interact.
+
+### Interaction Metadata
+
+Every interaction includes rich metadata:
+
+- **Role**: Who is speaking (User, Agent, System, etc.)
+- **Source**: Where the interaction came from (chat, email, support ticket, etc.)
+- **Request ID**: For tracking related interactions and attribution
+- **Timestamps**: When the interaction occurred
+- **Agent Version**: Which version of your agent was involved
+
+### How Interactions Flow Through Reflexio
+
+1. **Input**: Your application publishes interactions to Reflexio
+2. **Processing**: Reflexio analyzes the interaction content and context
+3. **Profile Extraction**: Relevant user information is extracted and stored as profiles
+4. **Feedback Analysis**: Any agent feedback is identified and processed
+5. **Storage**: The interaction is stored with vector embeddings for semantic search
+
+---
+
+## User Profiles
+
+**Profiles are Reflexio's configurable memory system for each user**, automatically extracted from their interactions to enable personalization and long-term memory across sessions.
+
+### What Are User Profiles?
+
+User profiles are structured, semantic representations of what Reflexio has learned about each user. Unlike simple data storage, profiles are:
+
+- **Automatically extracted** from user interactions using AI
+- **Semantically searchable** using natural language queries
+- **Configurable** through custom extraction prompts
+- **Evolving** as new interactions provide updated information
+- **Source-aware** to track where information came from
+
+### Profile Extraction Process
+
+Reflexio uses configurable AI prompts to analyze interactions and extract relevant user information:
+
+```python
+ProfileExtractorConfig(
+    profile_content_definition_prompt="Extract user's preferences, interests, and personal information",
+    context_prompt="You are analyzing customer service conversations",
+    should_extract_profile_prompt_override="when the message contains user preferences or personal details"
+)
+```
+
+### Types of Information in Profiles
+
+Profiles can contain any user-relevant information, such as:
+
+#### Personal Information
+- Names, demographics, contact preferences
+- Communication style preferences
+- Accessibility needs or requirements
+
+#### Preferences and Interests
+- Product or service preferences
+- Feature usage patterns
+- Content consumption habits
+- Brand affinities
+
+#### Behavioral Patterns
+- Shopping behavior and price sensitivity
+- Learning styles and progress
+- Support interaction history
+- Engagement patterns
+
+#### Contextual Information
+- Current goals or projects
+- Life circumstances affecting needs
+- Seasonal or temporal preferences
+- Relationship to your product/service
+
+### Profile Lifecycle
+
+1. **Creation**: Profiles are automatically generated when interactions contain extractable user information
+2. **Evolution**: New interactions can update, refine, or replace existing profiles
+3. **Validation**: Conflicting information is resolved through AI analysis
+4. **Expiration**: Profiles can have TTL (time-to-live) settings for data freshness
+5. **Deletion**: Profiles can be removed for privacy or accuracy reasons
+
+### Profile Sources and Attribution
+
+Every profile tracks:
+- **Source**: Which interaction type generated it (chat, email, support, etc.)
+- **Request ID**: The specific interaction that created it
+- **Timestamp**: When it was created or last modified
+- **Custom Features**: Metadata for advanced filtering and organization
+
+### Using Profiles for Personalization
+
+Profiles enable powerful personalization capabilities:
+
+```python
+# Search for user preferences
+profiles = client.search_profiles(
+    user_id="user_123",
+    query="laptop preferences programming requirements",
+    threshold=0.7
+)
+
+# Use profile information to personalize responses
+for profile in profiles.user_profiles:
+    print(f"User preference: {profile.profile_content}")
+    # Apply this knowledge to customize agent responses
+```
+
+---
+
+## Agent Feedback System
+
+**The feedback system operates at the agent level**, capturing and analyzing how users respond to agent interactions to drive continuous improvement of agent performance.
+
+### What Is Agent Feedback?
+
+Agent feedback represents user responses that indicate satisfaction, dissatisfaction, or suggestions for improvement regarding agent behavior. Unlike user profiles (which are user-specific), feedback is **agent-level data** that helps improve agent performance across all users.
+
+### Raw Feedback Extraction
+
+Reflexio automatically identifies potential feedback in user interactions:
+
+```python
+AgentFeedbackConfig(
+    feedback_name="customer_service_feedback",
+    feedback_definition_prompt="""
+    Extract feedback about agent performance, including:
+    - Complaints about agent responses
+    - Suggestions for improvement
+    - Praise for helpful behavior
+    - Requests for different communication styles
+    """
+)
+```
+
+### Types of Agent Feedback
+
+#### Performance Feedback
+- Response quality and accuracy
+- Problem-solving effectiveness
+- Speed and efficiency of resolution
+
+#### Communication Feedback
+- Tone and communication style
+- Clarity and understandability
+- Professionalism and empathy
+
+#### Process Feedback
+- Workflow and procedure effectiveness
+- Tool usage and recommendations
+- System navigation and usability
+
+#### Behavioral Feedback
+- Personality and interaction style
+- Proactiveness and initiative
+- Adaptability to user needs
+
+### Raw Feedback Processing
+
+When users provide feedback about agent performance, Reflexio:
+
+1. **Identifies** feedback-containing interactions using AI analysis
+2. **Extracts** the specific feedback content and context
+3. **Categorizes** feedback by type and severity
+4. **Associates** feedback with specific agent versions
+5. **Stores** raw feedback for aggregation and analysis
+
+Example raw feedback extraction:
+```python
+# User says: "I prefer more concise answers from you"
+# Reflexio extracts: "Provide more concise answers"
+# Context: User prefers brevity in agent responses
+```
+
+### Feedback Aggregation
+
+Raw feedbacks are aggregated to provide actionable insights:
+
+```python
+FeedbackAggregatorConfig(
+    min_feedback_threshold=2  # Require multiple instances before aggregating
+)
+```
+
+#### Aggregation Process
+1. **Collection**: Multiple raw feedbacks are collected over time
+2. **Analysis**: AI identifies patterns and common themes
+3. **Synthesis**: Related feedbacks are combined into actionable insights
+4. **Prioritization**: Feedback is ranked by frequency and impact
+5. **Actionability**: Aggregated feedback provides specific improvement directions
+
+### Agent Version Tracking
+
+Feedback is tied to specific agent versions, enabling:
+
+- **Performance comparison** across agent iterations
+- **Regression detection** when new versions perform worse
+- **Improvement validation** by comparing feedback before and after changes
+- **Version-specific insights** for targeted improvements
+
+### Using Feedback for Agent Improvement
+
+```python
+# Get raw feedbacks for analysis
+raw_feedbacks = client.get_raw_feedbacks()
+for feedback in raw_feedbacks.raw_feedbacks:
+    print(f"Agent version {feedback.agent_version}: {feedback.feedback_content}")
+
+# Get aggregated insights
+aggregated_feedbacks = client.get_feedbacks()
+for feedback in aggregated_feedbacks.feedbacks:
+    print(f"Improvement opportunity: {feedback}")
+```
+
+### Feedback-Driven Development Cycle
+
+1. **Deploy** agent version with specific behaviors
+2. **Collect** user interactions and feedback
+3. **Analyze** aggregated feedback patterns
+4. **Identify** specific improvement areas
+5. **Implement** changes in next agent version
+6. **Validate** improvements through feedback comparison
+
+---
+
+## Integration: How Concepts Work Together
+
+### The Complete Flow
+
+1. **User interacts** with your agent → **Interaction** is published to Reflexio
+2. **Profile extraction** analyzes interaction → **User profiles** are created/updated
+3. **Feedback analysis** identifies agent feedback → **Raw feedback** is extracted
+4. **Personalization** uses profiles → Agent provides **personalized responses**
+5. **Improvement** uses aggregated feedback → Agent **evolves and improves**
+
+### Data Relationships
+
+- **Interactions** → Generate → **User Profiles** (user-specific memory)
+- **Interactions** → Generate → **Raw Feedback** (agent-specific insights)
+- **User Profiles** → Enable → **Personalization** (better user experience)
+- **Raw Feedback** → Aggregates to → **Agent Improvements** (better performance)
+
+### Example: E-commerce Scenario
+
+```python
+from reflexio_commons.api_schema.service_schemas import InteractionData
+
+# 1. User interaction
+client.publish_interaction(
+    user_id="customer_alice",
+    interactions=[
+        InteractionData(
+            role="User",
+            content="I need a laptop under $1000 for photo editing"
+        )
+    ],
+    source="product_inquiry",
+    request_group="shopping_flow"
+)
+
+# 2. Reflexio automatically:
+#    - Extracts user profile: "budget-conscious, photo editing needs"
+#    - No feedback detected in this interaction
+
+# 3. Later interaction with feedback
+client.publish_interaction(
+    user_id="customer_alice",
+    interactions=[
+        InteractionData(
+            role="User",
+            content="Your recommendation was too expensive. I said under $1000!"
+        )
+    ],
+    source="product_inquiry",
+    request_group="shopping_flow"
+)
+
+# 4. Reflexio extracts:
+#    - Updated user profile: "strict budget limit of $1000"
+#    - Raw feedback: "Agent recommended products above user's stated budget"
+
+# 5. Next interaction uses both:
+#    - Profile data ensures budget-appropriate recommendations
+#    - Feedback helps agent better respect user constraints
+```
+
+This three-tier system (Interactions → Profiles + Feedback → Personalization + Improvement) creates a continuously learning and adapting agent ecosystem that serves users better over time.

@@ -1,0 +1,231 @@
+"use client"
+
+import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
+import { useAuth } from "@/lib/auth-context"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { UserPlus, Loader2, AlertCircle, Mail, CheckCircle } from "lucide-react"
+import Link from "next/link"
+
+export default function RegisterPage() {
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
+  const [confirmPassword, setConfirmPassword] = useState("")
+  const [error, setError] = useState("")
+  const [isLoading, setIsLoading] = useState(false)
+  const [showVerificationNotice, setShowVerificationNotice] = useState(false)
+  const { register, isAuthenticated, isSelfHost } = useAuth()
+  const router = useRouter()
+
+  // Redirect if already authenticated or in self-host mode
+  useEffect(() => {
+    if (isSelfHost) {
+      router.push("/")
+    } else if (isAuthenticated) {
+      router.push("/")
+    }
+  }, [isAuthenticated, isSelfHost, router])
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError("")
+
+    // Validate passwords match
+    if (password !== confirmPassword) {
+      setError("Passwords do not match")
+      return
+    }
+
+    setIsLoading(true)
+
+    try {
+      const result = await register(email, password)
+      if (result.success) {
+        // Show verification notice instead of redirecting
+        setShowVerificationNotice(true)
+      } else {
+        setError(result.error || "Registration failed")
+      }
+    } catch (err) {
+      setError("An unexpected error occurred")
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  // Don't render anything if in self-host mode (will redirect)
+  if (isSelfHost) {
+    return null
+  }
+
+  // Show verification notice after successful registration
+  if (showVerificationNotice) {
+    return (
+      <div className="flex items-center justify-center min-h-screen p-4 bg-background">
+        <div className="w-full max-w-md">
+          <Card>
+            <CardHeader className="text-center">
+              <div className="mx-auto mb-4 h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center">
+                <Mail className="h-8 w-8 text-primary" />
+              </div>
+              <CardTitle className="text-2xl">Check Your Email</CardTitle>
+              <CardDescription>
+                We've sent a verification link to
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="text-center">
+              <p className="font-medium text-lg mb-4">{email}</p>
+              <div className="bg-muted/50 rounded-lg p-4 mb-6">
+                <div className="flex items-start gap-3 text-left">
+                  <CheckCircle className="h-5 w-5 text-primary flex-shrink-0 mt-0.5" />
+                  <div className="text-sm text-muted-foreground">
+                    <p className="mb-2">
+                      Please click the link in the email to verify your account.
+                    </p>
+                    <p>
+                      The link will expire in <span className="font-medium text-foreground">7 days</span>.
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <div className="space-y-3">
+                <Button asChild className="w-full">
+                  <Link href="/login">Go to Login</Link>
+                </Button>
+                <p className="text-sm text-muted-foreground">
+                  Didn't receive the email?{" "}
+                  <Link href="/resend-verification" className="text-primary hover:underline">
+                    Resend verification link
+                  </Link>
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex items-center justify-center min-h-screen p-4 bg-background">
+      <div className="w-full max-w-md">
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2 mb-2">
+              <UserPlus className="h-6 w-6 text-primary" />
+              <CardTitle className="text-2xl">Create Account</CardTitle>
+            </div>
+            <CardDescription>
+              Sign up to get started with Reflexio
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              {/* Error Alert */}
+              {error && (
+                <div className="bg-destructive/10 border border-destructive/20 rounded-md p-3 flex items-start gap-2">
+                  <AlertCircle className="h-5 w-5 text-destructive flex-shrink-0 mt-0.5" />
+                  <p className="text-sm text-destructive">{error}</p>
+                </div>
+              )}
+
+              {/* Email Field */}
+              <div className="space-y-2">
+                <label
+                  htmlFor="email"
+                  className="block text-sm font-medium"
+                >
+                  Email
+                </label>
+                <Input
+                  id="email"
+                  type="text"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  autoComplete="email"
+                  disabled={isLoading}
+                  placeholder="you@example.com"
+                />
+              </div>
+
+              {/* Password Field */}
+              <div className="space-y-2">
+                <label
+                  htmlFor="password"
+                  className="block text-sm font-medium"
+                >
+                  Password
+                </label>
+                <Input
+                  id="password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  autoComplete="new-password"
+                  disabled={isLoading}
+                  placeholder="••••••••"
+                />
+              </div>
+
+              {/* Confirm Password Field */}
+              <div className="space-y-2">
+                <label
+                  htmlFor="confirmPassword"
+                  className="block text-sm font-medium"
+                >
+                  Confirm Password
+                </label>
+                <Input
+                  id="confirmPassword"
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  required
+                  autoComplete="new-password"
+                  disabled={isLoading}
+                  placeholder="••••••••"
+                />
+              </div>
+
+              {/* Submit Button */}
+              <Button
+                type="submit"
+                disabled={isLoading}
+                className="w-full"
+              >
+                {isLoading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    Creating account...
+                  </>
+                ) : (
+                  <>
+                    <UserPlus className="h-4 w-4 mr-2" />
+                    Create Account
+                  </>
+                )}
+              </Button>
+            </form>
+
+            {/* Login Link */}
+            <div className="mt-6 text-center">
+              <p className="text-sm text-muted-foreground">
+                Already have an account?{" "}
+                <Link
+                  href="/login"
+                  className="font-medium text-primary hover:underline"
+                >
+                  Sign in
+                </Link>
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  )
+}

@@ -1,0 +1,227 @@
+"""
+Search user profiles and interactions
+"""
+
+from reflexio_commons.api_schema.retriever_schema import (
+    GetInteractionsRequest,
+    GetInteractionsResponse,
+    GetUserProfilesRequest,
+    GetUserProfilesResponse,
+    SearchUserProfileRequest,
+    SearchInteractionRequest,
+    SearchUserProfileResponse,
+    SearchInteractionResponse,
+    GetRequestsRequest,
+    GetRequestsResponse,
+    SearchRawFeedbackRequest,
+    SearchRawFeedbackResponse,
+    SearchFeedbackRequest,
+    SearchFeedbackResponse,
+)
+from reflexio_commons.api_schema.service_schemas import (
+    ProfileChangeLogResponse,
+)
+from reflexio.server.cache.reflexio_cache import get_reflexio
+
+
+# ==============================
+# Search profiles and interactions
+# ==============================
+
+
+def search_user_profiles(
+    org_id: str,
+    request: SearchUserProfileRequest,
+) -> SearchUserProfileResponse:
+    """Search user profiles and returns response by
+    - user_id
+    - generated_from_request_id
+    - query
+    - start_time
+    - end_time
+    - top_k
+
+    Args:
+        org_id (str): Organization ID
+        request (SearchUserProfileRequest): The search request
+
+    Returns:
+        SearchUserProfileResponse: Response containing matching user profiles
+    """
+    reflexio = get_reflexio(org_id=org_id)
+    result = reflexio.search_profiles(request)
+    return result
+
+
+def search_interactions(
+    org_id: str,
+    request: SearchInteractionRequest,
+) -> SearchInteractionResponse:
+    """Search interactions and returns response by
+    - user_id
+    - request_id
+    - query
+    - start_time
+    - end_time
+    - top_k
+
+    Args:
+        org_id (str): Organization ID
+        request (SearchInteractionRequest): The search request
+
+    Returns:
+        SearchInteractionResponse: Response containing matching interactions
+    """
+    reflexio = get_reflexio(org_id=org_id)
+    result = reflexio.search_interactions(request)
+    return result
+
+
+# ==============================
+# Get user profiles and interactions
+# ==============================
+
+
+def get_user_profiles(
+    org_id: str,
+    request: GetUserProfilesRequest,
+) -> GetUserProfilesResponse:
+    """Get user profiles and returns response by
+    - user_id
+    - start_time
+    - end_time
+    - top_k
+    - status_filter
+
+    Args:
+        org_id (str): Organization ID
+        request (GetUserProfilesRequest): The get request
+
+    Returns:
+        GetUserProfilesResponse: Response containing user profiles
+    """
+    reflexio = get_reflexio(org_id=org_id)
+    result = reflexio.get_profiles(request, status_filter=request.status_filter)
+    return result
+
+
+def get_user_interactions(
+    org_id: str,
+    request: GetInteractionsRequest,
+) -> GetInteractionsResponse:
+    """Get user interactions and returns response by
+    - user_id
+    - start_time
+    - end_time
+    - top_k
+
+    Args:
+        org_id (str): Organization ID
+        request (GetInteractionsRequest): The get request
+
+    Returns:
+        GetInteractionsResponse: Response containing user interactions
+    """
+    reflexio = get_reflexio(org_id=org_id)
+    result = reflexio.get_interactions(request)
+    return result
+
+
+def get_profile_change_logs(
+    org_id: str,
+) -> ProfileChangeLogResponse:
+    """Get profile change logs for an organization.
+
+    Args:
+        org_id (str): Organization ID to get change logs for
+
+    Returns:
+        ProfileChangeLogResponse: Response containing list of profile change logs
+    """
+    reflexio = get_reflexio(org_id=org_id)
+    result = reflexio.get_profile_change_logs()
+    return result
+
+
+def get_requests(
+    org_id: str,
+    request: GetRequestsRequest,
+) -> GetRequestsResponse:
+    """Get requests with their associated interactions, grouped by request_group.
+
+    Args:
+        org_id (str): Organization ID
+        request (GetRequestsRequest): The get request
+
+    Returns:
+        GetRequestsResponse: Response containing requests grouped by request_group with their interactions
+    """
+    reflexio = get_reflexio(org_id=org_id)
+    result = reflexio.get_requests(request)
+
+    # Filter out embedding fields from interactions
+    for request_group in result.request_groups:
+        for request_data in request_group.requests:
+            for interaction in request_data.interactions:
+                interaction.embedding = []
+
+    return result
+
+
+# ==============================
+# Search feedbacks and raw feedbacks
+# ==============================
+
+
+def search_raw_feedbacks(
+    org_id: str,
+    request: SearchRawFeedbackRequest,
+) -> SearchRawFeedbackResponse:
+    """Search raw feedbacks with advanced filtering.
+
+    Supports filtering by:
+    - query (semantic/text search)
+    - user_id (via request_id linkage to requests table)
+    - agent_version
+    - feedback_name
+    - start_time, end_time (datetime range on created_at)
+    - status_filter
+    - top_k, threshold
+
+    Args:
+        org_id (str): Organization ID
+        request (SearchRawFeedbackRequest): The search request
+
+    Returns:
+        SearchRawFeedbackResponse: Response containing matching raw feedbacks
+    """
+    reflexio = get_reflexio(org_id=org_id)
+    result = reflexio.search_raw_feedbacks(request)
+    return result
+
+
+def search_feedbacks(
+    org_id: str,
+    request: SearchFeedbackRequest,
+) -> SearchFeedbackResponse:
+    """Search aggregated feedbacks with advanced filtering.
+
+    Supports filtering by:
+    - query (semantic/text search)
+    - agent_version
+    - feedback_name
+    - start_time, end_time (datetime range on created_at)
+    - status_filter
+    - feedback_status_filter
+    - top_k, threshold
+
+    Args:
+        org_id (str): Organization ID
+        request (SearchFeedbackRequest): The search request
+
+    Returns:
+        SearchFeedbackResponse: Response containing matching feedbacks
+    """
+    reflexio = get_reflexio(org_id=org_id)
+    result = reflexio.search_feedbacks(request)
+    return result

@@ -1,0 +1,383 @@
+# User Profiles Examples
+
+This page demonstrates comprehensive patterns for working with user profiles in Reflexio, including profile search, management, configuration, and analytics.
+
+## Setup
+
+```python
+import reflexio
+
+# Initialize and authenticate (login automatically sets the API key)
+client = reflexio.ReflexioClient(url_endpoint="http://127.0.0.1:8081/")
+token = client.login("your_email@example.com", "your_password")
+# token.api_key contains your API key - save it for future use (it never expires)
+
+# Or initialize with a previously saved API key (more efficient - skips login)
+# client = reflexio.ReflexioClient(api_key=token.api_key, url_endpoint="http://127.0.0.1:8081/")
+```
+
+## Profile Configuration
+
+### Setting Up Profile Extraction
+
+```python
+# Configure how profiles are extracted from user interactions
+profile_extractor = {
+    "profile_content_definition_prompt": "Extract user's name, interests, preferences, and any personal information mentioned in the conversation",
+    "context_prompt": "You are analyzing customer service conversations to build user profiles",
+    "should_extract_profile_prompt_override": "when the message contains personal information, preferences, or user characteristics"
+}
+
+# Get current configuration
+config = client.get_config()
+config.profile_extractor_configs = [profile_extractor]
+
+# Update the configuration
+response = client.set_config(config)
+print(f"Profile extraction configured: {response['success']}")
+```
+
+### Domain-Specific Profile Configuration
+
+```python
+# E-commerce profile extraction
+ecommerce_extractor = {
+    "profile_content_definition_prompt": """
+    Extract customer information including:
+    - Product preferences and interests
+    - Budget range or price sensitivity
+    - Shopping behavior and patterns
+    - Brand preferences
+    - Purchase history mentions
+    - Delivery preferences
+    """,
+    "context_prompt": "Analyzing e-commerce customer interactions to understand shopping behavior and preferences",
+    "should_extract_profile_prompt_override": "when customer mentions products, prices, preferences, or shopping-related information"
+}
+
+# Educational platform profile extraction
+education_extractor = {
+    "profile_content_definition_prompt": """
+    Extract student information including:
+    - Learning goals and objectives
+    - Subject interests and strengths
+    - Learning style preferences
+    - Current skill level
+    - Progress and achievements
+    - Challenges and difficulties
+    """,
+    "context_prompt": "Analyzing student interactions to create personalized learning profiles",
+    "should_extract_profile_prompt_override": "when student mentions learning goals, difficulties, interests, or academic information"
+}
+
+# Healthcare profile extraction
+healthcare_extractor = {
+    "profile_content_definition_prompt": """
+    Extract patient information including:
+    - Symptoms and health concerns
+    - Medical history mentions
+    - Treatment preferences
+    - Lifestyle factors
+    - Communication preferences
+    - Health goals
+    """,
+    "context_prompt": "Analyzing patient interactions while maintaining strict privacy and medical confidentiality",
+    "should_extract_profile_prompt_override": "when patient mentions health-related information, symptoms, or medical concerns"
+}
+
+# Apply domain-specific configuration
+config = client.get_config()
+config.profile_extractor_configs = [ecommerce_extractor]  # Choose appropriate extractor
+client.set_config(config)
+```
+
+## Profile Search and Retrieval
+
+### Basic Profile Search
+
+```python
+# Search user profiles with semantic queries
+profiles = client.search_profiles(
+    user_id="customer_alice",
+    query="laptop preferences programming work",
+    threshold=0.7,
+    top_k=5
+)
+
+print(f"Found {len(profiles.user_profiles)} relevant profiles:")
+for profile in profiles.user_profiles:
+    print(f"Profile: {profile.profile_content}")
+    print(f"Source: {profile.source}")
+    print(f"Last modified: {profile.last_modified_timestamp}")
+    print(f"Generated from: {profile.generated_from_request_id}")
+    print("---")
+```
+
+### Advanced Search with Filtering
+
+```python
+# Search profiles from specific interaction sources
+chat_profiles = client.search_profiles(
+    user_id="customer_bob",
+    query="customer support issues",
+    source="support_chat",  # Only profiles from support interactions
+    threshold=0.6
+)
+
+# Search profiles with custom features
+premium_profiles = client.search_profiles(
+    user_id="customer_carol",
+    query="premium features usage",
+    custom_feature="subscription_tier",  # Filter by custom metadata
+    threshold=0.8
+)
+
+# High-precision search with strict threshold
+precise_profiles = client.search_profiles(
+    user_id="customer_dave",
+    query="specific product model MacBook Pro 16-inch",
+    threshold=0.9,  # Very high threshold for exact matches
+    top_k=3
+)
+```
+
+## Profile Lifecycle Management
+
+### Profile Updates and Evolution
+
+```python
+# Initial interaction creates profile
+initial_interaction = client.publish_interaction(
+    user_id="new_user_eve",
+    interactions=[
+        {"role": "User", "content": "Hi, I'm a beginner photographer looking to buy my first professional camera"}
+    ],
+    request_group="user_onboarding_001",
+    source="initial_consultation"
+)
+
+# Later interaction updates profile
+updated_interaction = client.publish_interaction(
+    user_id="new_user_eve",
+    interactions=[
+        {"role": "User", "content": "I've been taking landscape photography classes and now I'm specifically interested in wide-angle lenses"}
+    ],
+    request_group="user_followup_001",
+    source="follow_up_consultation"
+)
+
+# Search for evolution in user interests
+evolution_profiles = client.search_profiles(
+    user_id="new_user_eve",
+    query="photography interests camera landscape",
+    threshold=0.6
+)
+
+print("User interest evolution:")
+for profile in evolution_profiles.user_profiles:
+    print(f"Generated from: {profile.generated_from_request_id}")
+    print(f"Content: {profile.profile_content}")
+    print("---")
+```
+
+### Profile Change Tracking
+
+```python
+# Monitor how profiles change over time
+change_log = client.get_profile_change_log()
+
+# Filter changes for specific user
+user_changes = [
+    log for log in change_log.profile_change_logs
+    if log.user_id == "customer_alice"
+]
+
+print(f"Profile changes for customer_alice: {len(user_changes)} changes")
+
+for change in user_changes[-5:]:  # Last 5 changes
+    print(f"\nChange at {change.created_at} (Request: {change.request_id}):")
+
+    if change.added_profiles:
+        print("  Added profiles:")
+        for profile in change.added_profiles:
+            print(f"    + {profile.profile_content}")
+
+    if change.removed_profiles:
+        print("  Removed profiles:")
+        for profile in change.removed_profiles:
+            print(f"    - {profile.profile_content}")
+
+    if change.mentioned_profiles:
+        print("  Referenced profiles:")
+        for profile in change.mentioned_profiles:
+            print(f"    ~ {profile.profile_content}")
+```
+
+### Profile Cleanup and Management
+
+```python
+# Delete outdated or irrelevant profiles
+outdated_cleanup = client.delete_profile(
+    user_id="customer_frank",
+    search_query="outdated information deprecated preferences",
+    wait_for_response=True
+)
+
+print(f"Cleanup result: {outdated_cleanup.success} - {outdated_cleanup.message}")
+
+# Delete specific profile by ID
+specific_deletion = client.delete_profile(
+    user_id="customer_frank",
+    profile_id="specific_profile_uuid_here",
+    wait_for_response=True
+)
+
+# Bulk cleanup by criteria
+privacy_cleanup = client.delete_profile(
+    user_id="customer_george",
+    search_query="personal sensitive information contact details",
+    wait_for_response=True
+)
+```
+
+## Profile Analytics and Insights
+
+### Profile Content Analysis
+
+```python
+# Get all profiles for comprehensive analysis
+all_user_profiles = client.get_profiles(
+    user_id="customer_alice",
+    top_k=50
+)
+
+# Analyze profile themes and patterns
+profile_themes = {}
+source_distribution = {}
+content_length_stats = []
+
+for profile in all_user_profiles.user_profiles:
+    # Track content length
+    content_length_stats.append(len(profile.profile_content))
+
+    # Track source distribution
+    source = profile.source or "unknown"
+    source_distribution[source] = source_distribution.get(source, 0) + 1
+
+    # Simple keyword extraction (in production, use proper NLP)
+    keywords = profile.profile_content.lower().split()
+    for keyword in keywords:
+        if len(keyword) > 3:  # Filter short words
+            profile_themes[keyword] = profile_themes.get(keyword, 0) + 1
+
+# Display analytics
+print("Profile Analytics:")
+print(f"Total profiles: {len(all_user_profiles.user_profiles)}")
+print(f"Average content length: {sum(content_length_stats) / len(content_length_stats):.1f} characters")
+print(f"Source distribution: {source_distribution}")
+print(f"Top themes: {sorted(profile_themes.items(), key=lambda x: x[1], reverse=True)[:10]}")
+```
+
+### Temporal Profile Analysis
+
+```python
+from datetime import datetime, timedelta
+
+# Analyze profile creation patterns
+recent_profiles = []
+older_profiles = []
+cutoff_time = int((datetime.now() - timedelta(days=30)).timestamp())
+
+for profile in all_user_profiles.user_profiles:
+    if profile.last_modified_timestamp > cutoff_time:
+        recent_profiles.append(profile)
+    else:
+        older_profiles.append(profile)
+
+print(f"Recent profiles (last 30 days): {len(recent_profiles)}")
+print(f"Older profiles: {len(older_profiles)}")
+
+# Analyze content evolution
+print("\nRecent profile themes:")
+for profile in recent_profiles[:5]:
+    print(f"  - {profile.profile_content[:80]}...")
+
+print("\nOlder profile themes:")
+for profile in older_profiles[:5]:
+    print(f"  - {profile.profile_content[:80]}...")
+```
+
+### Cross-Source Profile Correlation
+
+```python
+# Analyze how profiles from different sources relate
+source_profiles = {}
+
+for profile in all_user_profiles.user_profiles:
+    source = profile.source or "unknown"
+    if source not in source_profiles:
+        source_profiles[source] = []
+    source_profiles[source].append(profile)
+
+print("Profile correlation across sources:")
+for source, profiles in source_profiles.items():
+    print(f"\n{source}: {len(profiles)} profiles")
+
+    # Sample content from this source
+    sample_content = " ".join([p.profile_content for p in profiles[:3]])
+    print(f"  Sample content: {sample_content[:150]}...")
+
+    # Search for related profiles in other sources
+    for other_source, other_profiles in source_profiles.items():
+        if other_source != source and len(other_profiles) > 0:
+            # Use first profile content as query
+            query_content = profiles[0].profile_content
+
+            related_search = client.search_profiles(
+                user_id="customer_alice",
+                query=query_content,
+                source=other_source,
+                threshold=0.7,
+                top_k=2
+            )
+
+            if related_search.user_profiles:
+                print(f"  Related in {other_source}: {len(related_search.user_profiles)} profiles")
+```
+
+## Personalization Use Cases
+
+### Content Recommendation Based on Profiles
+
+```python
+# Use profiles to generate personalized recommendations
+user_profiles = client.search_profiles(
+    user_id="customer_alice",
+    query="interests preferences hobbies",
+    threshold=0.6
+)
+
+# Extract interests for recommendation engine
+user_interests = []
+for profile in user_profiles.user_profiles:
+    # Simple extraction - in production, use proper NLP
+    if "interested in" in profile.profile_content.lower():
+        interests = profile.profile_content.lower().split("interested in")[1].split(".")[0]
+        user_interests.append(interests.strip())
+    if "likes" in profile.profile_content.lower():
+        likes = profile.profile_content.lower().split("likes")[1].split(".")[0]
+        user_interests.append(likes.strip())
+
+print(f"Extracted interests for recommendations: {user_interests}")
+
+# Use interests to search for similar users or content
+for interest in user_interests[:3]:  # Top 3 interests
+    similar_profiles = client.search_profiles(
+        user_id="customer_alice",  # Could search across all users
+        query=interest,
+        threshold=0.8
+    )
+    print(f"Users with similar interest '{interest}': {len(similar_profiles.user_profiles)}")
+```
+
+This comprehensive guide covers all major patterns for working with user profiles in Reflexio. Use these examples to implement sophisticated profile management and personalization in your applications.

@@ -1,0 +1,13 @@
+{
+  "prompt_id": "feedback_deduplication",
+  "active_version": "1.0.0",
+  "created_at": 1736300000,
+  "last_updated": 1736300000,
+  "description": "Identifies and merges duplicate feedbacks from multiple extractors",
+  "versions": {
+    "1.0.0": {
+      "created_at": 1736300000,
+      "variables": ["feedbacks", "feedback_count"]
+    }
+  }
+}

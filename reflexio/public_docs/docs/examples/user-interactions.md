@@ -1,0 +1,374 @@
+# User Interactions Examples
+
+Comprehensive patterns for working with user interactions in Reflexio.
+
+## Setup
+
+```python
+import reflexio
+import base64
+
+# Initialize and authenticate (login automatically sets the API key)
+client = reflexio.ReflexioClient(url_endpoint="http://127.0.0.1:8081/")
+token = client.login("your_email@example.com", "your_password")
+# token.api_key contains your API key - save it for future use (it never expires)
+
+# Or initialize with a previously saved API key (more efficient - skips login)
+# client = reflexio.ReflexioClient(api_key=token.api_key, url_endpoint="http://127.0.0.1:8081/")
+```
+
+## Text-Based Interactions
+
+### Simple Conversations
+
+```python
+# Publishing a customer service conversation
+# Each request contains a user message followed by agent response (one turn)
+# Use the same request_group for all turns in a conversation thread
+
+request_group = "support_session_001"
+
+# Turn 1: User asks, agent responds
+client.publish_interaction(
+    user_id="customer_001",
+    interactions=[
+        {"role": "User", "content": "Hi, I'm having trouble with my account login"},
+        {"role": "Agent", "content": "I'm sorry to hear that. Can you tell me what error message you're seeing?"}
+    ],
+    request_group=request_group,
+    source="support_chat"
+)
+
+# Turn 2: User follows up, agent responds (same request_group)
+client.publish_interaction(
+    user_id="customer_001",
+    interactions=[
+        {"role": "User", "content": "It says 'Invalid credentials' but I'm sure my password is correct"},
+        {"role": "Agent", "content": "Let me help you reset your password. I'll send you a reset link via email."}
+    ],
+    request_group=request_group,
+    source="support_chat"
+)
+
+# Turn 3: User confirms resolution (same request_group)
+client.publish_interaction(
+    user_id="customer_001",
+    interactions=[
+        {"role": "User", "content": "Thank you! That worked perfectly."},
+        {"role": "Agent", "content": "You're welcome! Is there anything else I can help you with?"}
+    ],
+    request_group=request_group,
+    source="support_chat"
+)
+```
+
+## Visual and Multi-Modal Interactions
+
+### Image-Based Interactions
+
+```python
+# Function to encode images for Reflexio
+def encode_image(image_path: str) -> str:
+    """Encode image to base64 string."""
+    with open(image_path, "rb") as image_file:
+        return base64.b64encode(image_file.read()).decode("utf-8")
+
+# Example 1: Product review with image
+product_image = encode_image("./product_photos/smartphone.jpg")
+
+client.publish_interaction(
+    user_id="reviewer_bob",
+    interactions=[
+        {
+            "content": "This phone has an amazing camera quality! Look at this photo I took:",
+            "image_encoding": product_image,
+            "user_action": "NONE"
+        }
+    ],
+    request_group="review_001",
+    source="product_review"
+)
+
+# Example 2: Fashion styling consultation
+outfit_image = encode_image("./fashion/outfit_1.jpg")
+
+client.publish_interaction(
+    user_id="fashion_client",
+    interactions=[
+        {
+            "role": "Client",
+            "content": "What do you think about this outfit for a business meeting?",
+            "image_encoding": outfit_image
+        }
+    ],
+    request_group="styling_001",
+    source="styling_consultation"
+)
+```
+
+### Screenshots and UI Feedback
+
+```python
+# Publishing UI/UX feedback with screenshots
+ui_screenshot = encode_image("./screenshots/app_interface.png")
+
+client.publish_interaction(
+    user_id="beta_tester",
+    interactions=[
+        {
+            "content": "The new dashboard layout is confusing. The navigation menu is hard to find.",
+            "image_encoding": ui_screenshot,
+            "user_action": "NONE"
+        }
+    ],
+    request_group="ui_feedback_001",
+    source="ui_testing"
+)
+
+# Publishing bug report with screenshot
+bug_screenshot = encode_image("./bugs/error_screen.png")
+
+client.publish_interaction(
+    user_id="qa_tester",
+    interactions=[
+        {
+            "content": "Application crashes when clicking the export button. Error details in screenshot.",
+            "image_encoding": bug_screenshot,
+            "user_action": "CLICK",
+            "user_action_description": "clicked export button in reports section"
+        }
+    ],
+    request_group="bug_report_001",
+    source="bug_reports"
+)
+```
+## User Action Tracking
+
+### E-commerce Actions
+
+```python
+# Tracking user shopping behavior
+shopping_actions = [
+    {
+        "user_action": "CLICK",
+        "user_action_description": "clicked on 'Laptops' category",
+        "interacted_image_url": "https://store.example.com/categories/laptops"
+    },
+    {
+        "user_action": "SCROLL",
+        "user_action_description": "scrolled through laptop listings page"
+    },
+    {
+        "user_action": "CLICK",
+        "user_action_description": "clicked on MacBook Pro 16-inch product page",
+        "interacted_image_url": "https://store.example.com/products/macbook-pro-16"
+    },
+    {
+        "content": "This laptop looks perfect for my video editing work",
+        "user_action": "NONE"
+    },
+    {
+        "user_action": "CLICK",
+        "user_action_description": "added MacBook Pro 16-inch to cart",
+        "content": "Added to cart"
+    }
+]
+
+client.publish_interaction(
+    user_id="shopper_dave",
+    interactions=shopping_actions,
+    request_group="shopping_session_001",
+    source="ecommerce"
+)
+```
+
+## Searching and Analyzing Interactions
+
+### Semantic Search Across Interactions
+
+```python
+# Search for specific topics across all user interactions
+search_results = client.search_interactions(
+    user_id="customer_001",
+    query="password reset login issues"
+)
+
+print(f"Found {len(search_results.interactions)} relevant interactions:")
+for interaction in search_results.interactions:
+    print(f"[{interaction.role}]: {interaction.content}")
+    print(f"  Source: {interaction.request_id}")
+    print(f"  Action: {interaction.user_action}")
+    print("---")
+```
+
+### Analyzing User Behavior Patterns
+
+```python
+# Get all interactions for behavior analysis
+all_interactions = client.get_interactions(
+    user_id="shopper_dave",
+    top_k=100
+)
+
+# Analyze interaction patterns
+interaction_sources = {}
+action_types = {}
+content_themes = []
+
+for interaction in all_interactions.interactions:
+    # Count by source
+    source = interaction.request_id.split('_')[0]  # Extract source prefix
+    interaction_sources[source] = interaction_sources.get(source, 0) + 1
+
+    # Count by action type
+    action = interaction.user_action.value
+    action_types[action] = action_types.get(action, 0) + 1
+
+    # Collect content for theme analysis
+    if interaction.content:
+        content_themes.append(interaction.content)
+
+print("Interaction Sources:", interaction_sources)
+print("Action Types:", action_types)
+print(f"Total content items: {len(content_themes)}")
+```
+
+### Time-Based Interaction Analysis
+
+```python
+from datetime import datetime, timedelta
+
+# Search for recent interactions (last 7 days)
+week_ago = int((datetime.now() - timedelta(days=7)).timestamp())
+now = int(datetime.now().timestamp())
+
+recent_interactions = client.search_interactions(
+    user_id="student_eve",
+    query="learning progress course completion"
+    # Note: Add time filtering if supported by your API version
+)
+
+# Group interactions by day
+daily_activity = {}
+for interaction in recent_interactions.interactions:
+    day = datetime.fromtimestamp(interaction.created_at).date()
+    if day not in daily_activity:
+        daily_activity[day] = []
+    daily_activity[day].append(interaction)
+
+print("Daily Learning Activity:")
+for day, interactions in sorted(daily_activity.items()):
+    print(f"{day}: {len(interactions)} interactions")
+    for interaction in interactions[:3]:  # Show first 3
+        print(f"  - {interaction.content[:50]}...")
+```
+
+## Advanced Interaction Patterns
+
+### Conversation Threading
+
+```python
+# Publishing a threaded conversation with context
+conversation_thread = "product_inquiry_001"
+
+# Initial inquiry
+client.publish_interaction(
+    user_id="prospect_client",
+    interactions=[
+        {"role": "User", "content": "I'm interested in your enterprise software solution. Can you tell me about pricing?"}
+    ],
+    request_group=f"{conversation_thread}_msg_001",
+    source="sales_inquiry"
+)
+
+# Follow-up with more details
+client.publish_interaction(
+    user_id="prospect_client",
+    interactions=[
+        {"role": "Sales_Rep", "content": "I'd be happy to help! Our enterprise solution starts at $50/user/month. How many users would you need?"},
+        {"role": "User", "content": "We have about 150 employees. Do you offer volume discounts?"}
+    ],
+    request_group=f"{conversation_thread}_msg_002",
+    source="sales_inquiry"
+)
+
+# Final negotiation
+client.publish_interaction(
+    user_id="prospect_client",
+    interactions=[
+        {"role": "Sales_Rep", "content": "For 150 users, we can offer a 20% discount, bringing it to $40/user/month. Would you like to schedule a demo?"},
+        {"role": "User", "content": "That sounds reasonable. Yes, let's schedule a demo for next week."}
+    ],
+    request_group=f"{conversation_thread}_msg_003",
+    source="sales_inquiry"
+)
+```
+
+### Interaction Context Enrichment
+
+```python
+# Publishing interactions with rich context
+contextual_interaction = {
+    "role": "User",
+    "content": "I really like this design approach",
+    "user_action": "CLICK",
+    "user_action_description": "clicked like button on design portfolio item #5",
+    "interacted_image_url": "https://portfolio.example.com/designs/modern-website-layout"
+}
+
+# Add metadata through interaction source and request group structure
+client.publish_interaction(
+    user_id="design_client_georgia",
+    interactions=[contextual_interaction],
+    request_group="portfolio_review_2024_jan_15_item_5",
+    source="portfolio_review",
+    agent_version="portfolio_system_v2.1"
+)
+```
+
+### Bulk Interaction Processing
+
+```python
+def bulk_publish_interactions(client, interaction_batches):
+    """Efficiently publish multiple interaction batches using fire-and-forget."""
+    for i, batch in enumerate(interaction_batches):
+        try:
+            # Fire-and-forget (default)
+            client.publish_interaction(**batch)
+            print(f"Batch {i} queued successfully")
+        except Exception as e:
+            print(f"Batch {i} failed: {e}")
+
+# Example usage
+interaction_batches = [
+    {
+        "user_id": "user_1",
+        "interactions": [{"content": "Message 1"}],
+        "request_group": "batch_001",
+        "source": "batch_test"
+    },
+    {
+        "user_id": "user_2",
+        "interactions": [{"content": "Message 2"}],
+        "request_group": "batch_002",
+        "source": "batch_test"
+    },
+    # Add more batches...
+]
+
+bulk_publish_interactions(client, interaction_batches)
+
+# If you need confirmations, use wait_for_response=True
+def bulk_publish_with_confirmation(client, interaction_batches):
+    """Publish batches and wait for confirmation."""
+    results = []
+    for i, batch in enumerate(interaction_batches):
+        try:
+            response = client.publish_interaction(**batch, wait_for_response=True)
+            results.append(response)
+            print(f"Batch {i}: {response.success}")
+        except Exception as e:
+            print(f"Batch {i} failed: {e}")
+            results.append(None)
+    return results
+```

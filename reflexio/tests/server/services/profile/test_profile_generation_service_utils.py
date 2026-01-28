@@ -1,0 +1,158 @@
+"""Tests for profile generation service utility functions."""
+
+import pytest
+from datetime import datetime, timezone
+
+from reflexio_commons.api_schema.service_schemas import (
+    Interaction,
+    UserProfile,
+    Request,
+)
+from reflexio_commons.api_schema.internal_schema import RequestInteractionDataModel
+from reflexio.server.prompt.prompt_manager import PromptManager
+from reflexio.server.services.profile.profile_generation_service_utils import (
+    construct_profile_extraction_messages_from_request_groups,
+)
+
+
+def test_construct_profile_extraction_messages_with_request_groups():
+    """Test that construct_profile_extraction_messages_from_request_groups formats interactions correctly in the rendered prompt."""
+    # Create test interactions with both content and actions
+    timestamp = int(datetime.now(timezone.utc).timestamp())
+    interactions = [
+        Interaction(
+            interaction_id=1,
+            user_id="user_123",
+            request_id="req_1",
+            content="I love Italian food",
+            role="user",
+            created_at=timestamp,
+            user_action="none",
+            user_action_description="",
+        ),
+        Interaction(
+            interaction_id=2,
+            user_id="user_123",
+            request_id="req_1",
+            content="I also enjoy sushi",
+            role="user",
+            created_at=timestamp,
+            user_action="click",
+            user_action_description="restaurant menu",
+        ),
+    ]
+
+    # Create request interaction group
+    request = Request(
+        request_id="req_1",
+        user_id="user_123",
+        created_at=timestamp,
+    )
+    request_groups = [
+        RequestInteractionDataModel(
+            request_group="session_1",
+            request=request,
+            interactions=interactions,
+        )
+    ]
+
+    # Create existing profiles
+    existing_profiles = [
+        UserProfile(
+            profile_id="profile_1",
+            user_id="user_123",
+            profile_content="likes Mexican food",
+            last_modified_timestamp=timestamp,
+            generated_from_request_id="req_0",
+        )
+    ]
+
+    # Create prompt manager
+    prompt_manager = PromptManager()
+
+    # Call the function
+    messages = construct_profile_extraction_messages_from_request_groups(
+        prompt_manager=prompt_manager,
+        request_interaction_data_models=request_groups,
+        existing_profiles=existing_profiles,
+        agent_context_prompt="Test agent context",
+        context_prompt="Test context",
+        profile_content_definition_prompt="food preferences",
+        metadata_definition_prompt="cuisine type",
+    )
+
+    # Validate that messages were created
+    assert len(messages) > 0, "No messages were created"
+
+    # Find the user message that contains the interactions
+    found_interactions = False
+    for message in messages:
+        # Messages are dicts with 'role' and 'content' keys
+        if isinstance(message, dict) and "content" in message:
+            # Content can be a string or a list of content blocks
+            content = message.get("content", "")
+            if isinstance(content, list):
+                # Extract text from content blocks
+                extracted_text = ""
+                for item in content:
+                    if isinstance(item, dict) and item.get("type") == "text":
+                        extracted_text += item.get("text", "")
+                content = extracted_text
+            else:
+                content = str(content)
+
+            # Check if this message contains the interaction section
+            if (
+                "[Interaction start]" in content
+                or "User and agent interactions:" in content
+                or "=== Request Group:" in content
+                or "user: ```I love Italian food```"
+                in content  # Check directly for content
+            ):
+                # Validate the interactions are formatted correctly in the rendered prompt
+                assert (
+                    "user: ```I love Italian food```" in content
+                ), f"Expected 'user: ```I love Italian food```' in prompt"
+                assert (
+                    "user: ```I also enjoy sushi```" in content
+                ), f"Expected 'user: ```I also enjoy sushi```' in prompt"
+                assert (
+                    "user: ```click restaurant menu```" in content
+                ), f"Expected 'user: ```click restaurant menu```' in prompt"
+
+                # Also verify existing profiles are in the prompt
+                assert (
+                    "likes Mexican food" in content
+                ), f"Expected existing profile in prompt"
+
+                found_interactions = True
+                break
+
+    assert found_interactions, "Did not find interactions in the rendered prompt"
+
+
+def test_construct_profile_extraction_messages_with_empty_request_groups():
+    """Test that construct_profile_extraction_messages_from_request_groups handles empty request groups."""
+    # Empty request groups list
+    request_groups = []
+
+    # Create prompt manager
+    prompt_manager = PromptManager()
+
+    # Call the function
+    messages = construct_profile_extraction_messages_from_request_groups(
+        prompt_manager=prompt_manager,
+        request_interaction_data_models=request_groups,
+        existing_profiles=[],
+        agent_context_prompt="Test agent context",
+        context_prompt="Test context",
+        profile_content_definition_prompt="food preferences",
+        metadata_definition_prompt="cuisine type",
+    )
+
+    # Should still create messages (system message + user message with prompt)
+    assert len(messages) > 0, "No messages were created for empty request groups"
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

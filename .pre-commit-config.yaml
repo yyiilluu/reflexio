@@ -1,0 +1,68 @@
+# See https://pre-commit.com for more information
+# See https://pre-commit.com/hooks.html for more hooks
+repos:
+  -   repo: https://github.com/pre-commit/pre-commit-hooks
+      rev: v4.4.0
+      hooks:
+        -   id: trailing-whitespace
+        -   id: end-of-file-fixer
+        # -   id: check-yaml
+        -   id: check-added-large-files
+            args:
+              - --maxkb=1300
+  -   repo: https://github.com/asottile/pyupgrade
+      rev: v3.3.1
+      hooks:
+        -   id: pyupgrade
+            args:
+              - --py39-plus
+              - --keep-runtime-typing
+  -   repo: https://github.com/myint/autoflake
+      rev: v2.0.1
+      hooks:
+        -   id: autoflake
+            args:
+              - --recursive
+              - --in-place
+              - --remove-all-unused-imports
+              - --remove-unused-variables
+              - --expand-star-imports
+              - --exclude
+              - app/scripts/utility/shell.py
+              - --remove-duplicate-keys
+#  -   repo: https://github.com/pycqa/isort
+#      rev: 5.12.0
+#      hooks:
+#        -   id: isort
+#            name: isort (python)
+#        -   id: isort
+#            name: isort (cython)
+#            types: [cython]
+#        -   id: isort
+#            name: isort (pyi)
+#            types: [pyi]
+  -   repo: https://github.com/psf/black
+      rev: 23.1.0
+      hooks:
+        -   id: black
+            require_serial: true
+
+  # Add custom local hooks
+  -   repo: local
+      hooks:
+        # -   id: check-api-keys
+        #     name: Check for API Keys
+        #     entry: python reflexio/hooks/check_api_hooks.py
+        #     language: python
+        #     types: [python]
+        #     additional_dependencies: []
+        #     require_serial: true
+        -   id: pytest-check
+            name: Run unit tests
+            entry: env PRECOMMIT=1 pytest -n auto --dist loadfile
+            language: system
+            types: [python]
+            args: [reflexio/tests/]
+            pass_filenames: false
+            always_run: true
+            require_serial: true

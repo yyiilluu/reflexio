@@ -1,0 +1,417 @@
+# Understanding Interactions
+
+Interactions are the foundation of Reflexio - they represent every piece of user activity and communication that your system captures. This page provides a deep dive into how interactions work and how to use them effectively.
+
+## What Are Interactions?
+
+**Interactions are the primary inputs that users publish to Reflexio.** They serve as the raw material from which Reflexio builds its understanding of users, their preferences, and their feedback about agent performance.
+
+Think of interactions as a comprehensive record of user engagement that goes beyond simple chat messages to include:
+
+- Conversational exchanges between users and agents
+- User interface actions like clicks, scrolls, and form submissions
+- Visual content sharing including images, screenshots, and media
+- Contextual information about user goals and circumstances
+
+## Anatomy of an Interaction
+
+Every interaction in Reflexio contains several key components:
+
+### Core Content
+
+```python
+InteractionData(
+    role="User",  # Who is communicating
+    content="I'm looking for a gaming laptop under $2000",  # What they said
+    shadow_content="",  # Alternative response for A/B testing (optional)
+    user_action=UserActionType.NONE,  # What they did
+    user_action_description="",  # More detail about the action
+    interacted_image_url="",  # Associated visual content
+    image_encoding=""  # Base64 encoded image data
+)
+```
+
+### Metadata and Context
+
+When published, interactions also include:
+
+- **Request ID**: Links related interactions together
+- **User ID**: Associates the interaction with a specific user
+- **Source**: Categorizes where the interaction came from
+- **Agent Version**: Tracks which version of your agent was involved
+- **Timestamp**: When the interaction occurred
+
+## Types of Interactions
+
+### 1. Conversational Interactions
+
+These capture dialogue between users and agents, forming the backbone of most AI applications.
+
+```python
+# Customer service conversation
+conversation = [
+    InteractionData(
+        role="User",
+        content="My order hasn't arrived yet. It was supposed to be here yesterday."
+    ),
+    InteractionData(
+        role="Agent",
+        content="I'm sorry to hear about the delay. Let me look up your order status. Can you provide your order number?"
+    ),
+    InteractionData(
+        role="User",
+        content="It's order #12345. I paid for expedited shipping."
+    )
+]
+```
+
+**Key Characteristics:**
+- Rich contextual information about user needs and problems
+- Agent response patterns and effectiveness
+- Emotional tone and satisfaction indicators
+- Problem resolution workflows
+
+### 2. Action-Based Interactions
+
+These track user behavior and interface interactions, providing insights into user preferences and workflows.
+
+```python
+# E-commerce user journey
+shopping_actions = [
+    InteractionData(
+        user_action=UserActionType.CLICK,
+        user_action_description="clicked 'Gaming Laptops' category",
+        interacted_image_url="https://store.example.com/gaming-laptops"
+    ),
+    InteractionData(
+        user_action=UserActionType.SCROLL,
+        user_action_description="scrolled through product listing page"
+    ),
+    InteractionData(
+        user_action=UserActionType.CLICK,
+        user_action_description="clicked on ASUS ROG Strix product page",
+        content="Interested in this model for streaming"
+    )
+]
+```
+
+**Key Characteristics:**
+- Behavioral patterns and preferences
+- User interface effectiveness
+- Feature usage and adoption
+- Navigation and workflow insights
+
+### 3. Visual Interactions
+
+These include images, screenshots, and other visual content that users share or interact with.
+
+```python
+# Design feedback with image
+import base64
+
+def encode_image(image_path):
+    with open(image_path, "rb") as image_file:
+        return base64.b64encode(image_file.read()).decode("utf-8")
+
+visual_feedback = InteractionData(
+    content="The color scheme in this mockup doesn't feel quite right",
+    image_encoding=encode_image("./design_mockup.png"),
+    user_action=UserActionType.NONE
+)
+```
+
+**Key Characteristics:**
+- Visual preferences and feedback
+- Design and aesthetic choices
+- Product or content reactions
+- Contextual visual information
+
+### 4. Shadow Content for A/B Testing
+
+The `shadow_content` field allows you to capture an alternative agent response alongside the production response. This enables A/B testing and comparison of different agent behaviors without affecting the user experience.
+
+```python
+# Testing a new personalized response approach
+shadow_test_interaction = [
+    InteractionData(
+        role="User",
+        content="I need to return this item"
+    ),
+    InteractionData(
+        role="Agent",
+        # Production response - standard flow
+        content="I can help with that. Please provide your order number.",
+        # Shadow response - personalized with user profile data
+        shadow_content="I can help with that. I see your recent order #12345 for the wireless headphones. Would you like to return that item?"
+    )
+]
+```
+
+**When to use shadow_content:**
+- **Version comparison**: Test how a new agent version responds compared to production
+- **Profile effectiveness**: Evaluate how using user profiles affects response quality
+- **Feedback testing**: Compare responses with and without specific agent feedback applied
+
+**Key Characteristics:**
+- `content` stores the actual production response shown to users
+- `shadow_content` captures an alternative response for evaluation
+- Profile extraction and evaluation use `shadow_content` when provided
+- Compare evaluation results to make data-driven decisions about agent improvements
+
+## Interaction Sources and Categorization
+
+The `source` parameter helps organize interactions by their origin, enabling targeted analysis and profile extraction.
+
+### Common Source Categories
+
+```python
+# Different interaction sources
+sources = {
+    "chat": "Real-time chat conversations",
+    "email": "Email communications",
+    "support_ticket": "Formal support requests",
+    "product_review": "Product feedback and reviews",
+    "onboarding": "New user setup interactions",
+    "sales_inquiry": "Sales and purchasing discussions",
+    "feature_request": "User suggestions and requests",
+    "bug_report": "Issue and problem reports"
+}
+```
+
+### Source-Based Analysis
+
+Different sources provide different types of insights:
+
+```python
+# Analyze interactions by source
+chat_interactions = client.search_interactions(
+    user_id="user_123",
+    query="product preferences"
+)
+
+# Filter by source for targeted analysis
+support_profiles = client.search_profiles(
+    user_id="user_123",
+    query="technical issues",
+    source="support_ticket"  # Only support-related profiles
+)
+```
+
+## Request Group Patterns for Organization
+
+Request groups serve multiple purposes beyond simple identification:
+
+### Conversation Threading
+
+```python
+conversation_group = "support_conversation_20241215"
+
+# First exchange
+client.publish_interaction(
+    user_id="user_123",
+    interactions=[initial_message],
+    source="support_chat",
+    request_group=conversation_group
+)
+
+# Follow-up exchange
+client.publish_interaction(
+    user_id="user_123",
+    interactions=[followup_messages],
+    source="support_chat",
+    request_group=conversation_group
+)
+```
+
+### Session Tracking
+
+```python
+session_id = f"shopping_session_{user_id}_{timestamp}"
+
+# Track all interactions in a session
+for action in user_actions:
+    client.publish_interaction(
+        user_id=user_id,
+        interactions=[action],
+        source="ecommerce",
+        request_group=session_id
+    )
+```
+
+### Feature-Based Organization
+
+```python
+# Organize by feature or workflow
+request_patterns = {
+    "onboarding": "onboard_{user_id}",
+    "checkout": "checkout_{session_id}",
+    "support": "support_{ticket_id}",
+    "feedback": "feedback_{feature}_{user_id}_{date}"
+}
+```
+
+## How Reflexio Processes Interactions
+
+### 1. Ingestion and Validation
+
+When you publish an interaction, Reflexio:
+- Validates the interaction structure and content
+- Assigns timestamps and generates unique identifiers
+- Associates the interaction with the specified user and agent version
+
+### 2. Content Analysis
+
+Reflexio analyzes each interaction for:
+- **Profile-worthy information**: Personal preferences, characteristics, and relevant user data
+- **Feedback indicators**: Comments about agent performance or suggestions for improvement
+- **Semantic content**: Natural language processing for search and matching
+
+### 3. Vector Embedding
+
+Each interaction is converted into a vector embedding that enables:
+- Semantic search across interaction history
+- Similar interaction discovery
+- Context-aware profile matching
+- Intelligent content recommendations
+
+### 4. Profile and Feedback Extraction
+
+Based on your configuration, Reflexio:
+- Extracts relevant user profile information
+- Identifies and processes agent feedback
+- Updates existing profiles or creates new ones
+- Generates raw feedback entries for aggregation
+
+## Best Practices for Interaction Design
+
+### 1. Rich Context Capture
+
+```python
+# Good: Rich contextual information
+InteractionData(
+    role="User",
+    content="I need a laptop for machine learning workloads, preferably with at least 32GB RAM",
+    user_action=UserActionType.CLICK,
+    user_action_description="clicked 'High Performance Laptops' filter",
+    interacted_image_url="https://store.example.com/filters/high-performance"
+)
+
+# Less ideal: Minimal context
+InteractionData(
+    content="need laptop"
+)
+```
+
+### 2. Consistent Role Identification
+
+```python
+# Establish clear role conventions
+roles = {
+    "User": "End user of the application",
+    "Agent": "AI assistant or chatbot",
+    "Support_Agent": "Human customer service representative",
+    "System": "Automated system messages",
+    "Admin": "Administrative or moderator actions"
+}
+```
+
+### 3. Meaningful Source Categories
+
+```python
+# Organize sources by business function
+source_strategy = {
+    "customer_facing": ["chat", "email", "phone_support"],
+    "product_interaction": ["product_view", "purchase", "review"],
+    "engagement": ["newsletter", "social_media", "community"],
+    "technical": ["api_usage", "feature_request", "bug_report"]
+}
+```
+
+### 4. Structured Action Descriptions
+
+```python
+# Structured action descriptions for better analysis
+action_templates = {
+    "click": "clicked '{element_name}' {element_type} in {page_section}",
+    "scroll": "scrolled {direction} in {page_section} for {duration}",
+    "type": "entered '{input_type}' in {field_name} field",
+    "view": "viewed {content_type} '{content_name}' for {duration}"
+}
+
+# Example usage
+InteractionData(
+    user_action=UserActionType.CLICK,
+    user_action_description="clicked 'Add to Cart' button in product details section"
+)
+```
+
+## Advanced Interaction Patterns
+
+### Multi-Modal Interactions
+
+Combine different interaction types for richer context:
+
+```python
+# Complex product feedback interaction
+product_feedback = [
+    InteractionData(
+        role="User",
+        content="I love this product, but there's one issue...",
+        image_encoding=encode_image("product_issue_photo.jpg")
+    ),
+    InteractionData(
+        role="User",
+        content="The button placement makes it hard to use with one hand",
+        user_action=UserActionType.CLICK,
+        user_action_description="demonstrated problematic button interaction"
+    )
+]
+```
+
+### Batch Processing for Performance
+
+```python
+# Process related interactions together
+def publish_interaction_batch(client, batch_data, wait_for_response=False):
+    results = []
+    for interaction_data in batch_data:
+        result = client.publish_interaction(
+            wait_for_response=wait_for_response,
+            **interaction_data,
+        )
+        results.append(result)
+    return results
+
+# Usage for high-volume scenarios
+batch_results = publish_interaction_batch(client, interaction_batches)
+```
+
+### Context-Aware Interaction Chains
+
+```python
+# Link related interactions across time
+class InteractionChain:
+    def __init__(self, user_id, context_name):
+        self.user_id = user_id
+        self.context_name = context_name
+        self.interaction_count = 0
+
+    def add_interaction(self, client, interaction_request, source="default"):
+        self.interaction_count += 1
+        request_group = f"{self.context_name}_{self.user_id}"
+
+        return client.publish_interaction(
+            user_id=self.user_id,
+            interactions=[interaction_request],
+            source=source,
+            request_group=request_group
+        )
+
+# Usage
+support_chain = InteractionChain("user_123", "technical_support")
+support_chain.add_interaction(client, initial_problem, "support")
+support_chain.add_interaction(client, agent_response, "support")
+support_chain.add_interaction(client, user_clarification, "support")
+```
+
+Interactions are the lifeblood of Reflexio - the richer and more contextual your interactions, the more intelligent and personalized your agent's memory and responses become.

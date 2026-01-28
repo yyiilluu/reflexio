@@ -1,0 +1,1027 @@
+"use client"
+
+import { useState, useMemo, useEffect } from "react"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import { Input } from "@/components/ui/input"
+import { Button } from "@/components/ui/button"
+import {
+  MessageSquare,
+  MousePointer,
+  Keyboard,
+  Search,
+  Filter,
+  ChevronDown,
+  ChevronUp,
+  Image as ImageIcon,
+  Scroll,
+  AlertCircle,
+  Users,
+  XCircle,
+  FileText,
+  Layers,
+  CheckCircle2,
+  GitBranch,
+  Trash2,
+} from "lucide-react"
+import {
+  type UserActionType,
+  type Request,
+  type Interaction,
+  type RequestData,
+  type RequestGroup,
+  getRequests,
+  deleteInteraction,
+  deleteRequest,
+  deleteRequestGroup,
+} from "@/lib/api"
+import { DeleteConfirmDialog } from "@/components/DeleteConfirmDialog"
+
+// Helper function to format timestamp
+const formatTimestamp = (timestamp: number): string => {
+  const date = new Date(timestamp * 1000)
+  return date.toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  })
+}
+
+// Helper function to get relative time
+const getRelativeTime = (timestamp: number): string => {
+  const now = Date.now() / 1000
+  const diff = now - timestamp
+
+  if (diff < 60) return "Just now"
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
+  if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`
+  return `${Math.floor(diff / 604800)}w ago`
+}
+
+// Helper function to get action icon
+const getActionIcon = (action: UserActionType) => {
+  switch (action) {
+    case "click":
+      return MousePointer
+    case "scroll":
+      return Scroll
+    case "type":
+      return Keyboard
+    case "none":
+      return MessageSquare
+  }
+}
+
+// Interaction component (innermost level)
+interface InteractionItemProps {
+  interaction: Interaction
+  onDelete: (interaction: Interaction) => void
+}
+
+function InteractionItem({ interaction, onDelete }: InteractionItemProps) {
+  const [expanded, setExpanded] = useState(false)
+  const ActionIcon = getActionIcon(interaction.user_action)
+
+  return (
+    <div className="border border-slate-200 rounded-lg overflow-hidden bg-white hover:bg-slate-50 transition-colors">
+      <div className="p-3">
+        <div className="flex items-center justify-between gap-3">
+          <div
+            className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer"
+            onClick={() => setExpanded(!expanded)}
+          >
+            {/* Action Icon */}
+            <div className="h-7 w-7 rounded-lg bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center flex-shrink-0 shadow">
+              <ActionIcon className="h-4 w-4 text-white" />
+            </div>
+
+            {/* Main Info */}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[10px] font-medium uppercase tracking-wider text-slate-400">
+                  Interaction
+                </span>
+                <Badge className={`text-xs ${interaction.role === 'User' ? 'bg-indigo-100 text-indigo-700 hover:bg-indigo-100' : interaction.role === 'Assistant' ? 'bg-purple-100 text-purple-700 hover:bg-purple-100' : 'bg-slate-100 text-slate-700 hover:bg-slate-100'}`}>
+                  {interaction.role}
+                </Badge>
+                <Badge className="text-xs flex items-center gap-1 bg-slate-100 text-slate-600 hover:bg-slate-100">
+                  <ActionIcon className="h-3 w-3" />
+                  {interaction.user_action}
+                </Badge>
+                {interaction.interacted_image_url && (
+                  <Badge variant="outline" className="text-xs flex items-center gap-1 border-slate-200 text-slate-600">
+                    <ImageIcon className="h-3 w-3" />
+                    Image
+                  </Badge>
+                )}
+              </div>
+              <p className="text-sm text-slate-500 mt-1 truncate">{interaction.content}</p>
+              {interaction.shadow_content && (
+                <p className="text-sm text-amber-600 mt-0.5 truncate">Shadow: {interaction.shadow_content}</p>
+              )}
+            </div>
+          </div>
+
+          {/* Right side */}
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <p className="text-xs text-slate-400">{getRelativeTime(interaction.created_at)}</p>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 w-6 p-0 text-red-400 hover:text-red-600 hover:bg-red-50"
+              onClick={(e) => {
+                e.stopPropagation()
+                onDelete(interaction)
+              }}
+              title="Delete interaction"
+            >
+              <Trash2 className="h-3 w-3" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 w-6 p-0 text-slate-400 hover:text-slate-600"
+              onClick={() => setExpanded(!expanded)}
+            >
+              {expanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      {/* Expanded Details */}
+      {expanded && (
+        <div className="border-t border-slate-100 bg-slate-50 p-3 space-y-3">
+          <div className="grid gap-4 md:grid-cols-2">
+            {/* Left Column */}
+            <div className="space-y-3">
+              <div>
+                <h4 className="text-xs font-semibold mb-1 text-slate-800">Content</h4>
+                <p className="text-sm text-slate-600 leading-relaxed bg-white p-2 rounded-lg border border-slate-200">
+                  {interaction.content}
+                </p>
+              </div>
+
+              {interaction.shadow_content && (
+                <div>
+                  <h4 className="text-xs font-semibold mb-1 text-amber-700">Shadow Content</h4>
+                  <p className="text-sm text-amber-600 leading-relaxed bg-amber-50 p-2 rounded-lg border border-amber-200">
+                    {interaction.shadow_content}
+                  </p>
+                </div>
+              )}
+
+              {interaction.user_action_description && (
+                <div>
+                  <h4 className="text-xs font-semibold mb-1 text-slate-800">Action Description</h4>
+                  <p className="text-sm text-slate-600 bg-white p-2 rounded-lg border border-slate-200">
+                    {interaction.user_action_description}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Right Column */}
+            <div className="space-y-2">
+              <h4 className="text-xs font-semibold text-slate-800">Details</h4>
+              <div className="space-y-1 bg-white p-2 rounded-lg border border-slate-200 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Interaction ID:</span>
+                  <span className="font-mono text-[10px] text-slate-700">{interaction.interaction_id}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Created:</span>
+                  <span className="text-slate-700">{formatTimestamp(interaction.created_at)}</span>
+                </div>
+                {interaction.embedding.length > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Embedding:</span>
+                    <span className="text-slate-700">{interaction.embedding.length} dimensions</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Request component (middle level)
+interface RequestItemProps {
+  requestData: RequestData
+  onDeleteRequest: (request: Request) => void
+  onDeleteInteraction: (interaction: Interaction) => void
+}
+
+function RequestItem({ requestData, onDeleteRequest, onDeleteInteraction }: RequestItemProps) {
+  const [expanded, setExpanded] = useState(false)
+  const { request, interactions } = requestData
+  const hasShadowContent = interactions.some((i) => i.shadow_content)
+
+  return (
+    <div
+      className="border border-slate-200 rounded-xl overflow-hidden transition-all duration-300 bg-white hover:shadow-lg"
+    >
+      <div className="p-4">
+        <div className="flex items-center justify-between gap-4">
+          <div
+            className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer"
+            onClick={() => setExpanded(!expanded)}
+          >
+            {/* Request Type Icon */}
+            <div
+              className="h-9 w-9 rounded-xl flex items-center justify-center flex-shrink-0 shadow-lg bg-gradient-to-br from-blue-500 to-indigo-500"
+            >
+              <CheckCircle2 className="h-5 w-5 text-white" />
+            </div>
+
+            {/* Main Info */}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap mb-1">
+                <span className="text-[10px] font-medium uppercase tracking-wider text-slate-400">
+                  Request
+                </span>
+                <span className="font-semibold text-sm font-mono text-slate-800">{request.request_id}</span>
+                <Badge className="text-xs bg-slate-100 text-slate-600 hover:bg-slate-100">
+                  <Users className="h-3 w-3 mr-1" />
+                  {request.user_id}
+                </Badge>
+                <Badge variant="outline" className="text-xs flex items-center gap-1 border-slate-200 text-slate-600">
+                  <MessageSquare className="h-3 w-3" />
+                  {interactions.length} interactions
+                </Badge>
+                {hasShadowContent && (
+                  <Badge className="text-xs bg-amber-100 text-amber-700 hover:bg-amber-100 border border-amber-200">
+                    Shadow
+                  </Badge>
+                )}
+              </div>
+              <div className="flex items-center gap-2 flex-wrap text-xs text-slate-500">
+                {request.source && (
+                  <span className="flex items-center gap-1">
+                    <FileText className="h-3 w-3" />
+                    {request.source}
+                  </span>
+                )}
+                {request.agent_version && (
+                  <span className="flex items-center gap-1">
+                    <GitBranch className="h-3 w-3" />
+                    {request.agent_version}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Right side */}
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <div className="text-right">
+              <p className="text-xs text-slate-500">{getRelativeTime(request.created_at)}</p>
+              <p className="text-xs text-slate-400">
+                {new Date(request.created_at * 1000).toLocaleDateString("en-US", {
+                  month: "short",
+                  day: "numeric",
+                })}
+              </p>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 w-8 p-0 text-red-400 hover:text-red-600 hover:bg-red-50"
+              onClick={(e) => {
+                e.stopPropagation()
+                onDeleteRequest(request)
+              }}
+              title="Delete entire request"
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 w-8 p-0 text-slate-400 hover:text-slate-600"
+              onClick={() => setExpanded(!expanded)}
+            >
+              {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      {/* Expanded: Show Interactions */}
+      {expanded && (
+        <div className="border-t border-slate-100 bg-slate-50 p-4">
+          <h4 className="text-sm font-semibold mb-3 flex items-center gap-2 text-slate-800">
+            <Layers className="h-4 w-4 text-slate-600" />
+            Interactions ({interactions.length})
+          </h4>
+          <div className="space-y-2">
+            {interactions.map((interaction) => (
+              <InteractionItem
+                key={interaction.interaction_id}
+                interaction={interaction}
+                onDelete={onDeleteInteraction}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Request Group component (outermost level)
+interface RequestGroupProps {
+  groupData: RequestGroup
+  onDeleteRequest: (request: Request) => void
+  onDeleteInteraction: (interaction: Interaction) => void
+  onDeleteGroup: (requestGroup: string) => void
+}
+
+function RequestGroup({ groupData, onDeleteRequest, onDeleteInteraction, onDeleteGroup }: RequestGroupProps) {
+  const [expanded, setExpanded] = useState(true)
+  const { request_group, requests } = groupData
+
+  // Sort requests from oldest to latest
+  const sortedRequests = useMemo(() => {
+    return [...requests].sort((a, b) => a.request.created_at - b.request.created_at)
+  }, [requests])
+
+  const totalInteractions = requests.reduce((sum, rd) => sum + rd.interactions.length, 0)
+
+  // Get timestamp range
+  const timestamps = requests.map((rd) => rd.request.created_at)
+  const minTimestamp = Math.min(...timestamps)
+  const maxTimestamp = Math.max(...timestamps)
+
+  return (
+    <Card className="border-slate-200 overflow-hidden bg-white hover:shadow-lg transition-all duration-300">
+      <div className="bg-slate-50 border-b border-slate-200 hover:bg-slate-100 transition-colors">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <div
+              className="flex items-center gap-3 flex-1 cursor-pointer"
+              onClick={() => setExpanded(!expanded)}
+            >
+              <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center shadow-lg">
+                <Layers className="h-5 w-5 text-white" />
+              </div>
+              <div className="flex-1">
+                <span className="text-[10px] font-medium uppercase tracking-wider text-slate-400">
+                  Request Group
+                </span>
+                <CardTitle className="text-lg font-semibold flex items-center gap-2 text-slate-800">
+                  {request_group || "Ungrouped"}
+                </CardTitle>
+                <CardDescription className="text-xs mt-1 flex items-center gap-3 flex-wrap text-slate-500">
+                  <span className="flex items-center gap-1">
+                    <FileText className="h-3 w-3" />
+                    {requests.length} requests
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <MessageSquare className="h-3 w-3" />
+                    {totalInteractions} interactions
+                  </span>
+                  {minTimestamp === maxTimestamp ? (
+                    <span className="text-slate-400">{formatTimestamp(minTimestamp)}</span>
+                  ) : (
+                    <span className="text-slate-400">
+                      {formatTimestamp(minTimestamp)} - {formatTimestamp(maxTimestamp)}
+                    </span>
+                  )}
+                </CardDescription>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 w-8 p-0 text-red-400 hover:text-red-600 hover:bg-red-50"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onDeleteGroup(request_group)
+                }}
+                title="Delete entire request group"
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 w-8 p-0 text-slate-400 hover:text-slate-600"
+                onClick={() => setExpanded(!expanded)}
+              >
+                {expanded ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+      </div>
+
+      {/* Expanded: Show Requests */}
+      {expanded && (
+        <CardContent className="pt-4 bg-slate-50">
+          <div className="space-y-3">
+            {sortedRequests.map((requestData) => (
+              <RequestItem
+                key={requestData.request.request_id}
+                requestData={requestData}
+                onDeleteRequest={onDeleteRequest}
+                onDeleteInteraction={onDeleteInteraction}
+              />
+            ))}
+          </div>
+        </CardContent>
+      )}
+    </Card>
+  )
+}
+
+export default function InteractionsPage() {
+  // State for API data
+  const [requestGroups, setRequestGroups] = useState<RequestGroup[]>([])
+  const [loading, setLoading] = useState<boolean>(false)
+  const [error, setError] = useState<string>("")
+
+  // Filter state
+  const [userId, setUserId] = useState<string>("")
+  const [requestGroupFilter, setRequestGroupFilter] = useState<string>("")
+  const [sourceFilter, setSourceFilter] = useState<string>("all")
+  const [topK, setTopK] = useState<number>(100)
+
+  // Delete state
+  const [requestToDelete, setRequestToDelete] = useState<Request | null>(null)
+  const [interactionToDelete, setInteractionToDelete] = useState<Interaction | null>(null)
+  const [requestGroupToDelete, setRequestGroupToDelete] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState<boolean>(false)
+  const [deleteError, setDeleteError] = useState<string>("")
+
+  // Fetch request groups from API
+  const fetchRequestGroups = async (searchUserId: string, limit: number) => {
+    setLoading(true)
+    setError("")
+
+    try {
+      const requestParams: any = {
+        top_k: limit,
+      }
+
+      // Only add user_id if it's provided
+      if (searchUserId.trim()) {
+        requestParams.user_id = searchUserId.trim()
+      }
+
+      const response = await getRequests(requestParams)
+
+      if (response.success) {
+        setRequestGroups(response.request_groups)
+        setError("")
+      } else {
+        setError(response.msg || "Failed to fetch requests")
+        setRequestGroups([])
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "An error occurred while fetching requests")
+      setRequestGroups([])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Debounced search effect - auto-fetch when userId or topK changes
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      fetchRequestGroups(userId, topK)
+    }, 1000)
+
+    return () => clearTimeout(timer)
+  }, [userId, topK])
+
+  // Delete handlers
+  const handleDeleteRequest = (request: Request) => {
+    setRequestToDelete(request)
+    setDeleteError("")
+  }
+
+  const handleDeleteInteraction = (interaction: Interaction) => {
+    setInteractionToDelete(interaction)
+    setDeleteError("")
+  }
+
+  const handleDeleteRequestGroup = (requestGroup: string) => {
+    setRequestGroupToDelete(requestGroup)
+    setDeleteError("")
+  }
+
+  const confirmDeleteRequest = async () => {
+    if (!requestToDelete) return
+
+    setDeleting(true)
+    setDeleteError("")
+
+    try {
+      const response = await deleteRequest({
+        request_id: requestToDelete.request_id,
+      })
+
+      if (response.success) {
+        // Refresh data
+        await fetchRequestGroups(userId, topK)
+        setRequestToDelete(null)
+      } else {
+        setDeleteError(response.message || "Failed to delete request")
+      }
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : "An error occurred while deleting the request")
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  const confirmDeleteInteraction = async () => {
+    if (!interactionToDelete) return
+
+    setDeleting(true)
+    setDeleteError("")
+
+    try {
+      const response = await deleteInteraction({
+        user_id: interactionToDelete.user_id,
+        interaction_id: interactionToDelete.interaction_id,
+      })
+
+      if (response.success) {
+        // Refresh data
+        await fetchRequestGroups(userId, topK)
+        setInteractionToDelete(null)
+      } else {
+        setDeleteError(response.message || "Failed to delete interaction")
+      }
+    } catch (error) {
+      setDeleteError(
+        error instanceof Error ? error.message : "An error occurred while deleting the interaction"
+      )
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  const confirmDeleteRequestGroup = async () => {
+    if (!requestGroupToDelete) return
+
+    setDeleting(true)
+    setDeleteError("")
+
+    try {
+      const response = await deleteRequestGroup({
+        request_group: requestGroupToDelete,
+      })
+
+      if (response.success) {
+        // Refresh data
+        await fetchRequestGroups(userId, topK)
+        setRequestGroupToDelete(null)
+      } else {
+        setDeleteError(response.message || "Failed to delete request group")
+      }
+    } catch (error) {
+      setDeleteError(
+        error instanceof Error ? error.message : "An error occurred while deleting the request group"
+      )
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  // Apply client-side filters to the request groups from API
+  const filteredRequestGroups = useMemo(() => {
+    let filtered = requestGroups
+
+    // Filter by request group name
+    if (requestGroupFilter.trim()) {
+      filtered = filtered.filter((group) =>
+        group.request_group.toLowerCase().includes(requestGroupFilter.toLowerCase())
+      )
+    }
+
+    // Filter by source within each group
+    if (sourceFilter !== "all") {
+      filtered = filtered.map((group) => ({
+        ...group,
+        requests: group.requests.filter((rd) => rd.request.source === sourceFilter),
+      }))
+
+      // Remove groups with no requests after filtering
+      filtered = filtered.filter((group) => group.requests.length > 0)
+    }
+
+    return filtered
+  }, [requestGroups, requestGroupFilter, sourceFilter])
+
+  // Calculate statistics from all request groups
+  const allRequests = useMemo(() => {
+    return requestGroups.flatMap((group) => group.requests)
+  }, [requestGroups])
+
+  const totalGroups = filteredRequestGroups.length
+  const totalRequests = allRequests.length
+  const totalInteractions = allRequests.reduce((sum, rd) => sum + rd.interactions.length, 0)
+
+  // Get unique sources
+  const uniqueSources = useMemo(() => {
+    return Array.from(new Set(allRequests.map((rd) => rd.request.source))).filter(Boolean).sort()
+  }, [allRequests])
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-50">
+      {/* Header */}
+      <div className="bg-white/80 backdrop-blur-sm border-b border-slate-200/50">
+        <div className="p-8">
+          <div className="max-w-[1800px] mx-auto">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center shadow-lg shadow-blue-500/25">
+                <MessageSquare className="h-5 w-5 text-white" />
+              </div>
+              <h1 className="text-3xl font-bold tracking-tight text-slate-800">Request Groups & Interactions</h1>
+            </div>
+            <p className="text-slate-500 mt-1 ml-13">
+              View and manage requests grouped by request_group
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="p-8">
+        <div className="max-w-[1800px] mx-auto space-y-6">
+          {/* Statistics Cards */}
+          <div className="grid gap-5 md:grid-cols-3">
+            <Card className="border bg-gradient-to-br from-purple-50 to-pink-50 border-purple-100 hover:shadow-lg transition-all duration-300 hover:-translate-y-1">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-semibold text-slate-600">Request Groups</CardTitle>
+                <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center shadow-lg">
+                  <Layers className="h-5 w-5 text-white" />
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold text-slate-800">{totalGroups}</div>
+                <p className="text-xs text-slate-500 mt-1">Unique request groups</p>
+              </CardContent>
+            </Card>
+
+            <Card className="border bg-gradient-to-br from-blue-50 to-cyan-50 border-blue-100 hover:shadow-lg transition-all duration-300 hover:-translate-y-1">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-semibold text-slate-600">Total Requests</CardTitle>
+                <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center shadow-lg">
+                  <FileText className="h-5 w-5 text-white" />
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold text-slate-800">{totalRequests}</div>
+                <p className="text-xs text-slate-500 mt-1">All requests</p>
+              </CardContent>
+            </Card>
+
+            <Card className="border bg-gradient-to-br from-indigo-50 to-blue-50 border-indigo-100 hover:shadow-lg transition-all duration-300 hover:-translate-y-1">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-semibold text-slate-600">Total Interactions</CardTitle>
+                <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-indigo-500 to-blue-500 flex items-center justify-center shadow-lg">
+                  <MessageSquare className="h-5 w-5 text-white" />
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold text-slate-800">{totalInteractions}</div>
+                <p className="text-xs text-slate-500 mt-1">All interactions</p>
+              </CardContent>
+            </Card>
+
+          </div>
+
+          {/* Search and Filters */}
+          <Card className="border-slate-200 bg-white overflow-hidden hover:shadow-lg transition-all duration-300">
+            <CardHeader className="pb-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center shadow-lg">
+                    <Filter className="h-5 w-5 text-white" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-lg font-semibold text-slate-800">Filters</CardTitle>
+                    <CardDescription className="text-xs mt-1 text-slate-500">
+                      {loading ? "Searching..." : userId.trim() ? `Showing requests for ${userId}` : "Showing top request groups across all users"}
+                    </CardDescription>
+                  </div>
+                </div>
+                {loading && <div className="animate-spin rounded-full h-5 w-5 border-2 border-transparent border-t-indigo-500 border-r-indigo-500"></div>}
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {/* Primary Filter Row */}
+                <div className="grid gap-4 md:grid-cols-4">
+                  {/* User ID Filter */}
+                  <div className="md:col-span-1">
+                    <label className="text-sm font-medium mb-2 block text-slate-700">
+                      User ID <span className="text-slate-400 text-xs font-normal">(optional)</span>
+                    </label>
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
+                      <Input
+                        placeholder="Leave empty to show top request groups across all users"
+                        value={userId}
+                        onChange={(e) => setUserId(e.target.value)}
+                        className="pl-9 border-slate-200 focus:border-indigo-300 focus:ring-indigo-200"
+                        disabled={loading}
+                      />
+                      {userId && (
+                        <button
+                          onClick={() => setUserId("")}
+                          className="absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                        >
+                          <XCircle className="h-4 w-4" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Request Group Filter */}
+                  <div>
+                    <label className="text-sm font-medium mb-2 block text-slate-700">Request Group</label>
+                    <div className="relative">
+                      <Layers className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
+                      <Input
+                        placeholder="e.g., experiment_a"
+                        value={requestGroupFilter}
+                        onChange={(e) => setRequestGroupFilter(e.target.value)}
+                        className="pl-9 border-slate-200 focus:border-indigo-300 focus:ring-indigo-200"
+                      />
+                      {requestGroupFilter && (
+                        <button
+                          onClick={() => setRequestGroupFilter("")}
+                          className="absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                        >
+                          <XCircle className="h-4 w-4" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Source Filter */}
+                  <div>
+                    <label className="text-sm font-medium mb-2 block text-slate-700">Source</label>
+                    <select
+                      value={sourceFilter}
+                      onChange={(e) => setSourceFilter(e.target.value)}
+                      className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-300"
+                    >
+                      <option value="all">All Sources</option>
+                      {uniqueSources.map((source) => (
+                        <option key={source} value={source}>
+                          {source}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Max Results */}
+                  <div>
+                    <label className="text-sm font-medium mb-2 block text-slate-700">Max Results</label>
+                    <Input
+                      type="number"
+                      min="1"
+                      max="1000"
+                      value={topK}
+                      onChange={(e) => setTopK(parseInt(e.target.value) || 100)}
+                      disabled={loading}
+                      className="border-slate-200 focus:border-indigo-300 focus:ring-indigo-200"
+                    />
+                  </div>
+
+                </div>
+
+                {/* Active filters indicator */}
+                {(userId || requestGroupFilter || sourceFilter !== "all") && (
+                  <div className="flex items-center gap-2 flex-wrap pt-2 border-t border-slate-100">
+                    <span className="text-sm font-medium text-slate-500">Active:</span>
+                    {userId && (
+                      <Badge className="text-xs bg-indigo-100 text-indigo-700 hover:bg-indigo-100">
+                        <Users className="h-3 w-3 mr-1" />
+                        User: {userId}
+                      </Badge>
+                    )}
+                    {requestGroupFilter && (
+                      <Badge className="text-xs bg-indigo-100 text-indigo-700 hover:bg-indigo-100">
+                        <Layers className="h-3 w-3 mr-1" />
+                        Group: {requestGroupFilter}
+                      </Badge>
+                    )}
+                    {sourceFilter !== "all" && (
+                      <Badge className="text-xs bg-indigo-100 text-indigo-700 hover:bg-indigo-100">
+                        <FileText className="h-3 w-3 mr-1" />
+                        Source: {sourceFilter}
+                      </Badge>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 text-xs ml-auto text-slate-500 hover:text-slate-700"
+                      onClick={() => {
+                        setUserId("")
+                        setRequestGroupFilter("")
+                        setSourceFilter("all")
+                      }}
+                    >
+                      <XCircle className="h-3 w-3 mr-1" />
+                      Clear all
+                    </Button>
+                  </div>
+                )}
+
+                {/* Error message */}
+                {error && (
+                  <div className="p-3 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2">
+                    <AlertCircle className="h-4 w-4 text-red-500 flex-shrink-0" />
+                    <p className="text-sm text-red-600">{error}</p>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Results */}
+          {loading ? (
+            <Card className="border-slate-200 bg-white">
+              <CardContent className="pt-6">
+                <div className="text-center py-12">
+                  <div className="animate-spin rounded-full h-12 w-12 border-3 border-transparent border-t-indigo-500 border-r-indigo-500 mx-auto mb-4"></div>
+                  <h3 className="text-lg font-semibold text-slate-800 mb-2">Loading request groups...</h3>
+                  <p className="text-sm text-slate-500">Fetching data from the API</p>
+                </div>
+              </CardContent>
+            </Card>
+          ) : filteredRequestGroups.length === 0 ? (
+            <Card className="border-slate-200 bg-white">
+              <CardContent className="pt-6">
+                <div className="text-center py-12">
+                  <Layers className="h-12 w-12 text-slate-300 mx-auto mb-4" />
+                  <h3 className="text-lg font-semibold text-slate-800 mb-2">No request groups found</h3>
+                  <p className="text-sm text-slate-500">
+                    {requestGroups.length === 0
+                      ? userId.trim()
+                        ? "No requests found for this user. Try a different user ID or publish some interactions first."
+                        : "No request groups found. Publish some interactions first."
+                      : "No requests match your current filters. Try adjusting the filters."}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-4">
+              {filteredRequestGroups.map((group) => (
+                <RequestGroup
+                  key={group.request_group}
+                  groupData={group}
+                  onDeleteRequest={handleDeleteRequest}
+                  onDeleteInteraction={handleDeleteInteraction}
+                  onDeleteGroup={handleDeleteRequestGroup}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Delete Request Group Confirmation Dialog */}
+      <DeleteConfirmDialog
+        open={!!requestGroupToDelete}
+        onOpenChange={(open) => {
+          if (!open) setRequestGroupToDelete(null)
+        }}
+        onConfirm={confirmDeleteRequestGroup}
+        title="Delete Request Group"
+        description="Are you sure you want to delete this entire request group and all its requests and interactions?"
+        itemDetails={
+          requestGroupToDelete && (
+            <>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Request Group:</span>
+                <span className="font-mono text-xs">{requestGroupToDelete}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Total Requests:</span>
+                <span>
+                  {
+                    requestGroups
+                      .find((rg) => rg.request_group === requestGroupToDelete)
+                      ?.requests.length || 0
+                  }
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Total Interactions:</span>
+                <span>
+                  {requestGroups
+                    .find((rg) => rg.request_group === requestGroupToDelete)
+                    ?.requests.reduce((sum, rd) => sum + rd.interactions.length, 0) || 0}
+                </span>
+              </div>
+            </>
+          )
+        }
+        loading={deleting}
+        confirmButtonText="Delete Request Group"
+      />
+
+      {/* Delete Request Confirmation Dialog */}
+      <DeleteConfirmDialog
+        open={!!requestToDelete}
+        onOpenChange={(open) => {
+          if (!open) setRequestToDelete(null)
+        }}
+        onConfirm={confirmDeleteRequest}
+        title="Delete Request"
+        description="Are you sure you want to delete this entire request and all its interactions?"
+        itemDetails={
+          requestToDelete && (
+            <>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Request ID:</span>
+                <span className="font-mono text-xs">{requestToDelete.request_id}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">User ID:</span>
+                <span className="font-mono text-xs">{requestToDelete.user_id}</span>
+              </div>
+              {requestToDelete.source && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Source:</span>
+                  <span>{requestToDelete.source}</span>
+                </div>
+              )}
+            </>
+          )
+        }
+        loading={deleting}
+        confirmButtonText="Delete Request"
+      />
+
+      {/* Delete Interaction Confirmation Dialog */}
+      <DeleteConfirmDialog
+        open={!!interactionToDelete}
+        onOpenChange={(open) => {
+          if (!open) setInteractionToDelete(null)
+        }}
+        onConfirm={confirmDeleteInteraction}
+        title="Delete Interaction"
+        description="Are you sure you want to delete this interaction?"
+        itemDetails={
+          interactionToDelete && (
+            <>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Interaction ID:</span>
+                <span className="font-mono text-xs">{interactionToDelete.interaction_id}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Role:</span>
+                <span>{interactionToDelete.role}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Action:</span>
+                <span>{interactionToDelete.user_action}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Content:</span>
+                <p className="text-sm mt-1 line-clamp-3">{interactionToDelete.content}</p>
+              </div>
+            </>
+          )
+        }
+        loading={deleting}
+        confirmButtonText="Delete Interaction"
+      />
+
+      {/* Delete Error Display */}
+      {deleteError && (
+        <div className="fixed bottom-4 right-4 max-w-md bg-destructive/10 border border-destructive/20 rounded-md p-4 flex items-start gap-3 shadow-lg">
+          <AlertCircle className="h-5 w-5 text-destructive flex-shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-destructive mb-1">Delete Failed</p>
+            <p className="text-sm text-destructive/80">{deleteError}</p>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 w-6 p-0"
+            onClick={() => setDeleteError("")}
+          >
+            <XCircle className="h-4 w-4" />
+          </Button>
+        </div>
+      )}
+    </div>
+  )
+}

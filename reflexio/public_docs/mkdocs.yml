@@ -1,0 +1,303 @@
+# Site Information
+site_name: Reflexio Documentation
+site_description: Official documentation for Reflexio - A powerful framework for building AI agents with memory and user profiling capabilities
+site_author: Reflexio Team
+site_url: https://reflexio.com/docs/
+copyright: Copyright &copy; 2025 Reflexio Team
+
+# Theme Configuration
+theme:
+  name: material
+  language: en
+
+  # Custom Logo and Favicon
+  logo: assets/reflexio_fav.svg
+  favicon: assets/reflexio_fav.svg
+
+  # Color Palette - Using project's design system
+  palette:
+    # Light mode
+    - scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    # Dark mode
+    - scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+  # Font Configuration
+  font:
+    text: Roboto
+    code: Roboto Mono
+
+  # Material Theme Features
+  features:
+    # Navigation
+    - navigation.instant        # Instant loading (SPA-like)
+    - navigation.instant.prefetch  # Prefetch pages on hover
+    - navigation.instant.progress  # Show progress indicator
+    - navigation.tracking       # Update URL with anchor
+    - navigation.tabs          # Top-level sections in tabs
+    - navigation.tabs.sticky   # Sticky navigation tabs
+    - navigation.sections      # Show sections in sidebar
+    - navigation.expand        # Expand all sections by default
+    - navigation.path          # Show breadcrumbs
+    - navigation.prune         # Optimize navigation for large docs
+    - navigation.indexes       # Allow section index pages
+    - navigation.footer        # Previous/Next footer navigation
+
+    # Table of Contents
+    - toc.follow               # Sidebar TOC follows scroll
+    - toc.integrate            # Integrate TOC into navigation
+
+    # Search
+    - search.suggest           # Search suggestions
+    - search.highlight         # Highlight search terms
+    - search.share             # Share search results
+
+    # Header
+    - header.autohide          # Auto-hide header on scroll
+
+    # Content
+    - content.code.copy        # Copy button for code blocks
+    - content.code.select      # Select code with click
+    - content.code.annotate    # Code annotations
+    - content.tabs.link        # Link content tabs
+    - content.tooltips         # Improved tooltips
+
+# Additional Styling
+extra_css:
+  - stylesheets/extra.css
+
+# Additional JavaScript
+extra_javascript:
+  - javascripts/extra.js
+
+# Extra Configuration
+extra:
+  # Social Links (uncomment and configure as needed)
+  # social:
+  #   - icon: fontawesome/brands/python
+  #     link: https://pypi.org/project/reflexio/
+  #     name: Reflexio on PyPI
+  #   - icon: fontawesome/brands/discord
+  #     link: https://discord.gg/reflexio
+  #     name: Join our Discord
+  #   - icon: fontawesome/brands/twitter
+  #     link: https://twitter.com/reflexio
+  #     name: Follow us on Twitter
+
+  # Analytics (uncomment and configure when ready)
+  # analytics:
+  #   provider: google
+  #   property: G-XXXXXXXXXX
+
+  # Version Selector (uncomment when versioning is needed)
+  # version:
+  #   provider: mike
+  #   default: latest
+
+  # Announcement Banner (uncomment to show important updates)
+  # announcement:
+  #   text: "🎉 Reflexio v2.0 is now available! <a href='/changelog/'>See what's new</a>"
+  #   dismissible: true
+
+  # Generator notice
+  generator: false
+
+# Navigation Structure
+nav:
+  - Home: index.md
+
+  - Getting Started:
+    - Installation: getting-started/installation.md
+    - Account Setup: getting-started/account-setup.md
+    - Quick Start: getting-started/quickstart.md
+    - Configuration: getting-started/configuration.md
+
+  - Core Concepts:
+    - Overview: concepts/core-concepts.md
+    - Requests & Groups: concepts/requests-and-groups.md
+    - Interactions: concepts/interactions.md
+    - User Profiles: concepts/user-profiles.md
+    - Agent Feedback: concepts/agent-feedback.md
+
+  - Web Portal:
+    - Basic Usage: web-portal/basic-usage.md
+    - Advanced Use Cases: web-portal/advance-usecase.md
+
+  - API Reference:
+    - Client: api-reference/client.md
+    - Schemas: api-reference/schemas.md
+
+  - Examples:
+    - Authentication: examples/authentication.md
+    - User Interactions: examples/user-interactions.md
+    - Request Management: examples/request-management.md
+    - User Profiles: examples/user-profiles.md
+    - Agent Feedback: examples/agent-feedback.md
+    - Agent Evaluation: examples/agent-evaluation.md
+
+
+# Markdown Extensions
+markdown_extensions:
+  # Python Markdown Extensions
+  - abbr                        # Abbreviations
+  - admonition                  # Call-out blocks
+  - attr_list                   # HTML attributes
+  - def_list                    # Definition lists
+  - footnotes                   # Footnotes
+  - md_in_html                  # Markdown in HTML
+  - tables                      # Tables support
+  - toc:                        # Table of contents
+      permalink: true           # Add permalink to headings
+      permalink_title: Anchor link to this section
+      toc_depth: 3
+
+  # PyMdown Extensions
+  - pymdownx.arithmatex:        # Math notation
+      generic: true
+  - pymdownx.betterem:          # Better emphasis
+      smart_enable: all
+  - pymdownx.caret              # Superscript and insert
+  - pymdownx.mark               # Highlighting
+  - pymdownx.tilde              # Subscript and delete
+  - pymdownx.critic             # Track changes
+  - pymdownx.details            # Collapsible blocks
+  - pymdownx.emoji:             # Emoji support
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.highlight:         # Code highlighting
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+      auto_title: true
+      linenums: true
+      linenums_style: pymdownx-inline
+  - pymdownx.inlinehilite       # Inline code highlighting
+  - pymdownx.keys               # Keyboard keys
+  - pymdownx.magiclink          # Auto-link URLs
+  - pymdownx.smartsymbols       # Smart symbols
+  - pymdownx.snippets:          # Include file snippets
+      base_path: [docs, .]
+      auto_append:
+        - includes/abbreviations.md
+  - pymdownx.superfences:       # Advanced fences
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:            # Content tabs
+      alternate_style: true
+      combine_header_slug: true
+  - pymdownx.tasklist:          # Task lists
+      custom_checkbox: true
+      clickable_checkbox: false
+
+# Plugins
+plugins:
+  # Search
+  - search:
+      separator: '[\s\-,:!=\[\]()"/]+|(?!\b)(?=[A-Z][a-z])|\.(?!\d)|&[lg]t;'
+      lang:
+        - en
+
+  # Git Revision Date
+  # - git-revision-date-localized:
+  #     enable_creation_date: true
+  #     type: timeago
+
+  # Tags (uncomment when tags are used in pages)
+  # - tags:
+  #     tags_file: tags.md
+
+  # Social Cards (uncomment for automatic social media preview cards)
+  # - social:
+  #     cards_layout_options:
+  #       background_color: "#1d3557"
+  #       color: "#f1faee"
+
+  # Minify HTML, CSS, JS for production
+  # - minify:
+  #     minify_html: true
+  #     minify_js: true
+  #     minify_css: true
+  #     htmlmin_opts:
+  #       remove_comments: true
+
+  # API Documentation with mkdocstrings
+  - mkdocstrings:
+      enabled: true
+      default_handler: python
+      handlers:
+        python:
+          paths: [../reflexio_client/reflexio]
+          options:
+            # General
+            show_source: true
+            show_root_heading: true
+            show_root_full_path: false
+            show_object_full_path: false
+            show_category_heading: true
+            show_symbol_type_heading: true
+            show_symbol_type_toc: true
+
+            # Members
+            members_order: source
+            group_by_category: true
+            show_submodules: false
+
+            # Docstrings
+            docstring_style: google
+            docstring_section_style: table
+            merge_init_into_class: true
+            show_if_no_docstring: false
+
+            # Signatures
+            show_signature: true
+            show_signature_annotations: true
+            separate_signature: true
+            line_length: 80
+
+            # Additional
+            show_bases: true
+            show_inheritance_diagram: false
+            heading_level: 2
+
+  # # PDF Export Plugin
+  # - with-pdf:
+  #     author: Reflexio Team
+  #     copyright: Copyright &copy; 2025 Reflexio Team
+  #     cover: true
+  #     cover_title: Reflexio Documentation
+  #     cover_subtitle: A powerful framework for building AI agents with memory
+  #     back_cover: false
+  #     toc_title: Table of Contents
+  #     toc_level: 3
+  #     strict: false
+  #     render_js: false
+  #     output_path: site/pdf/document.pdf
+
+  # Include markdown files
+  # - include-markdown
+
+  # Redirects (useful for maintaining old URLs)
+  # - redirects:
+  #     redirect_maps:
+  #       'old-page.md': 'new-page.md'
+
+# Validation
+validation:
+  omitted_files: warn
+  absolute_links: warn
+  unrecognized_links: warn
+
+# Watch for changes (development)
+watch:
+  - ../reflexio_client/reflexio/

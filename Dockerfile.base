@@ -1,0 +1,87 @@
+# =============================================================================
+# Base Dockerfile: Complete build with all dependencies and code
+# Build this image as the foundation, then use Dockerfile.update for code changes
+# =============================================================================
+#
+# Usage:
+#   docker build -f Dockerfile.base -t reflexio:latest .
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Stage 1: Build Next.js frontend
+# -----------------------------------------------------------------------------
+FROM node:20-alpine AS frontend-builder
+
+WORKDIR /app/website
+
+# Copy package files
+COPY reflexio/website/package*.json ./
+
+# Install dependencies
+RUN npm ci --only=production=false
+
+# Copy source files
+COPY reflexio/website/ ./
+
+# Create empty .env file (Next.js requires it, but no env vars are used at build time)
+RUN touch .env
+
+# Build Next.js
+RUN npm run build
+
+# -----------------------------------------------------------------------------
+# Stage 2: Production runtime with all dependencies and code
+# -----------------------------------------------------------------------------
+FROM python:3.10-slim
+
+# Set environment variables
+ENV TOKENIZERS_PARALLELISM=False
+ENV PYTHONPATH=/app
+ENV IS_TEST_ENV=false
+
+# Install Node.js, supervisord, and curl
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    supervisor \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create log directory for supervisor
+RUN mkdir -p /var/log/supervisor
+
+WORKDIR /app
+
+# Copy and install Python dependencies
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy and install reflexio_commons package
+COPY reflexio/reflexio_commons ./reflexio/reflexio_commons
+RUN pip install -e ./reflexio/reflexio_commons
+
+# Copy FastAPI backend
+COPY reflexio/ ./reflexio/
+
+# Copy built Next.js app with node_modules
+COPY --from=frontend-builder /app/website/.next ./reflexio/website/.next
+COPY --from=frontend-builder /app/website/node_modules ./reflexio/website/node_modules
+COPY --from=frontend-builder /app/website/package.json ./reflexio/website/package.json
+COPY --from=frontend-builder /app/website/public ./reflexio/website/public
+
+# Copy Supabase migrations
+COPY supabase/ ./supabase/
+
+# Copy supervisord config
+COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+
+# Expose ports
+EXPOSE 8080 8081
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8081/health || exit 1
+
+# Run supervisord
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]

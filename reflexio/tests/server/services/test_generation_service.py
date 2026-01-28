@@ -1,0 +1,124 @@
+import datetime
+from datetime import timezone
+import pytest
+import tempfile
+from unittest.mock import patch
+
+from reflexio.server.api_endpoints.request_context import RequestContext
+from reflexio.server.llm.litellm_client import LiteLLMClient, LiteLLMConfig
+from reflexio.server.services.generation_service import GenerationService
+from reflexio_commons.api_schema.service_schemas import (
+    InteractionData,
+    PublishUserInteractionRequest,
+)
+
+
+@pytest.fixture
+def mock_llm_responses():
+    """Mock all LLM calls to avoid actual API calls"""
+
+    def mock_generate_chat_response_side_effect(messages, **kwargs):
+        """Mock LLM responses for different types of calls"""
+        prompt_content = ""
+        for message in messages:
+            if isinstance(message, dict) and "content" in message:
+                prompt_content += str(message["content"])
+
+        # Check if this is a should_extract_profile call
+        if "Output just a boolean value" in prompt_content:
+            return "false"  # Don't extract profiles in this test
+        # For structured output parsing
+        elif kwargs.get("parse_structured_output", False):
+            return {"add": [], "update": [], "delete": []}
+        else:
+            return '```json\n{"add": [], "update": [], "delete": []}\n```'
+
+    with patch(
+        "reflexio.server.llm.litellm_client.LiteLLMClient.generate_chat_response",
+        side_effect=mock_generate_chat_response_side_effect,
+    ):
+        yield
+
+
+def test_publish_request_with_request_group(mock_llm_responses):
+    """
+    Test that requests with a request_group are stored correctly.
+    """
+    user_id = "test_user_id"
+    org_id = "test_org"
+    request_group = "test_request_group"
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        llm_config = LiteLLMConfig(model="gpt-4o-mini")
+        llm_client = LiteLLMClient(llm_config)
+        generation_service = GenerationService(
+            llm_client=llm_client,
+            request_context=RequestContext(org_id=org_id, storage_base_dir=temp_dir),
+        )
+
+        interaction = InteractionData(
+            content="test interaction",
+            created_at=int(datetime.datetime.now(timezone.utc).timestamp()),
+        )
+
+        request = PublishUserInteractionRequest(
+            user_id=user_id,
+            interaction_data_list=[interaction],
+            request_group=request_group,
+        )
+
+        # Request should succeed
+        generation_service.run(request)
+
+
+def test_empty_request_group_allows_multiple_requests(mock_llm_responses):
+    """
+    Test that multiple requests with empty request_group are allowed.
+    """
+    user_id = "test_user_id"
+    org_id = "test_org"
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        llm_config = LiteLLMConfig(model="gpt-4o-mini")
+        llm_client = LiteLLMClient(llm_config)
+        generation_service = GenerationService(
+            llm_client=llm_client,
+            request_context=RequestContext(org_id=org_id, storage_base_dir=temp_dir),
+        )
+
+        interaction = InteractionData(
+            content="interaction without request group",
+            created_at=int(datetime.datetime.now(timezone.utc).timestamp()),
+        )
+
+        # Request without request_group (empty string)
+        request = PublishUserInteractionRequest(
+            user_id=user_id,
+            interaction_data_list=[interaction],
+            request_group="",  # Empty request group
+        )
+
+        # Should not raise any exception
+        generation_service.run(request)
+
+        # Try another request with empty request_group - should also succeed
+        another_interaction = InteractionData(
+            content="another interaction without request group",
+            created_at=int(datetime.datetime.now(timezone.utc).timestamp()),
+        )
+
+        another_request = PublishUserInteractionRequest(
+            user_id=user_id,
+            interaction_data_list=[another_interaction],
+            request_group="",
+        )
+
+        # Should not raise any exception
+        generation_service.run(another_request)
+
+
+# NOTE: TestWindowSizeStrideOverrides class was removed because the global
+# _get_extraction_window_size() and _get_stride_size() methods were removed
+# from GenerationService. Each extractor now handles its own window/stride
+# calculation using the get_extractor_window_params() utility function.
+# See: reflexio/server/services/extractor_interaction_utils.py

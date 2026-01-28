@@ -1,0 +1,357 @@
+# Agent Evaluation Examples
+
+This guide provides practical examples for retrieving and analyzing agent success evaluation results in Reflexio.
+
+## Overview
+
+Agent success evaluation provides automated assessment of your agent's performance based on configured success criteria. The system evaluates agent interactions and provides feedback for improvement.
+
+## Setup
+
+```python
+from reflexio import ReflexioClient
+
+# Initialize and authenticate (login automatically sets the API key)
+client = ReflexioClient(url_endpoint="http://127.0.0.1:8081/")
+token = client.login("your_email@example.com", "your_password")
+# token.api_key contains your API key - save it for future use (it never expires)
+
+# Or initialize with a previously saved API key (more efficient - skips login)
+# client = ReflexioClient(api_key=token.api_key, url_endpoint="http://127.0.0.1:8081/")
+```
+
+## Basic Usage
+
+### Get All Evaluation Results
+
+```python
+# Get all evaluation results
+response = client.get_agent_success_evaluation_results(limit=50)
+
+# Display results
+for result in response.results:
+    print(f"Result ID: {result.result_id}")
+    print(f"Agent Version: {result.agent_version}")
+    print(f"Success: {result.is_success}")
+    if not result.is_success:
+        print(f"Failure Type: {result.failure_type}")
+        print(f"Failure Reason: {result.failure_reason}")
+    print(f"Suggested Improvement: {result.agent_prompt_update}")
+    print("-" * 50)
+```
+
+### Filter by Agent Version
+
+```python
+# Get evaluation results for a specific agent version
+response = client.get_agent_success_evaluation_results(
+    agent_version="v2.1.0",
+    limit=100
+)
+
+# Calculate success rate
+total = len(response.results)
+successful = sum(1 for r in response.results if r.is_success)
+success_rate = (successful / total * 100) if total > 0 else 0
+
+print(f"Agent Version: v2.1.0")
+print(f"Total Evaluations: {total}")
+print(f"Successful: {successful}")
+print(f"Success Rate: {success_rate:.2f}%")
+```
+
+## Analyzing Evaluation Results
+
+### Categorize Failures
+
+```python
+response = client.get_agent_success_evaluation_results(
+    agent_version="v2.0.0",
+    limit=200
+)
+
+# Categorize failures by type
+failure_types = {}
+for result in response.results:
+    if not result.is_success and result.failure_type:
+        failure_types[result.failure_type] = failure_types.get(result.failure_type, 0) + 1
+
+# Display failure breakdown
+print("Failure Analysis:")
+for failure_type, count in sorted(failure_types.items(), key=lambda x: x[1], reverse=True):
+    print(f"  {failure_type}: {count}")
+```
+
+### Extract Improvement Suggestions
+
+```python
+response = client.get_agent_success_evaluation_results(
+    agent_version="v2.0.0",
+    limit=50
+)
+
+# Collect unique improvement suggestions
+improvements = set()
+for result in response.results:
+    if not result.is_success and result.agent_prompt_update:
+        improvements.add(result.agent_prompt_update)
+
+print("Suggested Improvements:")
+for i, improvement in enumerate(improvements, 1):
+    print(f"{i}. {improvement}")
+```
+
+## Version Comparison
+
+### Compare Two Agent Versions
+
+```python
+def get_success_metrics(agent_version):
+    """Get success metrics for an agent version."""
+    response = client.get_agent_success_evaluation_results(
+        agent_version=agent_version,
+        limit=100
+    )
+
+    total = len(response.results)
+    successful = sum(1 for r in response.results if r.is_success)
+    success_rate = (successful / total * 100) if total > 0 else 0
+
+    return {
+        "version": agent_version,
+        "total": total,
+        "successful": successful,
+        "success_rate": success_rate
+    }
+
+# Compare versions
+v1_metrics = get_success_metrics("v1.0.0")
+v2_metrics = get_success_metrics("v2.0.0")
+
+print(f"Version {v1_metrics['version']}:")
+print(f"  Success Rate: {v1_metrics['success_rate']:.2f}%")
+print(f"  Total Evaluations: {v1_metrics['total']}")
+
+print(f"\nVersion {v2_metrics['version']}:")
+print(f"  Success Rate: {v2_metrics['success_rate']:.2f}%")
+print(f"  Total Evaluations: {v2_metrics['total']}")
+
+improvement = v2_metrics['success_rate'] - v1_metrics['success_rate']
+print(f"\nImprovement: {improvement:+.2f}%")
+```
+
+## Advanced Analysis
+
+### Track Evaluation Trends Over Time
+
+```python
+from datetime import datetime
+
+response = client.get_agent_success_evaluation_results(limit=500)
+
+# Group by date
+daily_results = {}
+for result in response.results:
+    # Extract date from created_at timestamp
+    date = datetime.fromtimestamp(result.created_at).date()
+    if date not in daily_results:
+        daily_results[date] = {"total": 0, "successful": 0}
+
+    daily_results[date]["total"] += 1
+    if result.is_success:
+        daily_results[date]["successful"] += 1
+
+# Display trend
+print("Daily Success Trends:")
+for date in sorted(daily_results.keys()):
+    stats = daily_results[date]
+    rate = (stats["successful"] / stats["total"] * 100) if stats["total"] > 0 else 0
+    print(f"{date}: {rate:.2f}% ({stats['successful']}/{stats['total']})")
+```
+
+### Identify Common Failure Patterns
+
+```python
+response = client.get_agent_success_evaluation_results(
+    agent_version="v2.1.0",
+    limit=200
+)
+
+# Analyze failure reasons
+failure_patterns = {}
+for result in response.results:
+    if not result.is_success and result.failure_reason:
+        reason = result.failure_reason
+        if reason not in failure_patterns:
+            failure_patterns[reason] = {
+                "count": 0,
+                "failure_types": set(),
+                "improvements": set()
+            }
+
+        failure_patterns[reason]["count"] += 1
+        if result.failure_type:
+            failure_patterns[reason]["failure_types"].add(result.failure_type)
+        if result.agent_prompt_update:
+            failure_patterns[reason]["improvements"].add(result.agent_prompt_update)
+
+# Display top failure patterns
+print("Top Failure Patterns:")
+sorted_patterns = sorted(failure_patterns.items(), key=lambda x: x[1]["count"], reverse=True)
+for reason, data in sorted_patterns[:5]:
+    print(f"\nReason: {reason}")
+    print(f"  Occurrences: {data['count']}")
+    print(f"  Failure Types: {', '.join(data['failure_types'])}")
+    if data['improvements']:
+        print(f"  Suggested Improvements:")
+        for improvement in list(data['improvements'])[:2]:
+            print(f"    - {improvement}")
+```
+
+## Integration Patterns
+
+### Automatic Alert on Low Success Rate
+
+```python
+def check_agent_health(agent_version, threshold=80.0):
+    """Alert if agent success rate drops below threshold."""
+    response = client.get_agent_success_evaluation_results(
+        agent_version=agent_version,
+        limit=100
+    )
+
+    total = len(response.results)
+    if total == 0:
+        print(f"No evaluation data for {agent_version}")
+        return
+
+    successful = sum(1 for r in response.results if r.is_success)
+    success_rate = (successful / total * 100)
+
+    if success_rate < threshold:
+        print(f"⚠️  ALERT: {agent_version} success rate is {success_rate:.2f}%")
+        print(f"   Threshold: {threshold}%")
+
+        # Get most common failure
+        failures = [r for r in response.results if not r.is_success]
+        if failures:
+            failure_types = {}
+            for f in failures:
+                if f.failure_type:
+                    failure_types[f.failure_type] = failure_types.get(f.failure_type, 0) + 1
+
+            most_common = max(failure_types.items(), key=lambda x: x[1])
+            print(f"   Most Common Failure: {most_common[0]} ({most_common[1]} occurrences)")
+    else:
+        print(f"✓ {agent_version} is healthy: {success_rate:.2f}% success rate")
+
+# Monitor multiple versions
+check_agent_health("v2.0.0")
+check_agent_health("v2.1.0")
+```
+
+### Generate Improvement Report
+
+```python
+def generate_improvement_report(agent_version):
+    """Generate a comprehensive improvement report."""
+    response = client.get_agent_success_evaluation_results(
+        agent_version=agent_version,
+        limit=200
+    )
+
+    total = len(response.results)
+    successful = sum(1 for r in response.results if r.is_success)
+    failed = total - successful
+
+    print(f"=== Agent Improvement Report: {agent_version} ===\n")
+    print(f"Total Evaluations: {total}")
+    print(f"Successful: {successful} ({successful/total*100:.2f}%)")
+    print(f"Failed: {failed} ({failed/total*100:.2f}%)\n")
+
+    if failed > 0:
+        # Failure type distribution
+        failure_types = {}
+        for r in response.results:
+            if not r.is_success and r.failure_type:
+                failure_types[r.failure_type] = failure_types.get(r.failure_type, 0) + 1
+
+        print("Failure Type Distribution:")
+        for ftype, count in sorted(failure_types.items(), key=lambda x: x[1], reverse=True):
+            print(f"  - {ftype}: {count} ({count/failed*100:.2f}%)")
+
+        # Improvement suggestions
+        improvements = {}
+        for r in response.results:
+            if not r.is_success and r.agent_prompt_update:
+                improvements[r.agent_prompt_update] = improvements.get(r.agent_prompt_update, 0) + 1
+
+        print("\nTop Improvement Suggestions:")
+        for suggestion, count in sorted(improvements.items(), key=lambda x: x[1], reverse=True)[:3]:
+            print(f"  {count}x: {suggestion}")
+
+# Generate report
+generate_improvement_report("v2.1.0")
+```
+
+## Best Practices
+
+### 1. Regular Monitoring
+
+```python
+# Set up regular monitoring
+import time
+
+def monitor_agent_performance(agent_version, interval_seconds=3600):
+    """Monitor agent performance at regular intervals."""
+    while True:
+        response = client.get_agent_success_evaluation_results(
+            agent_version=agent_version,
+            limit=50
+        )
+
+        total = len(response.results)
+        if total > 0:
+            successful = sum(1 for r in response.results if r.is_success)
+            success_rate = (successful / total * 100)
+            print(f"[{datetime.now()}] {agent_version}: {success_rate:.2f}% success rate")
+
+        time.sleep(interval_seconds)
+```
+
+### 2. Version Testing Before Deployment
+
+```python
+def validate_new_version(new_version, baseline_version, min_improvement=5.0):
+    """Validate that new version improves on baseline."""
+    new_response = client.get_agent_success_evaluation_results(
+        agent_version=new_version,
+        limit=100
+    )
+
+    baseline_response = client.get_agent_success_evaluation_results(
+        agent_version=baseline_version,
+        limit=100
+    )
+
+    new_rate = sum(1 for r in new_response.results if r.is_success) / len(new_response.results) * 100
+    baseline_rate = sum(1 for r in baseline_response.results if r.is_success) / len(baseline_response.results) * 100
+
+    improvement = new_rate - baseline_rate
+
+    if improvement >= min_improvement:
+        print(f"✓ Deploy {new_version}: {improvement:+.2f}% improvement")
+        return True
+    else:
+        print(f"✗ Do not deploy {new_version}: Only {improvement:+.2f}% improvement")
+        return False
+
+# Test before deployment
+validate_new_version("v2.2.0", "v2.1.0", min_improvement=5.0)
+```
+
+## Related Documentation
+
+- [Agent Feedback Concepts](../concepts/agent-feedback.md)
+- [Request Management](./request-management.md)
+- [Client API Reference](../api-reference/client.md)

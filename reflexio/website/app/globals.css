@@ -1,0 +1,109 @@
+@import "tailwindcss";
+
+:root {
+  /* New Color Palette:
+     #f1faee - background (174, 55%, 97%)
+     #a8dadc - light (183, 38%, 76%)
+     #457b9d - mid (202, 38%, 44%)
+     #1d3557 - dark (211, 50%, 22%)
+     #e63946 - red (355, 78%, 56%)
+  */
+  --background: 174 55% 97%;
+  --foreground: 211 50% 22%;
+  --card: 174 55% 98%;
+  --card-foreground: 211 50% 22%;
+  --popover: 174 55% 98%;
+  --popover-foreground: 211 50% 22%;
+  --primary: 202 38% 44%;
+  --primary-foreground: 174 55% 97%;
+  --secondary: 183 38% 76%;
+  --secondary-foreground: 211 50% 22%;
+  --muted: 183 20% 88%;
+  --muted-foreground: 211 30% 40%;
+  --accent: 183 38% 76%;
+  --accent-foreground: 211 50% 22%;
+  --destructive: 355 78% 56%;
+  --destructive-foreground: 174 55% 97%;
+  --border: 183 30% 82%;
+  --input: 183 30% 82%;
+  --ring: 202 38% 44%;
+  --radius: 0.75rem;
+  --chart-1: 202 38% 44%;
+  --chart-2: 183 38% 76%;
+  --chart-3: 211 50% 22%;
+  --chart-4: 355 78% 56%;
+  --chart-5: 174 55% 60%;
+}
+
+@theme inline {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+  --color-chart-1: hsl(var(--chart-1));
+  --color-chart-2: hsl(var(--chart-2));
+  --color-chart-3: hsl(var(--chart-3));
+  --color-chart-4: hsl(var(--chart-4));
+  --color-chart-5: hsl(var(--chart-5));
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+/* Light theme only - dark theme disabled */
+
+* {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-family: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* Improved input and textarea focus styles */
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: none;
+  ring: 2px;
+  ring-color: hsl(var(--primary));
+  ring-offset: 2px;
+}
+
+/* Custom scrollbar styles */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: hsl(var(--muted));
+}
+
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--primary) / 0.3);
+  border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--primary) / 0.5);
+}

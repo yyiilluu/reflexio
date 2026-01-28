@@ -1,0 +1,312 @@
+"""
+Utility functions for per-extractor interaction data collection and operation state management.
+
+These functions are shared across ProfileExtractor, FeedbackExtractor, and AgentSuccessEvaluator
+to handle per-extractor stride checking, source filtering, and operation state tracking.
+"""
+
+import logging
+from typing import Any, Optional, TypeVar
+
+from reflexio_commons.api_schema.service_schemas import Interaction
+from reflexio_commons.api_schema.internal_schema import RequestInteractionDataModel
+
+
+logger = logging.getLogger(__name__)
+
+TExtractorConfig = TypeVar("TExtractorConfig")
+
+
+def get_extractor_operation_state_key(
+    org_id: str,
+    service_name: str,
+    extractor_name: str,
+    user_id: Optional[str] = None,
+) -> str:
+    """
+    Generate a unique operation state key for a specific extractor.
+
+    Args:
+        org_id: Organization identifier
+        service_name: Service name (e.g., "profile_extractor", "feedback_extractor", "agent_success_extractor")
+        extractor_name: Unique extractor name from config
+        user_id: Optional user ID for user-level extractors (profile). Not used for feedback/agent_success.
+
+    Returns:
+        Unique key for operation state storage
+
+    Key format examples:
+        - Profile: "profile_extractor::{org_id}::{user_id}::{extractor_name}"
+        - Feedback: "feedback_extractor::{org_id}::{extractor_name}"
+        - AgentSuccess: "agent_success_extractor::{org_id}::{extractor_name}"
+    """
+    if user_id:
+        return f"{service_name}::{org_id}::{user_id}::{extractor_name}"
+    return f"{service_name}::{org_id}::{extractor_name}"
+
+
+def get_extractor_window_params(
+    extractor_config: TExtractorConfig,
+    global_window_size: Optional[int],
+    global_stride: Optional[int],
+) -> tuple[Optional[int], Optional[int]]:
+    """
+    Get effective window size and stride for a specific extractor.
+
+    Uses extractor's override values if set, otherwise falls back to global values.
+
+    Args:
+        extractor_config: Extractor configuration object
+        global_window_size: Global extraction_window_size from config
+        global_stride: Global extraction_window_stride from config
+
+    Returns:
+        Tuple of (window_size, stride_size) for this extractor
+    """
+    # Get override values, fall back to global
+    window_override = getattr(extractor_config, "extraction_window_size_override", None)
+    stride_override = getattr(
+        extractor_config, "extraction_window_stride_override", None
+    )
+
+    window_size = window_override if window_override is not None else global_window_size
+    stride_size = stride_override if stride_override is not None else global_stride
+
+    return window_size, stride_size
+
+
+def get_effective_source_filter(
+    extractor_config: TExtractorConfig,
+    triggering_source: Optional[str],
+) -> tuple[bool, Optional[list[str]]]:
+    """
+    Get effective source filter for an extractor.
+
+    NOTE: By the time this function is called, the extractor has already been filtered
+    by filter_extractor_configs() in base_generation_service.py. That filter ensures:
+    - If sources_enabled is set and triggering_source is not in it, the extractor is skipped
+    - So if we reach here with sources_enabled set, triggering_source MUST be in the list
+      (unless triggering_source is None, which happens in rerun flows)
+
+    This function still includes a safety check for edge cases.
+
+    Args:
+        extractor_config: Extractor configuration with request_sources_enabled field
+        triggering_source: The source from the triggering request (None for rerun flows)
+
+    Returns:
+        Tuple of (should_skip, source_filter):
+        - (False, None): If request_sources_enabled = None or empty list → get ALL sources, no filtering
+        - (False, [triggering_source]): If sources_enabled is set AND triggering_source in list
+        - (False, sources_enabled): If sources_enabled is set AND triggering_source is None → return all enabled sources
+        - (True, None): Safety skip if triggering_source not in sources_enabled (shouldn't happen)
+    """
+    sources_enabled = getattr(extractor_config, "request_sources_enabled", None)
+
+    # If no sources_enabled configured or empty list, extractor wants ALL sources
+    if sources_enabled is None or len(sources_enabled) == 0:
+        return (False, None)  # No source filtering - get all
+
+    # If triggering_source is None (rerun without specific source),
+    # return all enabled sources so caller can filter by them
+    if triggering_source is None:
+        return (False, sources_enabled)  # Return list of enabled sources
+
+    # Safety check: triggering_source should be in sources_enabled
+    # (filter_extractor_configs should have already filtered this out)
+    if triggering_source not in sources_enabled:
+        extractor_name = getattr(
+            extractor_config,
+            "extractor_name",
+            getattr(
+                extractor_config,
+                "feedback_name",
+                getattr(extractor_config, "evaluation_name", "unknown"),
+            ),
+        )
+        logger.warning(
+            "Skipping extractor '%s' - triggering_source '%s' not in sources_enabled %s "
+            "(this should have been filtered earlier)",
+            extractor_name,
+            triggering_source,
+            sources_enabled,
+        )
+        return (True, None)  # Skip this extractor
+
+    # triggering_source is in sources_enabled, use it for filtering
+    return (False, [triggering_source])
+
+
+def should_extractor_run_by_stride(
+    new_interaction_count: int,
+    stride_size: Optional[int],
+) -> bool:
+    """
+    Determine if an extractor should run based on its stride configuration.
+
+    Args:
+        new_interaction_count: Number of new interactions since last run
+        stride_size: Configured stride size for this extractor
+
+    Returns:
+        True if extractor should run, False otherwise
+    """
+    if new_interaction_count <= 0:
+        return False
+
+    if stride_size is None or stride_size <= 0:
+        return True  # No stride configured, always run
+
+    return new_interaction_count >= stride_size
+
+
+def update_extractor_operation_state(
+    storage: Any,
+    state_key: str,
+    processed_interactions: list[Interaction],
+) -> None:
+    """
+    Update operation state for an extractor after processing.
+
+    Args:
+        storage: Storage instance with upsert_operation_state method
+        state_key: Operation state key for this extractor
+        processed_interactions: Interactions that were processed
+    """
+    if not processed_interactions:
+        return
+
+    last_processed_ids = [
+        interaction.interaction_id for interaction in processed_interactions
+    ]
+    last_processed_timestamp = max(
+        (
+            interaction.created_at
+            for interaction in processed_interactions
+            if interaction.created_at is not None
+        ),
+        default=None,
+    )
+
+    state_payload: dict[str, Any] = {
+        "last_processed_interaction_ids": last_processed_ids,
+    }
+    if last_processed_timestamp is not None:
+        state_payload["last_processed_timestamp"] = last_processed_timestamp
+
+    storage.upsert_operation_state(state_key, state_payload)
+
+
+def filter_interactions_by_source(
+    request_interaction_data_models: list[RequestInteractionDataModel],
+    source_filter: Optional[str | list[str]],
+) -> list[RequestInteractionDataModel]:
+    """
+    Filter request interaction data models by source.
+
+    Args:
+        request_interaction_data_models: Data models to filter
+        source_filter:
+            - None: return all (no filtering)
+            - str: filter to only this source
+            - list[str]: filter to any of these sources
+
+    Returns:
+        Filtered list of RequestInteractionDataModel
+    """
+    if source_filter is None:
+        return request_interaction_data_models
+
+    if isinstance(source_filter, str):
+        allowed_sources = {source_filter}
+    else:
+        allowed_sources = set(source_filter)
+
+    return [
+        rim
+        for rim in request_interaction_data_models
+        if rim.request.source in allowed_sources
+    ]
+
+
+from collections.abc import Iterator
+
+
+def iter_sliding_windows(
+    request_interaction_data_models: list[RequestInteractionDataModel],
+    window_size: int,
+    stride_size: int,
+) -> Iterator[tuple[int, list[RequestInteractionDataModel]]]:
+    """
+    Yield sliding windows of RequestInteractionDataModel based on interaction count.
+
+    Windows are created based on total interaction count, not number of data models.
+    Each window contains complete RequestInteractionDataModel objects (never splits a model).
+
+    Args:
+        request_interaction_data_models: List of RequestInteractionDataModel to window over
+        window_size: Target number of interactions per window
+        stride_size: Step size in interactions between window starts (must be >= 1)
+
+    Yields:
+        Tuples of (window_index, list_of_request_interaction_data_models)
+
+    Example:
+        With 3 models having [10, 20, 15] interactions, window_size=25, stride=15:
+        - Window 0: models[0], models[1] (30 interactions, starts at 0)
+        - Window 1: models[1], models[2] (35 interactions, starts at 15)
+    """
+    if not request_interaction_data_models:
+        return
+
+    if window_size <= 0:
+        # Invalid window size, yield single window with all data
+        yield (0, request_interaction_data_models)
+        return
+
+    # Default stride to window_size if not valid
+    effective_stride = stride_size if stride_size and stride_size > 0 else window_size
+
+    # Build cumulative interaction counts for each model
+    # cumulative[i] = total interactions from models[0] to models[i-1] (exclusive)
+    cumulative: list[int] = [0]
+    for rim in request_interaction_data_models:
+        cumulative.append(cumulative[-1] + len(rim.interactions))
+
+    total_interactions = cumulative[-1]
+
+    if total_interactions == 0:
+        return
+
+    # If all data fits in one window, yield single window
+    if total_interactions <= window_size:
+        yield (0, request_interaction_data_models)
+        return
+
+    window_idx = 0
+    window_start = 0  # Starting interaction index
+
+    while window_start < total_interactions:
+        window_end = window_start + window_size
+
+        # Find models that overlap with [window_start, window_end)
+        # A model overlaps if its start < window_end AND its end > window_start
+        selected_models: list[RequestInteractionDataModel] = []
+
+        for i, rim in enumerate(request_interaction_data_models):
+            model_start = cumulative[i]
+            model_end = cumulative[i + 1]
+
+            # Model overlaps with window if: model_start < window_end AND model_end > window_start
+            if model_start < window_end and model_end > window_start:
+                selected_models.append(rim)
+
+        if selected_models:
+            yield (window_idx, selected_models)
+
+        window_idx += 1
+        window_start += effective_stride
+
+        # Prevent infinite loop if stride is 0 (shouldn't happen with validation above)
+        if effective_stride <= 0:
+            break

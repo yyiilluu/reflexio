@@ -1,0 +1,1459 @@
+import os
+import aiohttp
+import asyncio
+from urllib.parse import urljoin
+import requests
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
+from typing import Optional, TypeVar, Union
+from reflexio_commons.api_schema.retriever_schema import (
+    SearchInteractionRequest,
+    SearchInteractionResponse,
+    SearchUserProfileRequest,
+    SearchUserProfileResponse,
+    SearchRawFeedbackRequest,
+    SearchRawFeedbackResponse,
+    SearchFeedbackRequest,
+    SearchFeedbackResponse,
+    GetInteractionsRequest,
+    GetInteractionsResponse,
+    GetUserProfilesRequest,
+    GetUserProfilesResponse,
+    GetRawFeedbacksRequest,
+    GetRawFeedbacksResponse,
+    GetFeedbacksRequest,
+    GetFeedbacksResponse,
+    GetRequestsRequest,
+    GetRequestsResponse,
+    GetAgentSuccessEvaluationResultsRequest,
+    GetAgentSuccessEvaluationResultsResponse,
+)
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
+
+IS_TEST_ENV = os.environ.get("IS_TEST_ENV", "false").strip() == "true"
+
+if IS_TEST_ENV:
+    BACKEND_URL = "http://127.0.0.1:8000"  # Local server for testing
+else:
+    BACKEND_URL = "https://www.reflexio.com/"  # Main server url
+
+from reflexio_commons.api_schema.service_schemas import (
+    AddFeedbackRequest,
+    AddFeedbackResponse,
+    AddRawFeedbackRequest,
+    AddRawFeedbackResponse,
+    DeleteRequestGroupRequest,
+    Feedback,
+    DeleteRequestGroupResponse,
+    DeleteRequestRequest,
+    DeleteRequestResponse,
+    DeleteUserInteractionRequest,
+    DeleteUserInteractionResponse,
+    DeleteUserProfileRequest,
+    DeleteUserProfileResponse,
+    DeleteFeedbackRequest,
+    DeleteFeedbackResponse,
+    DeleteRawFeedbackRequest,
+    DeleteRawFeedbackResponse,
+    FeedbackStatus,
+    InteractionData,
+    ManualFeedbackGenerationRequest,
+    ManualProfileGenerationRequest,
+    ProfileChangeLogResponse,
+    PublishUserInteractionRequest,
+    PublishUserInteractionResponse,
+    RawFeedback,
+    RerunFeedbackGenerationRequest,
+    RerunFeedbackGenerationResponse,
+    RerunProfileGenerationRequest,
+    RerunProfileGenerationResponse,
+    RunFeedbackAggregationRequest,
+    RunFeedbackAggregationResponse,
+    Status,
+)
+from reflexio_commons.api_schema.login_schema import Token
+from reflexio_commons.config_schema import Config
+from .cache import InMemoryCache
+
+T = TypeVar("T")
+
+
+class ReflexioClient:
+    """Client for interacting with the Reflexio API."""
+
+    # Shared thread pool for all instances to maximize efficiency
+    _thread_pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="reflexio")
+
+    def __init__(self, api_key: str = "", url_endpoint: str = ""):
+        """Initialize the Reflexio client.
+
+        Args:
+            api_key (str): Your API key for authentication
+        """
+        self.api_key = api_key
+        self.base_url = url_endpoint if url_endpoint else BACKEND_URL
+        self.session = requests.Session()
+        self._cache = InMemoryCache()
+
+    def _get_auth_headers(self) -> dict:
+        """Get authentication headers for API requests.
+
+        Returns:
+            dict: Headers with authorization and content-type
+        """
+        if self.api_key:
+            return {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+            }
+        return {}
+
+    def _convert_to_model(self, data: Union[dict, object], model_class):
+        """Convert dict to model instance if needed.
+
+        Args:
+            data: Either a dict or already an instance of model_class
+            model_class: The target class to convert to
+
+        Returns:
+            An instance of model_class
+        """
+        if isinstance(data, dict):
+            return model_class(**data)
+        return data
+
+    def _build_request(
+        self,
+        request: Optional[Union[T, dict]],
+        model_class: type[T],
+        **kwargs,
+    ) -> T:
+        """Build request object from request param or kwargs.
+
+        Args:
+            request: Optional request object or dict
+            model_class: The request class to instantiate
+            **kwargs: Field values to use if request is None
+
+        Returns:
+            An instance of model_class
+        """
+        if request is not None:
+            return self._convert_to_model(request, model_class)
+        # Filter out None values and build from kwargs
+        filtered_kwargs = {k: v for k, v in kwargs.items() if v is not None}
+        return model_class(**filtered_kwargs)
+
+    def _fire_and_forget(self, async_func, *args, **kwargs):
+        """Execute an async request in fire-and-forget mode.
+
+        Args:
+            async_func: Asynchronous function to call
+            *args: Positional arguments to pass to the function
+            **kwargs: Keyword arguments to pass to the function
+        """
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(async_func(*args, **kwargs))
+        except RuntimeError:
+            self._thread_pool.submit(lambda: asyncio.run(async_func(*args, **kwargs)))
+
+    async def _make_async_request(
+        self, method: str, endpoint: str, headers: Optional[dict] = None, **kwargs
+    ):
+        """Make an async HTTP request to the API."""
+        url = urljoin(self.base_url, endpoint)
+
+        # Merge auth headers with any provided headers
+        request_headers = self._get_auth_headers()
+        if headers:
+            request_headers.update(headers)
+
+        async with aiohttp.ClientSession() as async_session:
+            response = await async_session.request(
+                method, url, headers=request_headers, **kwargs
+            )
+            response.raise_for_status()
+            return await response.json()
+
+    def _make_request(
+        self, method: str, endpoint: str, headers: Optional[dict] = None, **kwargs
+    ):
+        """Make an HTTP request to the API.
+
+        Args:
+            method (str): HTTP method (GET, POST, DELETE)
+            endpoint (str): API endpoint
+            headers (dict, optional): Additional headers to include in the request
+            **kwargs: Additional arguments to pass to requests
+
+        Returns:
+            dict: API response
+        """
+        url = urljoin(self.base_url, endpoint)
+
+        # Merge auth headers with any provided headers
+        request_headers = self._get_auth_headers()
+        if headers:
+            request_headers.update(headers)
+
+        self.session.headers.update(request_headers)
+        response = self.session.request(method, url, **kwargs)
+        response.raise_for_status()
+        return response.json()
+
+    def login(self, email: str, password: str) -> Token:
+        """Login to the Reflexio API."""
+        response = self._make_request(
+            "POST",
+            "/token",
+            data={"username": email, "password": password},
+            headers={
+                "Content-Type": "application/x-www-form-urlencoded",
+                "accept": "application/json",
+            },
+        )
+        self.api_key = response["api_key"]
+        return Token(**response)
+
+    def _publish_interaction_sync(
+        self, request: PublishUserInteractionRequest
+    ) -> PublishUserInteractionResponse:
+        """Internal sync method to publish interaction."""
+        response = self._make_request(
+            "POST",
+            "/api/publish_interaction",
+            json=request.model_dump(),
+        )
+        return PublishUserInteractionResponse(**response)
+
+    async def _publish_interaction_async(
+        self, request: PublishUserInteractionRequest
+    ) -> PublishUserInteractionResponse:
+        """Internal async method to publish interaction."""
+        response = await self._make_async_request(
+            "POST",
+            "/api/publish_interaction",
+            json=request.model_dump(),
+        )
+        return PublishUserInteractionResponse(**response)
+
+    def publish_interaction(
+        self,
+        user_id: str,
+        interactions: list[Union[InteractionData, dict]],
+        source: str = "",
+        agent_version: str = "",
+        request_group: Optional[str] = None,
+        wait_for_response: bool = False,
+    ) -> Optional[PublishUserInteractionResponse]:
+        """Publish user interactions.
+
+        This method is optimized for resource efficiency:
+        - In async contexts (e.g., FastAPI): Uses existing event loop (most efficient)
+        - In sync contexts: Uses shared thread pool (avoids thread creation overhead)
+
+        Args:
+            user_id (str): The user ID
+            interactions (List[InteractionData]): List of interaction data
+            source (str, optional): The source of the interaction
+            agent_version (str, optional): The agent version
+            request_group (Optional[str], optional): The request group. Defaults to None.
+            wait_for_response (bool, optional): If True, wait for response. If False, send request without waiting. Defaults to False.
+        Returns:
+            Optional[PublishUserInteractionResponse]: Response containing success status and message if wait_for_response=True, None otherwise
+        """
+        interaction_data_list = [
+            (
+                InteractionData(**interaction_request)
+                if isinstance(interaction_request, dict)
+                else interaction_request
+            )
+            for interaction_request in interactions
+        ]
+        request = PublishUserInteractionRequest(
+            request_group=request_group,
+            user_id=user_id,
+            interaction_data_list=interaction_data_list,
+            source=source,
+            agent_version=agent_version,
+        )
+
+        if wait_for_response:
+            # Synchronous blocking call
+            return self._publish_interaction_sync(request)
+        else:
+            # Non-blocking fire-and-forget
+            self._fire_and_forget(self._publish_interaction_async, request)
+            return None
+
+    def search_interactions(
+        self,
+        request: Optional[Union[SearchInteractionRequest, dict]] = None,
+        *,
+        user_id: Optional[str] = None,
+        request_id: Optional[str] = None,
+        query: Optional[str] = None,
+        start_time: Optional[datetime] = None,
+        end_time: Optional[datetime] = None,
+        top_k: Optional[int] = None,
+        most_recent_k: Optional[int] = None,
+    ) -> SearchInteractionResponse:
+        """Search for user interactions.
+
+        Args:
+            request (Optional[SearchInteractionRequest]): The search request object (alternative to kwargs)
+            user_id (str): The user ID to search for
+            request_id (Optional[str]): Filter by specific request ID
+            query (Optional[str]): Search query string
+            start_time (Optional[datetime]): Filter by start time
+            end_time (Optional[datetime]): Filter by end time
+            top_k (Optional[int]): Maximum number of results to return
+            most_recent_k (Optional[int]): Return most recent k interactions
+
+        Returns:
+            SearchInteractionResponse: Response containing matching interactions
+        """
+        req = self._build_request(
+            request,
+            SearchInteractionRequest,
+            user_id=user_id,
+            request_id=request_id,
+            query=query,
+            start_time=start_time,
+            end_time=end_time,
+            top_k=top_k,
+            most_recent_k=most_recent_k,
+        )
+        response = self._make_request(
+            "POST",
+            "/api/search_interactions",
+            json=req.model_dump(),
+        )
+        return SearchInteractionResponse(**response)
+
+    def search_profiles(
+        self,
+        request: Optional[Union[SearchUserProfileRequest, dict]] = None,
+        *,
+        user_id: Optional[str] = None,
+        generated_from_request_id: Optional[str] = None,
+        query: Optional[str] = None,
+        start_time: Optional[datetime] = None,
+        end_time: Optional[datetime] = None,
+        top_k: Optional[int] = None,
+        source: Optional[str] = None,
+        custom_feature: Optional[str] = None,
+        threshold: Optional[float] = None,
+    ) -> SearchUserProfileResponse:
+        """Search for user profiles.
+
+        Args:
+            request (Optional[SearchUserProfileRequest]): The search request object (alternative to kwargs)
+            user_id (str): The user ID to search for
+            generated_from_request_id (Optional[str]): Filter by request ID that generated the profile
+            query (Optional[str]): Search query string
+            start_time (Optional[datetime]): Filter by start time
+            end_time (Optional[datetime]): Filter by end time
+            top_k (Optional[int]): Maximum number of results to return (default: 10)
+            source (Optional[str]): Filter by source
+            custom_feature (Optional[str]): Filter by custom feature
+            threshold (Optional[float]): Similarity threshold (default: 0.7)
+
+        Returns:
+            SearchUserProfileResponse: Response containing matching profiles
+        """
+        req = self._build_request(
+            request,
+            SearchUserProfileRequest,
+            user_id=user_id,
+            generated_from_request_id=generated_from_request_id,
+            query=query,
+            start_time=start_time,
+            end_time=end_time,
+            top_k=top_k,
+            source=source,
+            custom_feature=custom_feature,
+            threshold=threshold,
+        )
+        response = self._make_request(
+            "POST", "/api/search_profiles", json=req.model_dump()
+        )
+        return SearchUserProfileResponse(**response)
+
+    def search_raw_feedbacks(
+        self,
+        request: Optional[Union[SearchRawFeedbackRequest, dict]] = None,
+        *,
+        query: Optional[str] = None,
+        user_id: Optional[str] = None,
+        agent_version: Optional[str] = None,
+        feedback_name: Optional[str] = None,
+        start_time: Optional[datetime] = None,
+        end_time: Optional[datetime] = None,
+        status_filter: Optional[list[Optional[Status]]] = None,
+        top_k: Optional[int] = None,
+        threshold: Optional[float] = None,
+    ) -> SearchRawFeedbackResponse:
+        """Search for raw feedbacks with semantic/text search and filtering.
+
+        Args:
+            request (Optional[SearchRawFeedbackRequest]): The search request object (alternative to kwargs)
+            query (Optional[str]): Query for semantic/text search
+            user_id (Optional[str]): Filter by user (via request_id linkage to requests table)
+            agent_version (Optional[str]): Filter by agent version
+            feedback_name (Optional[str]): Filter by feedback name
+            start_time (Optional[datetime]): Start time for created_at filter
+            end_time (Optional[datetime]): End time for created_at filter
+            status_filter (Optional[list[Optional[Status]]]): Filter by status (None for CURRENT, PENDING, ARCHIVED)
+            top_k (Optional[int]): Maximum number of results to return (default: 10)
+            threshold (Optional[float]): Similarity threshold for vector search (default: 0.5)
+
+        Returns:
+            SearchRawFeedbackResponse: Response containing matching raw feedbacks
+        """
+        req = self._build_request(
+            request,
+            SearchRawFeedbackRequest,
+            query=query,
+            user_id=user_id,
+            agent_version=agent_version,
+            feedback_name=feedback_name,
+            start_time=start_time,
+            end_time=end_time,
+            status_filter=status_filter,
+            top_k=top_k,
+            threshold=threshold,
+        )
+        response = self._make_request(
+            "POST", "/api/search_raw_feedbacks", json=req.model_dump()
+        )
+        return SearchRawFeedbackResponse(**response)
+
+    def search_feedbacks(
+        self,
+        request: Optional[Union[SearchFeedbackRequest, dict]] = None,
+        *,
+        query: Optional[str] = None,
+        agent_version: Optional[str] = None,
+        feedback_name: Optional[str] = None,
+        start_time: Optional[datetime] = None,
+        end_time: Optional[datetime] = None,
+        status_filter: Optional[list[Optional[Status]]] = None,
+        feedback_status_filter: Optional[FeedbackStatus] = None,
+        top_k: Optional[int] = None,
+        threshold: Optional[float] = None,
+    ) -> SearchFeedbackResponse:
+        """Search for aggregated feedbacks with semantic/text search and filtering.
+
+        Args:
+            request (Optional[SearchFeedbackRequest]): The search request object (alternative to kwargs)
+            query (Optional[str]): Query for semantic/text search
+            agent_version (Optional[str]): Filter by agent version
+            feedback_name (Optional[str]): Filter by feedback name
+            start_time (Optional[datetime]): Start time for created_at filter
+            end_time (Optional[datetime]): End time for created_at filter
+            status_filter (Optional[list[Optional[Status]]]): Filter by status (None for CURRENT, PENDING, ARCHIVED)
+            feedback_status_filter (Optional[FeedbackStatus]): Filter by feedback status (PENDING, APPROVED, REJECTED)
+            top_k (Optional[int]): Maximum number of results to return (default: 10)
+            threshold (Optional[float]): Similarity threshold for vector search (default: 0.5)
+
+        Returns:
+            SearchFeedbackResponse: Response containing matching feedbacks
+        """
+        req = self._build_request(
+            request,
+            SearchFeedbackRequest,
+            query=query,
+            agent_version=agent_version,
+            feedback_name=feedback_name,
+            start_time=start_time,
+            end_time=end_time,
+            status_filter=status_filter,
+            feedback_status_filter=feedback_status_filter,
+            top_k=top_k,
+            threshold=threshold,
+        )
+        response = self._make_request(
+            "POST", "/api/search_feedbacks", json=req.model_dump()
+        )
+        return SearchFeedbackResponse(**response)
+
+    def _delete_profile_sync(
+        self, request: DeleteUserProfileRequest
+    ) -> DeleteUserProfileResponse:
+        """Internal sync method to delete profile."""
+        response = self._make_request(
+            "DELETE",
+            "/api/delete_profile",
+            json=request.model_dump(),
+        )
+        return DeleteUserProfileResponse(**response)
+
+    async def _delete_profile_async(
+        self, request: DeleteUserProfileRequest
+    ) -> DeleteUserProfileResponse:
+        """Internal async method to delete profile."""
+        response = await self._make_async_request(
+            "DELETE",
+            "/api/delete_profile",
+            json=request.model_dump(),
+        )
+        return DeleteUserProfileResponse(**response)
+
+    def delete_profile(
+        self,
+        user_id: str,
+        profile_id: str = "",
+        search_query: str = "",
+        wait_for_response: bool = False,
+    ) -> Optional[DeleteUserProfileResponse]:
+        """Delete user profiles.
+
+        This method is optimized for resource efficiency:
+        - In async contexts (e.g., FastAPI): Uses existing event loop (most efficient)
+        - In sync contexts: Uses shared thread pool (avoids thread creation overhead)
+
+        Args:
+            user_id (str): The user ID
+            profile_id (str, optional): Specific profile ID to delete
+            search_query (str, optional): Query to match profiles for deletion
+            wait_for_response (bool, optional): If True, wait for response. If False, send request without waiting. Defaults to False.
+
+        Returns:
+            Optional[DeleteUserProfileResponse]: Response containing success status and message if wait_for_response=True, None otherwise
+        """
+        request = DeleteUserProfileRequest(
+            user_id=user_id,
+            profile_id=profile_id,
+            search_query=search_query,
+        )
+
+        if wait_for_response:
+            # Synchronous blocking call
+            return self._delete_profile_sync(request)
+        else:
+            # Non-blocking fire-and-forget
+            self._fire_and_forget(self._delete_profile_async, request)
+            return None
+
+    def _delete_interaction_sync(
+        self, request: DeleteUserInteractionRequest
+    ) -> DeleteUserInteractionResponse:
+        """Internal sync method to delete interaction."""
+        response = self._make_request(
+            "DELETE",
+            "/api/delete_interaction",
+            json=request.model_dump(),
+        )
+        return DeleteUserInteractionResponse(**response)
+
+    async def _delete_interaction_async(
+        self, request: DeleteUserInteractionRequest
+    ) -> DeleteUserInteractionResponse:
+        """Internal async method to delete interaction."""
+        response = await self._make_async_request(
+            "DELETE",
+            "/api/delete_interaction",
+            json=request.model_dump(),
+        )
+        return DeleteUserInteractionResponse(**response)
+
+    def delete_interaction(
+        self, user_id: str, interaction_id: str, wait_for_response: bool = False
+    ) -> Optional[DeleteUserInteractionResponse]:
+        """Delete a user interaction.
+
+        This method is optimized for resource efficiency:
+        - In async contexts (e.g., FastAPI): Uses existing event loop (most efficient)
+        - In sync contexts: Uses shared thread pool (avoids thread creation overhead)
+
+        Args:
+            user_id (str): The user ID
+            interaction_id (str): The interaction ID to delete
+            wait_for_response (bool, optional): If True, wait for response. If False, send request without waiting. Defaults to False.
+
+        Returns:
+            Optional[DeleteUserInteractionResponse]: Response containing success status and message if wait_for_response=True, None otherwise
+        """
+        request = DeleteUserInteractionRequest(
+            user_id=user_id, interaction_id=interaction_id
+        )
+
+        if wait_for_response:
+            # Synchronous blocking call
+            return self._delete_interaction_sync(request)
+        else:
+            # Non-blocking fire-and-forget
+            self._fire_and_forget(self._delete_interaction_async, request)
+            return None
+
+    def _delete_request_sync(
+        self, request: DeleteRequestRequest
+    ) -> DeleteRequestResponse:
+        """Internal sync method to delete request."""
+        response = self._make_request(
+            "DELETE",
+            "/api/delete_request",
+            json=request.model_dump(),
+        )
+        return DeleteRequestResponse(**response)
+
+    async def _delete_request_async(
+        self, request: DeleteRequestRequest
+    ) -> DeleteRequestResponse:
+        """Internal async method to delete request."""
+        response = await self._make_async_request(
+            "DELETE",
+            "/api/delete_request",
+            json=request.model_dump(),
+        )
+        return DeleteRequestResponse(**response)
+
+    def delete_request(
+        self, request_id: str, wait_for_response: bool = False
+    ) -> Optional[DeleteRequestResponse]:
+        """Delete a request and all its associated interactions.
+
+        This method is optimized for resource efficiency:
+        - In async contexts (e.g., FastAPI): Uses existing event loop (most efficient)
+        - In sync contexts: Uses shared thread pool (avoids thread creation overhead)
+
+        Args:
+            request_id (str): The request ID to delete
+            wait_for_response (bool, optional): If True, wait for response. If False, send request without waiting. Defaults to False.
+
+        Returns:
+            Optional[DeleteRequestResponse]: Response containing success status and message if wait_for_response=True, None otherwise
+        """
+        request = DeleteRequestRequest(request_id=request_id)
+
+        if wait_for_response:
+            # Synchronous blocking call
+            return self._delete_request_sync(request)
+        else:
+            # Non-blocking fire-and-forget
+            self._fire_and_forget(self._delete_request_async, request)
+            return None
+
+    def _delete_request_group_sync(
+        self, request: DeleteRequestGroupRequest
+    ) -> DeleteRequestGroupResponse:
+        """Internal sync method to delete request group."""
+        response = self._make_request(
+            "DELETE",
+            "/api/delete_request_group",
+            json=request.model_dump(),
+        )
+        return DeleteRequestGroupResponse(**response)
+
+    async def _delete_request_group_async(
+        self, request: DeleteRequestGroupRequest
+    ) -> DeleteRequestGroupResponse:
+        """Internal async method to delete request group."""
+        response = await self._make_async_request(
+            "DELETE",
+            "/api/delete_request_group",
+            json=request.model_dump(),
+        )
+        return DeleteRequestGroupResponse(**response)
+
+    def delete_request_group(
+        self, request_group: str, wait_for_response: bool = False
+    ) -> Optional[DeleteRequestGroupResponse]:
+        """Delete all requests and interactions in a request group.
+
+        This method is optimized for resource efficiency:
+        - In async contexts (e.g., FastAPI): Uses existing event loop (most efficient)
+        - In sync contexts: Uses shared thread pool (avoids thread creation overhead)
+
+        Args:
+            request_group (str): The request group to delete
+            wait_for_response (bool, optional): If True, wait for response. If False, send request without waiting. Defaults to False.
+
+        Returns:
+            Optional[DeleteRequestGroupResponse]: Response containing success status, message, and deleted count if wait_for_response=True, None otherwise
+        """
+        request = DeleteRequestGroupRequest(request_group=request_group)
+
+        if wait_for_response:
+            # Synchronous blocking call
+            return self._delete_request_group_sync(request)
+        else:
+            # Non-blocking fire-and-forget
+            self._fire_and_forget(self._delete_request_group_async, request)
+            return None
+
+    def _delete_feedback_sync(
+        self, request: DeleteFeedbackRequest
+    ) -> DeleteFeedbackResponse:
+        """Internal sync method to delete feedback."""
+        response = self._make_request(
+            "DELETE",
+            "/api/delete_feedback",
+            json=request.model_dump(),
+        )
+        return DeleteFeedbackResponse(**response)
+
+    async def _delete_feedback_async(
+        self, request: DeleteFeedbackRequest
+    ) -> DeleteFeedbackResponse:
+        """Internal async method to delete feedback."""
+        response = await self._make_async_request(
+            "DELETE",
+            "/api/delete_feedback",
+            json=request.model_dump(),
+        )
+        return DeleteFeedbackResponse(**response)
+
+    def delete_feedback(
+        self, feedback_id: int, wait_for_response: bool = False
+    ) -> Optional[DeleteFeedbackResponse]:
+        """Delete a feedback by ID.
+
+        This method is optimized for resource efficiency:
+        - In async contexts (e.g., FastAPI): Uses existing event loop (most efficient)
+        - In sync contexts: Uses shared thread pool (avoids thread creation overhead)
+
+        Args:
+            feedback_id (int): The feedback ID to delete
+            wait_for_response (bool, optional): If True, wait for response. If False, send request without waiting. Defaults to False.
+
+        Returns:
+            Optional[DeleteFeedbackResponse]: Response containing success status and message if wait_for_response=True, None otherwise
+        """
+        request = DeleteFeedbackRequest(feedback_id=feedback_id)
+
+        if wait_for_response:
+            # Synchronous blocking call
+            return self._delete_feedback_sync(request)
+        else:
+            # Non-blocking fire-and-forget
+            self._fire_and_forget(self._delete_feedback_async, request)
+            return None
+
+    def _delete_raw_feedback_sync(
+        self, request: DeleteRawFeedbackRequest
+    ) -> DeleteRawFeedbackResponse:
+        """Internal sync method to delete raw feedback."""
+        response = self._make_request(
+            "DELETE",
+            "/api/delete_raw_feedback",
+            json=request.model_dump(),
+        )
+        return DeleteRawFeedbackResponse(**response)
+
+    async def _delete_raw_feedback_async(
+        self, request: DeleteRawFeedbackRequest
+    ) -> DeleteRawFeedbackResponse:
+        """Internal async method to delete raw feedback."""
+        response = await self._make_async_request(
+            "DELETE",
+            "/api/delete_raw_feedback",
+            json=request.model_dump(),
+        )
+        return DeleteRawFeedbackResponse(**response)
+
+    def delete_raw_feedback(
+        self, raw_feedback_id: int, wait_for_response: bool = False
+    ) -> Optional[DeleteRawFeedbackResponse]:
+        """Delete a raw feedback by ID.
+
+        This method is optimized for resource efficiency:
+        - In async contexts (e.g., FastAPI): Uses existing event loop (most efficient)
+        - In sync contexts: Uses shared thread pool (avoids thread creation overhead)
+
+        Args:
+            raw_feedback_id (int): The raw feedback ID to delete
+            wait_for_response (bool, optional): If True, wait for response. If False, send request without waiting. Defaults to False.
+
+        Returns:
+            Optional[DeleteRawFeedbackResponse]: Response containing success status and message if wait_for_response=True, None otherwise
+        """
+        request = DeleteRawFeedbackRequest(raw_feedback_id=raw_feedback_id)
+
+        if wait_for_response:
+            # Synchronous blocking call
+            return self._delete_raw_feedback_sync(request)
+        else:
+            # Non-blocking fire-and-forget
+            self._fire_and_forget(self._delete_raw_feedback_async, request)
+            return None
+
+    def get_profile_change_log(self) -> ProfileChangeLogResponse:
+        """Get profile change log.
+
+        Returns:
+            ProfileChangeLogResponse: Response containing profile change log
+        """
+        response = self._make_request("GET", "/api/profile_change_log")
+        return ProfileChangeLogResponse(**response)
+
+    def get_interactions(
+        self,
+        request: Optional[Union[GetInteractionsRequest, dict]] = None,
+        *,
+        user_id: Optional[str] = None,
+        start_time: Optional[datetime] = None,
+        end_time: Optional[datetime] = None,
+        top_k: Optional[int] = None,
+    ) -> GetInteractionsResponse:
+        """Get user interactions.
+
+        Args:
+            request (Optional[GetInteractionsRequest]): The list request object (alternative to kwargs)
+            user_id (str): The user ID to get interactions for
+            start_time (Optional[datetime]): Filter by start time
+            end_time (Optional[datetime]): Filter by end time
+            top_k (Optional[int]): Maximum number of results to return (default: 30)
+
+        Returns:
+            GetInteractionsResponse: Response containing list of interactions
+        """
+        req = self._build_request(
+            request,
+            GetInteractionsRequest,
+            user_id=user_id,
+            start_time=start_time,
+            end_time=end_time,
+            top_k=top_k,
+        )
+        response = self._make_request(
+            "POST",
+            "/api/get_interactions",
+            json=req.model_dump(),
+        )
+        return GetInteractionsResponse(**response)
+
+    def get_profiles(
+        self,
+        request: Optional[Union[GetUserProfilesRequest, dict]] = None,
+        force_refresh: bool = False,
+        *,
+        user_id: Optional[str] = None,
+        start_time: Optional[datetime] = None,
+        end_time: Optional[datetime] = None,
+        top_k: Optional[int] = None,
+        status_filter: Optional[list[Optional[Union[Status, str]]]] = None,
+    ) -> GetUserProfilesResponse:
+        """Get user profiles.
+
+        Args:
+            request (Optional[GetUserProfilesRequest]): The list request object (alternative to kwargs)
+            force_refresh (bool, optional): If True, bypass cache and fetch fresh data. Defaults to False.
+            user_id (str): The user ID to get profiles for
+            start_time (Optional[datetime]): Filter by start time
+            end_time (Optional[datetime]): Filter by end time
+            top_k (Optional[int]): Maximum number of results to return (default: 30)
+            status_filter (Optional[list[Optional[Union[Status, str]]]]): Filter by profile status. Accepts Status enum or string values (e.g., "archived", "pending").
+
+        Returns:
+            GetUserProfilesResponse: Response containing list of profiles
+        """
+        # Convert string status values to Status enum
+        converted_status_filter = None
+        if status_filter is not None:
+            converted_status_filter = []
+            for status in status_filter:
+                if status is None:
+                    converted_status_filter.append(None)
+                elif isinstance(status, str):
+                    converted_status_filter.append(Status(status))
+                else:
+                    converted_status_filter.append(status)
+
+        req = self._build_request(
+            request,
+            GetUserProfilesRequest,
+            user_id=user_id,
+            start_time=start_time,
+            end_time=end_time,
+            top_k=top_k,
+            status_filter=converted_status_filter,
+        )
+
+        # Check cache if not forcing refresh
+        if not force_refresh:
+            cached_result = self._cache.get(
+                "get_profiles",
+                user_id=req.user_id,
+                start_time=req.start_time,
+                end_time=req.end_time,
+                top_k=req.top_k,
+                status_filter=req.status_filter,
+            )
+            if cached_result is not None:
+                return cached_result
+
+        # Make API call
+        response = self._make_request(
+            "POST",
+            "/api/get_profiles",
+            json=req.model_dump(),
+        )
+        result = GetUserProfilesResponse(**response)
+
+        # Store in cache
+        self._cache.set(
+            "get_profiles",
+            result,
+            user_id=req.user_id,
+            start_time=req.start_time,
+            end_time=req.end_time,
+            top_k=req.top_k,
+            status_filter=req.status_filter,
+        )
+
+        return result
+
+    def get_all_profiles(
+        self,
+        limit: int = 100,
+    ) -> GetUserProfilesResponse:
+        """Get all user profiles across all users.
+
+        Args:
+            limit (int, optional): Maximum number of profiles to return. Defaults to 100.
+
+        Returns:
+            GetUserProfilesResponse: Response containing all user profiles
+        """
+        response = self._make_request(
+            "GET",
+            f"/api/get_all_profiles?limit={limit}",
+        )
+        return GetUserProfilesResponse(**response)
+
+    def set_config(self, config: Union[Config, dict]) -> dict:
+        """Set configuration for the organization.
+
+        Args:
+            config (Union[Config, dict]): The configuration to set
+
+        Returns:
+            dict: Response containing success status and message
+        """
+        config = self._convert_to_model(config, Config)
+        response = self._make_request(
+            "POST",
+            "/api/set_config",
+            json=config.model_dump(),
+        )
+        return response
+
+    def get_config(self) -> Config:
+        """Get configuration for the organization.
+
+        Returns:
+            Config: The current configuration
+        """
+        response = self._make_request(
+            "GET",
+            "/api/get_config",
+        )
+        return Config(**response)
+
+    def get_raw_feedbacks(
+        self,
+        request: Optional[Union[GetRawFeedbacksRequest, dict]] = None,
+        *,
+        limit: Optional[int] = None,
+        feedback_name: Optional[str] = None,
+        status_filter: Optional[list[Optional[Status]]] = None,
+    ) -> GetRawFeedbacksResponse:
+        """Get raw feedbacks.
+
+        Args:
+            request (Optional[GetRawFeedbacksRequest]): The get request object (alternative to kwargs)
+            limit (Optional[int]): Maximum number of results to return (default: 100)
+            feedback_name (Optional[str]): Filter by feedback name
+            status_filter (Optional[list[Optional[Status]]]): Filter by status
+
+        Returns:
+            GetRawFeedbacksResponse: Response containing raw feedbacks
+        """
+        req = self._build_request(
+            request,
+            GetRawFeedbacksRequest,
+            limit=limit,
+            feedback_name=feedback_name,
+            status_filter=status_filter,
+        )
+        response = self._make_request(
+            "POST",
+            "/api/get_raw_feedbacks",
+            json=req.model_dump(),
+        )
+        return GetRawFeedbacksResponse(**response)
+
+    def add_raw_feedback(
+        self,
+        raw_feedbacks: list[Union[RawFeedback, dict]],
+    ) -> AddRawFeedbackResponse:
+        """Add raw feedback directly to storage.
+
+        Args:
+            raw_feedbacks (list[Union[RawFeedback, dict]]): List of raw feedbacks to add.
+                Each raw feedback should contain:
+                - agent_version (str): Required. The agent version.
+                - request_id (str): Required. The request ID.
+                - feedback_content (str): Required. The feedback content.
+                - feedback_name (str): Optional. The feedback name/category.
+
+        Returns:
+            AddRawFeedbackResponse: Response containing success status, message, and added count.
+        """
+        # Convert dicts to RawFeedback objects if needed
+        raw_feedback_list = [
+            RawFeedback(**rf) if isinstance(rf, dict) else rf for rf in raw_feedbacks
+        ]
+        request = AddRawFeedbackRequest(raw_feedbacks=raw_feedback_list)
+        response = self._make_request(
+            "POST",
+            "/api/add_raw_feedback",
+            json=request.model_dump(),
+        )
+        return AddRawFeedbackResponse(**response)
+
+    def add_feedbacks(
+        self,
+        feedbacks: list[Union[Feedback, dict]],
+    ) -> AddFeedbackResponse:
+        """Add aggregated feedback directly to storage.
+
+        Args:
+            feedbacks (list[Union[Feedback, dict]]): List of feedbacks to add.
+                Each feedback should contain:
+                - agent_version (str): Required. The agent version.
+                - feedback_content (str): Required. The feedback content.
+                - feedback_status (FeedbackStatus): Required. The feedback approval status.
+                - feedback_metadata (str): Required. Metadata about the feedback.
+                - feedback_name (str): Optional. The feedback name/category.
+
+        Returns:
+            AddFeedbackResponse: Response containing success status, message, and added count.
+        """
+        # Convert dicts to Feedback objects if needed
+        feedback_list = [
+            Feedback(**fb) if isinstance(fb, dict) else fb for fb in feedbacks
+        ]
+        request = AddFeedbackRequest(feedbacks=feedback_list)
+        response = self._make_request(
+            "POST",
+            "/api/add_feedbacks",
+            json=request.model_dump(),
+        )
+        return AddFeedbackResponse(**response)
+
+    def get_feedbacks(
+        self,
+        request: Optional[Union[GetFeedbacksRequest, dict]] = None,
+        force_refresh: bool = False,
+        *,
+        limit: Optional[int] = None,
+        feedback_name: Optional[str] = None,
+        status_filter: Optional[list[Optional[Status]]] = None,
+        feedback_status_filter: Optional[FeedbackStatus] = None,
+    ) -> GetFeedbacksResponse:
+        """Get feedbacks.
+
+        Args:
+            request (Optional[GetFeedbacksRequest]): The get request object (alternative to kwargs)
+            force_refresh (bool, optional): If True, bypass cache and fetch fresh data. Defaults to False.
+            limit (Optional[int]): Maximum number of results to return (default: 100)
+            feedback_name (Optional[str]): Filter by feedback name
+            status_filter (Optional[list[Optional[Status]]]): Filter by status
+            feedback_status_filter (Optional[FeedbackStatus]): Filter by feedback status (default: APPROVED)
+
+        Returns:
+            GetFeedbacksResponse: Response containing feedbacks
+        """
+        req = self._build_request(
+            request,
+            GetFeedbacksRequest,
+            limit=limit,
+            feedback_name=feedback_name,
+            status_filter=status_filter,
+            feedback_status_filter=feedback_status_filter,
+        )
+
+        # Check cache if not forcing refresh
+        if not force_refresh:
+            cached_result = self._cache.get(
+                "get_feedbacks",
+                limit=req.limit,
+                feedback_name=req.feedback_name,
+                status_filter=req.status_filter,
+                feedback_status_filter=req.feedback_status_filter,
+            )
+            if cached_result is not None:
+                return cached_result
+
+        # Make API call
+        response = self._make_request(
+            "POST",
+            "/api/get_feedbacks",
+            json=req.model_dump(),
+        )
+        result = GetFeedbacksResponse(**response)
+
+        # Store in cache
+        self._cache.set(
+            "get_feedbacks",
+            result,
+            limit=req.limit,
+            feedback_name=req.feedback_name,
+            status_filter=req.status_filter,
+            feedback_status_filter=req.feedback_status_filter,
+        )
+
+        return result
+
+    def get_requests(
+        self,
+        request: Optional[Union[GetRequestsRequest, dict]] = None,
+        *,
+        user_id: Optional[str] = None,
+        request_id: Optional[str] = None,
+        start_time: Optional[datetime] = None,
+        end_time: Optional[datetime] = None,
+        top_k: Optional[int] = None,
+    ) -> GetRequestsResponse:
+        """Get requests with their associated interactions, grouped by request_group.
+
+        Args:
+            request (Optional[GetRequestsRequest]): The get request object (alternative to kwargs)
+            user_id (Optional[str]): Filter by user ID
+            request_id (Optional[str]): Filter by request ID
+            start_time (Optional[datetime]): Filter by start time
+            end_time (Optional[datetime]): Filter by end time
+            top_k (Optional[int]): Maximum number of results to return (default: 30)
+
+        Returns:
+            GetRequestsResponse: Response containing requests grouped by request_group with their interactions
+        """
+        req = self._build_request(
+            request,
+            GetRequestsRequest,
+            user_id=user_id,
+            request_id=request_id,
+            start_time=start_time,
+            end_time=end_time,
+            top_k=top_k,
+        )
+        response = self._make_request(
+            "POST",
+            "/api/get_requests",
+            json=req.model_dump(),
+        )
+        return GetRequestsResponse(**response)
+
+    def get_agent_success_evaluation_results(
+        self,
+        request: Optional[Union[GetAgentSuccessEvaluationResultsRequest, dict]] = None,
+        *,
+        limit: Optional[int] = None,
+        agent_version: Optional[str] = None,
+    ) -> GetAgentSuccessEvaluationResultsResponse:
+        """Get agent success evaluation results.
+
+        Args:
+            request (Optional[GetAgentSuccessEvaluationResultsRequest]): The get request object (alternative to kwargs)
+            limit (Optional[int]): Maximum number of results to return (default: 100)
+            agent_version (Optional[str]): Filter by agent version
+
+        Returns:
+            GetAgentSuccessEvaluationResultsResponse: Response containing agent success evaluation results
+        """
+        req = self._build_request(
+            request,
+            GetAgentSuccessEvaluationResultsRequest,
+            limit=limit,
+            agent_version=agent_version,
+        )
+        response = self._make_request(
+            "POST",
+            "/api/get_agent_success_evaluation_results",
+            json=req.model_dump(),
+        )
+        return GetAgentSuccessEvaluationResultsResponse(**response)
+
+    def _rerun_profile_generation_sync(
+        self, request: RerunProfileGenerationRequest
+    ) -> RerunProfileGenerationResponse:
+        """Internal sync method to rerun profile generation."""
+        response = self._make_request(
+            "POST",
+            "/api/rerun_profile_generation",
+            json=request.model_dump(),
+        )
+        return RerunProfileGenerationResponse(**response)
+
+    async def _rerun_profile_generation_async(
+        self, request: RerunProfileGenerationRequest
+    ) -> RerunProfileGenerationResponse:
+        """Internal async method to rerun profile generation."""
+        response = await self._make_async_request(
+            "POST",
+            "/api/rerun_profile_generation",
+            json=request.model_dump(),
+        )
+        return RerunProfileGenerationResponse(**response)
+
+    def rerun_profile_generation(
+        self,
+        request: Optional[Union[RerunProfileGenerationRequest, dict]] = None,
+        wait_for_response: bool = False,
+        *,
+        user_id: Optional[str] = None,
+        start_time: Optional[datetime] = None,
+        end_time: Optional[datetime] = None,
+        source: Optional[str] = None,
+        extractor_names: Optional[list[str]] = None,
+    ) -> Optional[RerunProfileGenerationResponse]:
+        """Rerun profile generation for users.
+
+        This method is optimized for resource efficiency:
+        - In async contexts (e.g., FastAPI): Uses existing event loop (most efficient)
+        - In sync contexts: Uses shared thread pool (avoids thread creation overhead)
+
+        Args:
+            request (Optional[RerunProfileGenerationRequest]): The rerun request object (alternative to kwargs)
+            wait_for_response (bool, optional): If True, wait for response. If False, send request without waiting. Defaults to False.
+            user_id (Optional[str]): Specific user ID to rerun for. If None, runs for all users.
+            start_time (Optional[datetime]): Filter interactions by start time.
+            end_time (Optional[datetime]): Filter interactions by end time.
+            source (Optional[str]): Filter interactions by source.
+            extractor_names (Optional[list[str]]): List of specific extractor names to run. If None, runs all extractors.
+
+        Returns:
+            Optional[RerunProfileGenerationResponse]: Response containing success status, message, profiles_generated count, and operation_id if wait_for_response=True, None otherwise.
+        """
+        req = self._build_request(
+            request,
+            RerunProfileGenerationRequest,
+            user_id=user_id,
+            start_time=start_time,
+            end_time=end_time,
+            source=source,
+            extractor_names=extractor_names,
+        )
+
+        if wait_for_response:
+            return self._rerun_profile_generation_sync(req)
+        else:
+            self._fire_and_forget(self._rerun_profile_generation_async, req)
+            return None
+
+    async def _manual_profile_generation_async(
+        self, request: ManualProfileGenerationRequest
+    ) -> None:
+        """Internal async method for manual profile generation."""
+        await self._make_async_request(
+            "POST",
+            "/api/manual_profile_generation",
+            json=request.model_dump(),
+        )
+
+    def manual_profile_generation(
+        self,
+        request: Optional[Union[ManualProfileGenerationRequest, dict]] = None,
+        *,
+        user_id: Optional[str] = None,
+        source: Optional[str] = None,
+        extractor_names: Optional[list[str]] = None,
+    ) -> None:
+        """Manually trigger profile generation with window-sized interactions (fire-and-forget).
+
+        Unlike rerun_profile_generation which uses ALL interactions and outputs PENDING status,
+        this method uses window-sized interactions (from extraction_window_size config) and
+        outputs profiles with CURRENT status.
+
+        This is a fire-and-forget operation that runs asynchronously in the background.
+
+        Args:
+            request (Optional[ManualProfileGenerationRequest]): The request object (alternative to kwargs)
+            user_id (Optional[str]): Specific user ID to generate for. If None, generates for all users.
+            source (Optional[str]): Filter interactions by source.
+            extractor_names (Optional[list[str]]): List of specific extractor names to run. If None, runs all extractors with allow_manual_trigger=True.
+
+        Returns:
+            None: This method always returns None (fire-and-forget).
+        """
+        req = self._build_request(
+            request,
+            ManualProfileGenerationRequest,
+            user_id=user_id,
+            source=source,
+            extractor_names=extractor_names,
+        )
+        self._fire_and_forget(self._manual_profile_generation_async, req)
+
+    def _rerun_feedback_generation_sync(
+        self, request: RerunFeedbackGenerationRequest
+    ) -> RerunFeedbackGenerationResponse:
+        """Internal sync method to rerun feedback generation."""
+        response = self._make_request(
+            "POST",
+            "/api/rerun_feedback_generation",
+            json=request.model_dump(),
+        )
+        return RerunFeedbackGenerationResponse(**response)
+
+    async def _rerun_feedback_generation_async(
+        self, request: RerunFeedbackGenerationRequest
+    ) -> RerunFeedbackGenerationResponse:
+        """Internal async method to rerun feedback generation."""
+        response = await self._make_async_request(
+            "POST",
+            "/api/rerun_feedback_generation",
+            json=request.model_dump(),
+        )
+        return RerunFeedbackGenerationResponse(**response)
+
+    def rerun_feedback_generation(
+        self,
+        request: Optional[Union[RerunFeedbackGenerationRequest, dict]] = None,
+        wait_for_response: bool = False,
+        *,
+        agent_version: Optional[str] = None,
+        start_time: Optional[datetime] = None,
+        end_time: Optional[datetime] = None,
+        feedback_name: Optional[str] = None,
+    ) -> Optional[RerunFeedbackGenerationResponse]:
+        """Rerun feedback generation for an agent version.
+
+        This method is optimized for resource efficiency:
+        - In async contexts (e.g., FastAPI): Uses existing event loop (most efficient)
+        - In sync contexts: Uses shared thread pool (avoids thread creation overhead)
+
+        Args:
+            request (Optional[RerunFeedbackGenerationRequest]): The rerun request object (alternative to kwargs)
+            wait_for_response (bool, optional): If True, wait for response. If False, send request without waiting. Defaults to False.
+            agent_version (str): Required. The agent version to evaluate.
+            start_time (Optional[datetime]): Filter by start time.
+            end_time (Optional[datetime]): Filter by end time.
+            feedback_name (Optional[str]): Specific feedback type to generate.
+
+        Returns:
+            Optional[RerunFeedbackGenerationResponse]: Response containing success status, message, feedbacks_generated count, and operation_id if wait_for_response=True, None otherwise.
+        """
+        req = self._build_request(
+            request,
+            RerunFeedbackGenerationRequest,
+            agent_version=agent_version,
+            start_time=start_time,
+            end_time=end_time,
+            feedback_name=feedback_name,
+        )
+
+        if wait_for_response:
+            return self._rerun_feedback_generation_sync(req)
+        else:
+            self._fire_and_forget(self._rerun_feedback_generation_async, req)
+            return None
+
+    async def _manual_feedback_generation_async(
+        self, request: ManualFeedbackGenerationRequest
+    ) -> None:
+        """Internal async method for manual feedback generation."""
+        await self._make_async_request(
+            "POST",
+            "/api/manual_feedback_generation",
+            json=request.model_dump(),
+        )
+
+    def manual_feedback_generation(
+        self,
+        request: Optional[Union[ManualFeedbackGenerationRequest, dict]] = None,
+        *,
+        agent_version: Optional[str] = None,
+        source: Optional[str] = None,
+        feedback_name: Optional[str] = None,
+    ) -> None:
+        """Manually trigger feedback generation with window-sized interactions (fire-and-forget).
+
+        Unlike rerun_feedback_generation which uses ALL interactions and outputs PENDING status,
+        this method uses window-sized interactions (from extraction_window_size config) and
+        outputs feedbacks with CURRENT status.
+
+        This is a fire-and-forget operation that runs asynchronously in the background.
+
+        Args:
+            request (Optional[ManualFeedbackGenerationRequest]): The request object (alternative to kwargs)
+            agent_version (str): Required. The agent version to evaluate.
+            source (Optional[str]): Filter interactions by source.
+            feedback_name (Optional[str]): Specific feedback type to generate.
+
+        Returns:
+            None: This method always returns None (fire-and-forget).
+        """
+        req = self._build_request(
+            request,
+            ManualFeedbackGenerationRequest,
+            agent_version=agent_version,
+            source=source,
+            feedback_name=feedback_name,
+        )
+        self._fire_and_forget(self._manual_feedback_generation_async, req)
+
+    def _run_feedback_aggregation_sync(
+        self, request: RunFeedbackAggregationRequest
+    ) -> RunFeedbackAggregationResponse:
+        """Internal sync method to run feedback aggregation."""
+        response = self._make_request(
+            "POST",
+            "/api/run_feedback_aggregation",
+            json=request.model_dump(),
+        )
+        return RunFeedbackAggregationResponse(**response)
+
+    async def _run_feedback_aggregation_async(
+        self, request: RunFeedbackAggregationRequest
+    ) -> RunFeedbackAggregationResponse:
+        """Internal async method to run feedback aggregation."""
+        response = await self._make_async_request(
+            "POST",
+            "/api/run_feedback_aggregation",
+            json=request.model_dump(),
+        )
+        return RunFeedbackAggregationResponse(**response)
+
+    def run_feedback_aggregation(
+        self,
+        request: Optional[Union[RunFeedbackAggregationRequest, dict]] = None,
+        wait_for_response: bool = False,
+        *,
+        agent_version: Optional[str] = None,
+        feedback_name: Optional[str] = None,
+    ) -> Optional[RunFeedbackAggregationResponse]:
+        """Run feedback aggregation to cluster similar raw feedbacks.
+
+        This method is optimized for resource efficiency:
+        - In async contexts (e.g., FastAPI): Uses existing event loop (most efficient)
+        - In sync contexts: Uses shared thread pool (avoids thread creation overhead)
+
+        Args:
+            request (Optional[RunFeedbackAggregationRequest]): The aggregation request object (alternative to kwargs)
+            wait_for_response (bool, optional): If True, wait for response. If False, send request without waiting. Defaults to False.
+            agent_version (str): Required. The agent version.
+            feedback_name (str): Required. The feedback type to aggregate.
+
+        Returns:
+            Optional[RunFeedbackAggregationResponse]: Response containing success status and message if wait_for_response=True, None otherwise.
+        """
+        req = self._build_request(
+            request,
+            RunFeedbackAggregationRequest,
+            agent_version=agent_version,
+            feedback_name=feedback_name,
+        )
+
+        if wait_for_response:
+            return self._run_feedback_aggregation_sync(req)
+        else:
+            self._fire_and_forget(self._run_feedback_aggregation_async, req)
+            return None

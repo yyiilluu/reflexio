@@ -1,0 +1,248 @@
+# Reflexio Server Architecture (Compact)
+# Render: d2 server_architecture.d2 server_architecture.svg
+
+direction: down
+
+# =============================================================================
+# STYLES
+# =============================================================================
+classes: {
+  api: {
+    style.fill: "#4A90D9"
+    style.font-color: "#FFFFFF"
+  }
+  service: {
+    style.fill: "#6ABF69"
+    style.font-color: "#FFFFFF"
+  }
+  extractor: {
+    style.fill: "#8BC34A"
+    style.font-color: "#FFFFFF"
+  }
+  infra: {
+    style.fill: "#FF9800"
+    style.font-color: "#FFFFFF"
+  }
+  config: {
+    style.fill: "#9E9E9E"
+    style.font-color: "#FFFFFF"
+  }
+  abstract: {
+    style.stroke-dash: 5
+    style.fill: "#E0E0E0"
+  }
+}
+
+# =============================================================================
+# API LAYER (compact)
+# =============================================================================
+api_layer: "API Layer" {
+  style.fill: "#E3F2FD"
+  direction: right
+
+  api: "api.py" { class: api }
+  endpoints: "api_endpoints/\npublisher | retriever | login" { class: api }
+  context: "RequestContext" { class: api }
+
+  api -> endpoints
+  endpoints -> context: creates
+}
+
+# =============================================================================
+# ORCHESTRATION
+# =============================================================================
+orchestration: "Orchestration" {
+  style.fill: "#F3E5F5"
+  direction: right
+
+  reflexio: "Reflexio" { class: service }
+  gen_service: "GenerationService\n(stride-based)" { class: service }
+
+  reflexio -> gen_service
+}
+
+# =============================================================================
+# SERVICES (horizontal layout)
+# =============================================================================
+services: "Generation Services" {
+  style.fill: "#E8F5E9"
+  direction: right
+
+  # Profile
+  profile: "Profile" {
+    style.fill: "#C8E6C9"
+    direction: down
+    svc: "ProfileGenerationService" { class: service }
+    ext: "ProfileExtractor" { class: extractor }
+    upd: "ProfileUpdater" { class: extractor }
+    svc -> ext -> upd
+  }
+
+  # Feedback
+  feedback: "Feedback" {
+    style.fill: "#C8E6C9"
+    direction: down
+    svc: "FeedbackGenerationService" { class: service }
+    ext: "FeedbackExtractor" { class: extractor }
+    agg: "FeedbackAggregator" { class: extractor }
+    svc -> ext
+    svc -> agg
+  }
+
+  # Evaluation
+  evaluation: "Evaluation" {
+    style.fill: "#C8E6C9"
+    direction: down
+    svc: "AgentSuccessEvaluationService" { class: service }
+    eval: "AgentSuccessEvaluator\n(A/B shadow)" { class: extractor }
+    svc -> eval
+  }
+
+  # Base
+  base: "Base" {
+    style.fill: "#DCEDC8"
+    direction: down
+    base_svc: "BaseGenerationService\n(parallel execution)" { class: abstract }
+    utils: "extractor_config_utils\nservice_utils" { class: config }
+  }
+}
+
+# =============================================================================
+# INFRASTRUCTURE (horizontal layout)
+# =============================================================================
+infra: "Infrastructure" {
+  style.fill: "#FFF3E0"
+  direction: right
+
+  # Storage
+  storage: "Storage" {
+    style.fill: "#FFE0B2"
+    direction: down
+    base: "BaseStorage" { class: abstract }
+    impls: "Supabase | LocalJson | S3" { class: infra }
+    versioning: "CURRENT | PENDING | ARCHIVED" { class: config }
+    base -> impls: implements
+  }
+
+  # LLM
+  llm: "LLM" {
+    style.fill: "#FFE0B2"
+    direction: down
+    client: "LLMClient\n(auto-detect)" { class: infra }
+    providers: "OpenAI | Claude" { class: infra }
+    client -> providers
+  }
+
+  # Prompts
+  prompts: "Prompts" {
+    style.fill: "#FFE0B2"
+    direction: down
+    mgr: "PromptManager" { class: infra }
+    bank: "prompt_bank/" { class: config }
+    mgr -> bank
+  }
+
+  # Config & DB
+  config_db: "Config & Auth" {
+    style.fill: "#ECEFF1"
+    direction: down
+    cfg: "SimpleConfigurator" { class: infra }
+    db: "Database\n(auth only)" { class: config }
+    site: "SiteVarManager" { class: config }
+  }
+}
+
+# =============================================================================
+# MAIN FLOW CONNECTIONS
+# =============================================================================
+# Request flow
+api_layer.endpoints -> orchestration.reflexio: delegates {
+  style.stroke: "#1976D2"
+  style.stroke-width: 2
+}
+
+# Orchestration to services
+orchestration.gen_service -> services.profile.svc {
+  style.stroke: "#388E3C"
+}
+orchestration.gen_service -> services.feedback.svc {
+  style.stroke: "#388E3C"
+}
+orchestration.gen_service -> services.evaluation.svc {
+  style.stroke: "#388E3C"
+}
+
+# Services extend base
+services.base.base_svc <- services.profile.svc: extends {
+  style.stroke: "#757575"
+  style.stroke-dash: 5
+}
+services.base.base_svc <- services.feedback.svc: extends {
+  style.stroke: "#757575"
+  style.stroke-dash: 5
+}
+services.base.base_svc <- services.evaluation.svc: extends {
+  style.stroke: "#757575"
+  style.stroke-dash: 5
+}
+
+# =============================================================================
+# INFRASTRUCTURE CONNECTIONS
+# =============================================================================
+# Storage connections
+services.profile.upd -> infra.storage.base: save {
+  style.stroke: "#F57C00"
+}
+services.feedback.ext -> infra.storage.base: save {
+  style.stroke: "#F57C00"
+}
+services.feedback.agg -> infra.storage.base: save {
+  style.stroke: "#F57C00"
+}
+services.evaluation.eval -> infra.storage.base: save {
+  style.stroke: "#F57C00"
+}
+
+# LLM connections (grouped)
+services.profile.ext -> infra.llm.client: LLM {
+  style.stroke: "#F57C00"
+  style.stroke-dash: 3
+}
+services.feedback.ext -> infra.llm.client {
+  style.stroke: "#F57C00"
+  style.stroke-dash: 3
+}
+services.feedback.agg -> infra.llm.client {
+  style.stroke: "#F57C00"
+  style.stroke-dash: 3
+}
+services.evaluation.eval -> infra.llm.client {
+  style.stroke: "#F57C00"
+  style.stroke-dash: 3
+}
+
+# Prompt connections
+services.profile.ext -> infra.prompts.mgr: prompts {
+  style.stroke: "#F57C00"
+  style.stroke-dash: 3
+}
+
+# RequestContext bundles
+api_layer.context -> infra.storage.base: storage {
+  style.stroke: "#1976D2"
+  style.stroke-dash: 5
+}
+api_layer.context -> infra.config_db.cfg: config {
+  style.stroke: "#1976D2"
+  style.stroke-dash: 5
+}
+api_layer.context -> infra.prompts.mgr: prompts {
+  style.stroke: "#1976D2"
+  style.stroke-dash: 5
+}
+
+# Config creates storage
+infra.config_db.cfg -> infra.storage.base: creates {
+  style.stroke: "#757575"
+  style.stroke-dash: 3
+}

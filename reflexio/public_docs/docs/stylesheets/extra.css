@@ -1,0 +1,689 @@
+/*
+ * Reflexio Documentation - Custom Styles
+ * Professional, Clean, Developer-Facing Design
+ *
+ * Color Palette: Slate-based with Indigo accents
+ */
+
+/* ==================== Color Variables ==================== */
+:root {
+  /* Primary - Dark Slate for structural elements */
+  --md-primary-fg-color: #0f172a;
+  --md-primary-fg-color--light: #1e293b;
+  --md-primary-fg-color--dark: #020617;
+  --md-primary-bg-color: #ffffff;
+  --md-primary-bg-color--light: #f8fafc;
+
+  /* Accent - Indigo for interactive elements */
+  --md-accent-fg-color: #4f46e5;
+  --md-accent-fg-color--transparent: rgba(79, 70, 229, 0.1);
+  --md-accent-bg-color: #f8fafc;
+
+  /* Brand Colors (used sparingly as accents) */
+  --accent-indigo: #4f46e5;
+  --accent-indigo-dark: #4338ca;
+  --accent-indigo-light: #6366f1;
+
+  /* Status Colors */
+  --status-success: #059669;
+  --status-warning: #d97706;
+  --status-error: #dc2626;
+  --status-info: #0284c7;
+
+  /* Text Colors - Slate Scale */
+  --md-text-color: #1e293b;
+  --md-text-color-light: #475569;
+  --text-secondary: #64748b;
+  --text-muted: #94a3b8;
+
+  /* Background Colors */
+  --bg-primary: #ffffff;
+  --bg-secondary: #f8fafc;
+  --bg-tertiary: #f1f5f9;
+
+  /* Border Colors */
+  --border-light: #e2e8f0;
+  --border-default: #cbd5e1;
+
+  /* Code Blocks */
+  --md-code-bg-color: #f8fafc;
+  --md-code-fg-color: #1e293b;
+
+  /* Shadows - Subtle */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.07), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+}
+
+/* Dark Mode */
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color: #1e293b;
+  --md-primary-fg-color--light: #334155;
+  --md-primary-fg-color--dark: #0f172a;
+  --md-primary-bg-color: #0f172a;
+  --md-primary-bg-color--light: #1e293b;
+
+  --md-accent-fg-color: #818cf8;
+  --md-accent-bg-color: #0f172a;
+
+  --md-text-color: #f1f5f9;
+  --md-text-color-light: #cbd5e1;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+
+  --bg-primary: #0f172a;
+  --bg-secondary: #1e293b;
+  --bg-tertiary: #334155;
+
+  --border-light: #334155;
+  --border-default: #475569;
+
+  --md-code-bg-color: #1e293b;
+  --md-code-fg-color: #e2e8f0;
+
+  --md-default-bg-color: #0f172a;
+}
+
+/* ==================== Navigation Header ==================== */
+.md-header {
+  background-color: #0f172a;
+  box-shadow: var(--shadow-sm);
+}
+
+.md-header__button.md-logo img,
+.md-header__button.md-logo svg {
+  height: 1.5rem;
+}
+
+.md-tabs {
+  background-color: #0f172a;
+}
+
+.md-tabs__link {
+  opacity: 0.8;
+  font-weight: 500;
+  transition: opacity 0.15s ease;
+}
+
+.md-tabs__link:hover {
+  opacity: 1;
+}
+
+.md-tabs__link--active {
+  opacity: 1;
+  font-weight: 600;
+}
+
+/* ==================== Typography ==================== */
+.md-typeset {
+  font-size: 0.9rem;
+  line-height: 1.7;
+  color: var(--md-text-color);
+}
+
+.md-typeset h1 {
+  color: var(--md-text-color);
+  font-weight: 700;
+  font-size: 2rem;
+  letter-spacing: -0.02em;
+  margin-bottom: 1rem;
+}
+
+.md-typeset h2 {
+  color: var(--md-text-color);
+  font-weight: 600;
+  font-size: 1.5rem;
+  margin-top: 2.5rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.md-typeset h3 {
+  color: var(--md-text-color);
+  font-weight: 600;
+  font-size: 1.2rem;
+  margin-top: 1.5rem;
+}
+
+.md-typeset h4 {
+  color: var(--text-secondary);
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+/* ==================== Links ==================== */
+.md-typeset a {
+  color: var(--accent-indigo);
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+
+.md-typeset a:hover {
+  color: var(--accent-indigo-dark);
+  text-decoration: underline;
+}
+
+.md-typeset a:focus {
+  outline: 2px solid var(--accent-indigo);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* ==================== Buttons ==================== */
+.md-button {
+  background-color: var(--accent-indigo);
+  color: white;
+  border-radius: 6px;
+  padding: 0.6rem 1.5rem;
+  font-weight: 500;
+  transition: background-color 0.15s ease;
+  border: none;
+}
+
+.md-button:hover {
+  background-color: var(--accent-indigo-dark);
+}
+
+.md-button--primary {
+  background-color: var(--accent-indigo);
+}
+
+.md-button--primary:hover {
+  background-color: var(--accent-indigo-dark);
+}
+
+/* ==================== Code Blocks ==================== */
+.md-typeset code {
+  background-color: var(--bg-tertiary);
+  color: var(--md-code-fg-color);
+  border-radius: 4px;
+  padding: 0.15rem 0.4rem;
+  font-size: 0.85em;
+  font-weight: 500;
+  border: 1px solid var(--border-light);
+}
+
+.md-typeset pre {
+  background-color: var(--md-code-bg-color);
+  border-radius: 6px;
+  border: 1px solid var(--border-light);
+  box-shadow: var(--shadow-sm);
+}
+
+.md-typeset pre > code {
+  background-color: transparent;
+  border: none;
+  padding: 1rem;
+  color: var(--md-code-fg-color);
+  font-weight: 400;
+}
+
+.md-typeset .highlight .filename {
+  background-color: var(--bg-tertiary);
+  color: var(--text-secondary);
+  padding: 0.5rem 1rem;
+  font-size: 0.8em;
+  font-weight: 500;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.md-clipboard {
+  color: var(--text-muted);
+  transition: color 0.15s ease;
+}
+
+.md-clipboard:hover {
+  color: var(--accent-indigo);
+}
+
+.md-typeset .highlight .linenos {
+  color: var(--text-muted);
+  padding-right: 1rem;
+  border-right: 1px solid var(--border-light);
+  margin-right: 1rem;
+}
+
+/* ==================== Admonitions ==================== */
+.md-typeset .admonition {
+  border-radius: 6px;
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border-light);
+  border-left: 4px solid;
+  background-color: var(--bg-primary);
+}
+
+.md-typeset .admonition.note {
+  border-left-color: var(--status-info);
+  background-color: rgba(2, 132, 199, 0.03);
+}
+
+.md-typeset .admonition.tip,
+.md-typeset .admonition.hint {
+  border-left-color: var(--status-success);
+  background-color: rgba(5, 150, 105, 0.03);
+}
+
+.md-typeset .admonition.warning,
+.md-typeset .admonition.caution {
+  border-left-color: var(--status-warning);
+  background-color: rgba(217, 119, 6, 0.03);
+}
+
+.md-typeset .admonition.danger,
+.md-typeset .admonition.error {
+  border-left-color: var(--status-error);
+  background-color: rgba(220, 38, 38, 0.03);
+}
+
+.md-typeset .admonition.info {
+  border-left-color: var(--accent-indigo);
+  background-color: rgba(79, 70, 229, 0.03);
+}
+
+.md-typeset .admonition.abstract,
+.md-typeset .admonition.summary {
+  border-left-color: var(--text-secondary);
+  background-color: var(--bg-secondary);
+}
+
+.md-typeset .admonition-title {
+  font-weight: 600;
+  background: transparent !important;
+}
+
+/* ==================== Tables ==================== */
+.md-typeset table:not([class]) {
+  border: 1px solid var(--border-light);
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.md-typeset table:not([class]) th {
+  background-color: #1e293b;
+  color: white;
+  font-weight: 600;
+  padding: 0.75rem 1rem;
+  text-align: left;
+}
+
+.md-typeset table:not([class]) td {
+  padding: 0.75rem 1rem;
+  border-top: 1px solid var(--border-light);
+}
+
+.md-typeset table:not([class]) tr:hover {
+  background-color: var(--bg-secondary);
+}
+
+.md-typeset table:not([class]) tr:nth-child(even) {
+  background-color: var(--bg-secondary);
+}
+
+/* ==================== Search ==================== */
+.md-search__input {
+  border-radius: 6px;
+  background-color: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  transition: all 0.15s ease;
+}
+
+.md-search__input:focus {
+  background-color: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.md-search__input::placeholder {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.md-search-result__link:hover {
+  background-color: var(--bg-secondary);
+}
+
+.md-search-result__more {
+  color: var(--accent-indigo);
+}
+
+/* ==================== Navigation Sidebar ==================== */
+.md-nav__link {
+  color: var(--md-text-color-light);
+  font-size: 0.85rem;
+  transition: color 0.15s ease;
+}
+
+.md-nav__link--active {
+  color: var(--accent-indigo);
+  font-weight: 600;
+}
+
+.md-nav__link:hover {
+  color: var(--accent-indigo);
+}
+
+.md-nav__item--nested > .md-nav__link {
+  font-weight: 500;
+  color: var(--md-text-color);
+}
+
+.md-nav__title {
+  font-weight: 600;
+  color: var(--md-text-color);
+  text-transform: uppercase;
+  font-size: 0.7rem;
+  letter-spacing: 0.05em;
+}
+
+/* ==================== Footer ==================== */
+.md-footer {
+  background-color: #0f172a;
+  color: #e2e8f0;
+}
+
+.md-footer-meta {
+  background-color: rgba(0, 0, 0, 0.2);
+}
+
+.md-footer__link {
+  transition: opacity 0.15s ease;
+}
+
+.md-footer__link:hover {
+  opacity: 0.8;
+}
+
+.md-copyright {
+  color: #94a3b8;
+}
+
+/* ==================== Content Tabs ==================== */
+.md-typeset .tabbed-set > input:checked + label {
+  border-color: var(--accent-indigo);
+  color: var(--accent-indigo);
+  font-weight: 600;
+}
+
+.md-typeset .tabbed-set > label {
+  color: var(--text-secondary);
+  transition: color 0.15s ease;
+}
+
+.md-typeset .tabbed-set > label:hover {
+  color: var(--accent-indigo);
+}
+
+.md-typeset .tabbed-content {
+  border-color: var(--border-light);
+}
+
+/* ==================== Task Lists ==================== */
+.md-typeset .task-list-indicator::before {
+  background-color: transparent;
+  border: 2px solid var(--border-default);
+  border-radius: 4px;
+}
+
+.md-typeset [type="checkbox"]:checked + .task-list-indicator::before {
+  background-color: var(--status-success);
+  border-color: var(--status-success);
+}
+
+/* ==================== Table of Contents ==================== */
+.md-nav__link[data-md-state="blur"] {
+  color: var(--text-muted);
+}
+
+.md-nav--secondary .md-nav__link--active {
+  color: var(--accent-indigo);
+}
+
+/* ==================== Scrollbar ==================== */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-secondary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--text-muted);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-secondary);
+}
+
+/* ==================== Animations ==================== */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.md-content {
+  animation: fadeIn 0.2s ease-out;
+}
+
+/* ==================== Custom Components ==================== */
+
+/* Hero Section - Subdued */
+.hero {
+  background-color: #1e293b;
+  color: white;
+  padding: 3rem 2rem;
+  border-radius: 8px;
+  text-align: center;
+  margin: 2rem 0;
+}
+
+.hero h1 {
+  color: white;
+  margin-bottom: 1rem;
+}
+
+.hero p {
+  font-size: 1.1rem;
+  color: #cbd5e1;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+/* Feature Cards - Clean */
+.feature-card {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  padding: 1.5rem;
+  margin: 1rem 0;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.feature-card:hover {
+  border-color: var(--border-default);
+  box-shadow: var(--shadow-md);
+}
+
+.feature-card h3 {
+  color: var(--md-text-color);
+  margin-top: 0;
+}
+
+/* Status Badges */
+.badge {
+  display: inline-block;
+  padding: 0.2rem 0.6rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.badge-success {
+  background-color: rgba(5, 150, 105, 0.1);
+  color: var(--status-success);
+}
+
+.badge-warning {
+  background-color: rgba(217, 119, 6, 0.1);
+  color: var(--status-warning);
+}
+
+.badge-danger {
+  background-color: rgba(220, 38, 38, 0.1);
+  color: var(--status-error);
+}
+
+.badge-info {
+  background-color: rgba(79, 70, 229, 0.1);
+  color: var(--accent-indigo);
+}
+
+/* API Method Badges */
+.method-get {
+  background-color: rgba(5, 150, 105, 0.1);
+  color: var(--status-success);
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  font-family: var(--md-code-font-family);
+  font-weight: 600;
+  font-size: 0.75rem;
+}
+
+.method-post {
+  background-color: rgba(2, 132, 199, 0.1);
+  color: var(--status-info);
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  font-family: var(--md-code-font-family);
+  font-weight: 600;
+  font-size: 0.75rem;
+}
+
+.method-put {
+  background-color: rgba(217, 119, 6, 0.1);
+  color: var(--status-warning);
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  font-family: var(--md-code-font-family);
+  font-weight: 600;
+  font-size: 0.75rem;
+}
+
+.method-delete {
+  background-color: rgba(220, 38, 38, 0.1);
+  color: var(--status-error);
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  font-family: var(--md-code-font-family);
+  font-weight: 600;
+  font-size: 0.75rem;
+}
+
+/* ==================== Responsive Design ==================== */
+@media screen and (max-width: 768px) {
+  .md-typeset h1 {
+    font-size: 1.6rem;
+  }
+
+  .md-typeset h2 {
+    font-size: 1.3rem;
+  }
+
+  .md-button {
+    padding: 0.5rem 1.2rem;
+    font-size: 0.9rem;
+  }
+
+  .hero {
+    padding: 2rem 1.5rem;
+  }
+}
+
+/* ==================== Print Styles ==================== */
+@media print {
+  .md-header,
+  .md-tabs,
+  .md-sidebar,
+  .md-footer {
+    display: none;
+  }
+
+  .md-content {
+    max-width: 100%;
+  }
+}
+
+/* ==================== Accessibility ==================== */
+.md-skip {
+  background-color: var(--accent-indigo);
+  color: white;
+}
+
+.md-skip:focus {
+  outline: 2px solid var(--accent-indigo);
+  outline-offset: 2px;
+}
+
+@media (prefers-contrast: high) {
+  .md-typeset a {
+    text-decoration: underline;
+  }
+
+  .md-button {
+    border: 2px solid currentColor;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ==================== MkDocstrings API Reference ==================== */
+.doc-heading {
+  border-bottom: 1px solid var(--border-light);
+  padding-bottom: 0.5rem;
+}
+
+.doc-symbol-parameter {
+  color: var(--text-secondary);
+}
+
+.doc-symbol-attribute {
+  color: var(--status-info);
+}
+
+.doc-symbol-function,
+.doc-symbol-method {
+  color: var(--accent-indigo);
+}
+
+.doc-symbol-class {
+  color: var(--accent-indigo-light);
+}
+
+.doc-signature {
+  background-color: var(--bg-tertiary);
+  border-radius: 4px;
+  padding: 0.75rem 1rem;
+  margin: 0.5rem 0;
+  border: 1px solid var(--border-light);
+}
+
+.doc-signature-name {
+  color: var(--accent-indigo);
+  font-weight: 600;
+}

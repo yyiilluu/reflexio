@@ -1,0 +1,64 @@
+
+[Instruction]
+You have two versions of an agent-user interaction: Request 1 and Request 2.
+Perform two tasks:
+Task 1: Evaluate if the Request 1 agent has successfully responded to the user based on the success definition below.
+Task 2: Compare Request 1 and Request 2 to determine which better satisfies the success definition.
+
+For Task 1 (evaluate Request 1):
+Step 1: Determine if Request 1 interactions pass the success definition. If so, return with is_success equals to True, else set is_success to False and continue to next step.
+Step 2: If interaction contains failure, determine what is the failure type, failure reason and agent prompt update needed if agent can handle the problem better only with prompt update.
+There are four types of failures:
+- 'missing_tool': Agent does not have the right tool or action that it can take to get the sufficient information to answer user's request.
+- 'wrong_tool': Tools or actions are available, but agent should use the right tool or performed the right action.
+- 'insufficient_info_from_tool': Agent has performed the right action and tool use, but the tool or action does not have enough/right information to successfully answer user's request
+- 'wrong_answer': Agent has enough information but still didn't successfully answer user's request
+
+For Task 2 (compare Request 1 vs Request 2):
+Determine which request better satisfies the success definition and whether the difference is significant.
+
+[Context]
+{agent_context_prompt}
+
+[Success definition]
+{success_definition_prompt}
+
+[Request 1]
+{request_1_interactions}
+
+[Request 2]
+{request_2_interactions}
+
+[Tools]
+{tool_can_use}
+
+[Action space]
+{action_space}
+
+[Metadata Definition]
+{metadata_definition_prompt}
+
+[Output]
+Generate the output in the following JSON schema:
+# Task 1 success case:
+```
+{{
+    "is_success": True,
+    "better_request": "1" or "2" or "tie",
+    "is_significantly_better": true or false,
+    "comparison_reason": "brief explanation"
+}}
+```
+
+# Task 1 failure case:
+```
+{{
+    "is_success": False,
+    "failure_type": "missing_tool"/"wrong_tool"/"insufficient_info_from_tool"/"wrong_answer",
+    "failure_reason": "explain reason for failure, what agent need to do differently",
+    "agent_prompt_update": "what kind of prompt to be added to agent prompt to handle this problem better next time",
+    "better_request": "1" or "2" or "tie",
+    "is_significantly_better": true or false,
+    "comparison_reason": "brief explanation"
+}}
+```

@@ -1,0 +1,59 @@
+# =============================================================================
+# Update Dockerfile: Uses base image, only updates application code
+# This enables fast rebuilds when only code changes (no dependency changes)
+# =============================================================================
+#
+# Usage:
+#   1. Build base image first (when dependencies change):
+#      docker build -f Dockerfile.base -t reflexio:latest .
+#
+#   2. Build update image (when only code changes):
+#      docker build -f Dockerfile.update -t reflexio:latest .
+# =============================================================================
+
+# Global ARG must be declared before any FROM to be available in FROM instructions
+ARG BASE_IMAGE=reflexio:latest
+
+# -----------------------------------------------------------------------------
+# Stage 1: Rebuild Next.js frontend with updated code
+# -----------------------------------------------------------------------------
+FROM node:20-alpine AS frontend-builder
+
+WORKDIR /app/website
+
+# Copy package files
+COPY reflexio/website/package*.json ./
+
+# Install dependencies
+RUN npm ci --only=production=false
+
+# Copy source files
+COPY reflexio/website/ ./
+
+# Create empty .env file (Next.js requires it)
+RUN touch .env
+
+# Build Next.js
+RUN npm run build
+
+# -----------------------------------------------------------------------------
+# Stage 2: Update application code in base image
+# -----------------------------------------------------------------------------
+FROM ${BASE_IMAGE}
+
+WORKDIR /app
+
+# Copy FastAPI backend code (overwrites existing code from base)
+COPY reflexio/ ./reflexio/
+
+# Copy rebuilt Next.js app (overwrites existing from base)
+COPY --from=frontend-builder /app/website/.next ./reflexio/website/.next
+COPY --from=frontend-builder /app/website/node_modules ./reflexio/website/node_modules
+COPY --from=frontend-builder /app/website/package.json ./reflexio/website/package.json
+COPY --from=frontend-builder /app/website/public ./reflexio/website/public
+
+# Copy Supabase migrations (in case migrations changed)
+COPY supabase/ ./supabase/
+
+# Copy supervisord config
+COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf

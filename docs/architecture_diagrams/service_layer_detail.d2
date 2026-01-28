@@ -1,0 +1,402 @@
+# Reflexio Service Layer - Detailed Architecture
+# Render: d2 service_layer_detail.d2 service_layer_detail.svg
+
+direction: down
+
+# =============================================================================
+# STYLES
+# =============================================================================
+classes: {
+  orchestrator: {
+    style.fill: "#1565C0"
+    style.font-color: "#FFFFFF"
+    style.bold: true
+  }
+  service: {
+    style.fill: "#6ABF69"
+    style.font-color: "#FFFFFF"
+  }
+  extractor: {
+    style.fill: "#8BC34A"
+    style.font-color: "#FFFFFF"
+  }
+  processor: {
+    style.fill: "#AED581"
+    style.font-color: "#333333"
+  }
+  config: {
+    style.fill: "#9E9E9E"
+    style.font-color: "#FFFFFF"
+  }
+  data: {
+    style.fill: "#FFF59D"
+    style.font-color: "#333333"
+  }
+  abstract: {
+    style.stroke-dash: 5
+    style.fill: "#E0E0E0"
+  }
+  storage: {
+    style.fill: "#FF9800"
+    style.font-color: "#FFFFFF"
+  }
+  state: {
+    style.fill: "#7E57C2"
+    style.font-color: "#FFFFFF"
+  }
+}
+
+# =============================================================================
+# ENTRY & ORCHESTRATOR
+# =============================================================================
+entry: "From Reflexio" {
+  class: orchestrator
+  style.3d: true
+}
+
+generation_service: "GenerationService (Orchestrator)" {
+  style.fill: "#E3F2FD"
+  direction: down
+
+  run: "run(request)" { class: orchestrator }
+
+  flow: "Flow" {
+    style.fill: "#BBDEFB"
+    direction: down
+    save: "1. save_interactions()" { class: service }
+    check: "2. check_stride()" { class: service }
+    dispatch: "3. dispatch to services" { class: service }
+    update: "4. update_operation_state()" { class: service }
+    save -> check -> dispatch -> update
+  }
+
+  stride_config: "Stride Config" {
+    style.fill: "#B3E5FC"
+    direction: down
+    window: "extraction_window_size" { class: config }
+    stride: "extraction_window_stride" { class: config }
+    override: "per-extractor overrides" { class: config }
+  }
+
+  run -> flow.save
+  flow.check -> stride_config: uses
+}
+
+# =============================================================================
+# BASE SERVICE
+# =============================================================================
+base_service: "BaseGenerationService (Abstract)" {
+  style.fill: "#F5F5F5"
+  class: abstract
+  direction: down
+
+  abstract_methods: "Abstract (must implement)" {
+    style.fill: "#EEEEEE"
+    style.stroke-dash: 3
+    direction: down
+    m1: "_load_extractor_configs()" { class: abstract }
+    m2: "_load_generation_service_config()" { class: abstract }
+    m3: "_create_extractor()" { class: abstract }
+    m4: "_process_results()" { class: abstract }
+  }
+
+  concrete_methods: "Concrete (inherited)" {
+    style.fill: "#E0E0E0"
+    direction: down
+    run: "run(request)" { class: service }
+    parallel: "_run_extractors_in_parallel()\nThreadPoolExecutor" { class: service }
+    filter: "_filter_extractor_configs()" { class: service }
+  }
+
+  versioning_methods: "Versioning" {
+    style.fill: "#D7CCC8"
+    direction: down
+    rerun: "rerun_generation()" { class: state }
+    upgrade: "upgrade_all()" { class: state }
+    downgrade: "downgrade_all()" { class: state }
+  }
+}
+
+# =============================================================================
+# THREE SERVICES (side by side, each vertical)
+# =============================================================================
+services: "Generation Services" {
+  style.fill: "#E8F5E9"
+  direction: right
+
+  # -------------------------
+  # PROFILE
+  # -------------------------
+  profile: "Profile" {
+    style.fill: "#C8E6C9"
+    direction: down
+
+    svc: "ProfileGenerationService" { class: service; style.bold: true }
+
+    config: "ProfileExtractorConfig" {
+      style.fill: "#A5D6A7"
+      direction: down
+      c1: "extractor_name" { class: config }
+      c2: "prompt_id" { class: config }
+      c3: "request_sources_enabled" { class: config }
+      c4: "manual_trigger" { class: config }
+      c5: "window/stride overrides" { class: config }
+    }
+
+    extractor: "ProfileExtractor" {
+      style.fill: "#81C784"
+      direction: down
+      e1: "run(interactions)" { class: extractor }
+      e2: "analyze_interactions()" { class: extractor }
+      e3: "generate_profile_updates()" { class: extractor }
+      out: "ProfileUpdates" { class: data }
+      e1 -> e2 -> e3 -> out
+    }
+
+    updater: "ProfileUpdater" {
+      style.fill: "#66BB6A"
+      direction: down
+      u1: "apply_updates()" { class: processor }
+      u2: "add / delete / mention" { class: processor }
+      u1 -> u2
+    }
+
+    svc -> config: loads
+    config -> extractor: creates
+    extractor.out -> updater: updates
+  }
+
+  # -------------------------
+  # FEEDBACK
+  # -------------------------
+  feedback: "Feedback" {
+    style.fill: "#C8E6C9"
+    direction: down
+
+    svc: "FeedbackGenerationService" { class: service; style.bold: true }
+
+    config: "AgentFeedbackConfig" {
+      style.fill: "#A5D6A7"
+      direction: down
+      c1: "feedback_name" { class: config }
+      c2: "prompt_id" { class: config }
+      c3: "request_sources_enabled" { class: config }
+      c4: "window/stride overrides" { class: config }
+    }
+
+    extractor: "FeedbackExtractor" {
+      style.fill: "#81C784"
+      direction: down
+      e1: "run(interactions)" { class: extractor }
+      e2: "extract_feedback()" { class: extractor }
+      out: "RawFeedback[]" { class: data }
+      e1 -> e2 -> out
+    }
+
+    aggregator: "FeedbackAggregator" {
+      style.fill: "#66BB6A"
+      direction: down
+      a1: "cluster_feedbacks()\nHDBSCAN" { class: processor }
+      a2: "synthesize_insights()" { class: processor }
+      out: "Feedback[]" { class: data }
+      a1 -> a2 -> out
+    }
+
+    svc -> config: loads
+    config -> extractor: creates
+    extractor.out -> aggregator: "manual trigger"
+  }
+
+  # -------------------------
+  # EVALUATION
+  # -------------------------
+  evaluation: "Evaluation" {
+    style.fill: "#C8E6C9"
+    direction: down
+
+    svc: "AgentSuccessEvaluationService" { class: service; style.bold: true }
+
+    config: "AgentSuccessConfig" {
+      style.fill: "#A5D6A7"
+      direction: down
+      c1: "evaluation_name" { class: config }
+      c2: "prompt_id" { class: config }
+      c3: "action_space" { class: config }
+      c4: "sampling_rate" { class: config }
+      c5: "window/stride overrides" { class: config }
+    }
+
+    evaluator: "AgentSuccessEvaluator" {
+      style.fill: "#81C784"
+      direction: down
+      e1: "run(interactions)" { class: extractor }
+      e2: "evaluate_success()" { class: extractor }
+      e3: "compare_shadow()" { class: extractor }
+      out: "AgentSuccessEvaluationResult" { class: data }
+      e1 -> e2 -> e3 -> out
+    }
+
+    shadow_cmp: "Shadow A/B" {
+      style.fill: "#66BB6A"
+      direction: down
+      s1: "randomize_position()" { class: processor }
+      s2: "REGULAR_BETTER\nSHADOW_BETTER\nTIED" { class: data }
+      s1 -> s2
+    }
+
+    svc -> config: loads
+    config -> evaluator: creates
+    evaluator.e3 -> shadow_cmp: "if shadow_content"
+  }
+}
+
+# =============================================================================
+# UTILITIES
+# =============================================================================
+utilities: "Utilities" {
+  style.fill: "#ECEFF1"
+  direction: right
+
+  config_utils: "extractor_config_utils" {
+    style.fill: "#CFD8DC"
+    direction: down
+    f1: "filter_extractor_configs()" { class: config }
+    f2: "by source / manual_trigger / names" { class: config }
+  }
+
+  service_utils: "service_utils" {
+    style.fill: "#CFD8DC"
+    direction: down
+    s1: "construct_messages()" { class: config }
+    s2: "format_interactions()" { class: config }
+    s3: "extract_json()" { class: config }
+  }
+
+  op_state_utils: "operation_state_utils" {
+    style.fill: "#CFD8DC"
+    direction: down
+    o1: "OperationStateManager" { class: config }
+    o2: "get/update state" { class: config }
+  }
+}
+
+# =============================================================================
+# STORAGE
+# =============================================================================
+storage: "Storage (BaseStorage)" {
+  style.fill: "#FFF3E0"
+  direction: right
+
+  profiles: "Profiles" {
+    style.fill: "#FFE0B2"
+    p1: "add_user_profiles()" { class: storage }
+    p2: "get / delete" { class: storage }
+  }
+
+  feedbacks: "Feedbacks" {
+    style.fill: "#FFE0B2"
+    f1: "add_raw_feedbacks()" { class: storage }
+    f2: "add_feedbacks()" { class: storage }
+  }
+
+  results: "Results" {
+    style.fill: "#FFE0B2"
+    r1: "add_agent_success_results()" { class: storage }
+  }
+
+  state: "State" {
+    style.fill: "#FFE0B2"
+    st1: "get/upsert_operation_state()" { class: storage }
+  }
+}
+
+# =============================================================================
+# VERSIONING WORKFLOW
+# =============================================================================
+versioning: "Versioning Workflow" {
+  style.fill: "#F3E5F5"
+  direction: down
+
+  states: "States" {
+    direction: right
+    current: "CURRENT" { style.fill: "#4CAF50"; style.font-color: "#FFFFFF" }
+    pending: "PENDING" { style.fill: "#2196F3"; style.font-color: "#FFFFFF" }
+    archived: "ARCHIVED" { style.fill: "#9E9E9E"; style.font-color: "#FFFFFF" }
+  }
+
+  flows: "Transitions" {
+    direction: down
+    rerun: "rerun() → creates PENDING" { class: state }
+    upgrade: "upgrade() → PENDING→CURRENT, CURRENT→ARCHIVED" { class: state }
+    downgrade: "downgrade() → ARCHIVED→CURRENT" { class: state }
+  }
+
+  states -> flows
+}
+
+# =============================================================================
+# MAIN CONNECTIONS
+# =============================================================================
+entry -> generation_service.run {
+  style.stroke: "#1565C0"
+  style.stroke-width: 3
+}
+
+generation_service.flow.dispatch -> services.profile.svc: profiles {
+  style.stroke: "#388E3C"
+  style.stroke-width: 2
+}
+generation_service.flow.dispatch -> services.feedback.svc: feedback {
+  style.stroke: "#388E3C"
+  style.stroke-width: 2
+}
+generation_service.flow.dispatch -> services.evaluation.svc: evaluation {
+  style.stroke: "#388E3C"
+  style.stroke-width: 2
+}
+
+# Services extend base
+base_service <- services.profile.svc: extends {
+  style.stroke: "#757575"
+  style.stroke-dash: 5
+}
+base_service <- services.feedback.svc: extends {
+  style.stroke: "#757575"
+  style.stroke-dash: 5
+}
+base_service <- services.evaluation.svc: extends {
+  style.stroke: "#757575"
+  style.stroke-dash: 5
+}
+
+# Base uses utilities
+base_service.concrete_methods.filter -> utilities.config_utils {
+  style.stroke: "#757575"
+  style.stroke-dash: 3
+}
+
+# Save to storage
+services.profile.updater -> storage.profiles: save {
+  style.stroke: "#F57C00"
+}
+services.feedback.extractor.out -> storage.feedbacks.f1: save {
+  style.stroke: "#F57C00"
+}
+services.feedback.aggregator.out -> storage.feedbacks.f2: save {
+  style.stroke: "#F57C00"
+}
+services.evaluation.evaluator.out -> storage.results: save {
+  style.stroke: "#F57C00"
+}
+
+# Operation state
+generation_service.flow.update -> storage.state {
+  style.stroke: "#7E57C2"
+  style.stroke-dash: 3
+}
+
+# Versioning
+base_service.versioning_methods -> versioning {
+  style.stroke: "#7E57C2"
+  style.stroke-dash: 3
+}
