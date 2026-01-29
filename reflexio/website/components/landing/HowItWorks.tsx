@@ -100,7 +100,7 @@ export function HowItWorks() {
               {/* Label: Publish */}
               <text x="255" y="30" textAnchor="middle" className="fill-indigo-600 text-xs font-medium">Publish</text>
 
-              {/* 2. Reflexio → Memory Store (Write) - Top curved path */}
+              {/* 2. Reflexio → Learning Store (Write) - Top curved path */}
               <path
                 d="M 645 95 Q 745 15, 845 95"
                 fill="none"
@@ -113,7 +113,7 @@ export function HowItWorks() {
               {/* Label: Write */}
               <text x="745" y="30" textAnchor="middle" className="fill-teal-600 text-xs font-medium">Write</text>
 
-              {/* 3. Memory Store → Reflexio (Read) - Bottom curved path */}
+              {/* 3. Learning Store → Reflexio (Read) - Bottom curved path */}
               <path
                 d="M 845 195 Q 745 275, 645 195"
                 fill="none"
@@ -223,7 +223,7 @@ export function HowItWorks() {
                 </div>
               </div>
 
-              {/* Node 3: Memory Store */}
+              {/* Node 3: Learning Store */}
               <div className="flex flex-col items-center w-48">
                 <div className="bg-white rounded-2xl p-6 shadow-lg border border-slate-200 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 relative">
                   <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-teal-500 to-cyan-500 flex items-center justify-center mx-auto mb-4">
@@ -233,7 +233,7 @@ export function HowItWorks() {
                   <div className="absolute top-4 right-4 w-8 h-8 rounded-full bg-teal-50 border border-teal-200 flex items-center justify-center animate-pulse">
                     <RefreshCw className="w-4 h-4 text-teal-600" />
                   </div>
-                  <h3 className="text-lg font-semibold text-slate-800 text-center">Memory Store</h3>
+                  <h3 className="text-lg font-semibold text-slate-800 text-center">Learning Store</h3>
                   <p className="text-sm text-slate-500 text-center mt-1">Persistent context</p>
                 </div>
 
@@ -320,7 +320,7 @@ export function HowItWorks() {
               </div>
             </div>
 
-            {/* Memory Store */}
+            {/* Learning Store */}
             <div className="flex flex-col items-center">
               <div className="bg-white rounded-2xl p-5 shadow-lg border border-slate-200 w-56 relative">
                 <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-teal-500 to-cyan-500 flex items-center justify-center mx-auto mb-3">
@@ -329,7 +329,7 @@ export function HowItWorks() {
                 <div className="absolute top-3 right-3 w-7 h-7 rounded-full bg-teal-50 border border-teal-200 flex items-center justify-center animate-pulse">
                   <RefreshCw className="w-3 h-3 text-teal-600" />
                 </div>
-                <h3 className="text-base font-semibold text-slate-800 text-center">Memory Store</h3>
+                <h3 className="text-base font-semibold text-slate-800 text-center">Learning Store</h3>
               </div>
             </div>
           </div>
@@ -407,7 +407,7 @@ export function HowItWorks() {
             </div>
           </div>
 
-          {/* Memory Store */}
+          {/* Learning Store */}
           <div className="w-full max-w-sm bg-white rounded-xl p-4 shadow-md border border-slate-200">
             <div className="flex items-center gap-4">
               <div className="relative w-12 h-12 rounded-lg bg-gradient-to-br from-teal-500 to-cyan-500 flex items-center justify-center flex-shrink-0">
@@ -415,7 +415,7 @@ export function HowItWorks() {
               </div>
               <div className="flex-1">
                 <div className="flex items-center gap-2">
-                  <h4 className="font-semibold text-slate-800">Memory Store</h4>
+                  <h4 className="font-semibold text-slate-800">Learning Store</h4>
                   <div className="w-5 h-5 rounded-full bg-teal-50 flex items-center justify-center animate-pulse">
                     <RefreshCw className="w-3 h-3 text-teal-500" />
                   </div>

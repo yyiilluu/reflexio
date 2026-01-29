@@ -89,6 +89,17 @@ const formatFeedbackName = (name: string): string => {
   return name.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
+const formatFeedbackContent = (feedback: { feedback_content: string; when_condition?: string | null; do_action?: string | null; do_not_action?: string | null }): string => {
+  if (feedback.when_condition || feedback.do_action || feedback.do_not_action) {
+    const lines: string[] = []
+    if (feedback.when_condition) lines.push(`When: ${feedback.when_condition}`)
+    if (feedback.do_action) lines.push(`Do: ${feedback.do_action}`)
+    if (feedback.do_not_action) lines.push(`Don't: ${feedback.do_not_action}`)
+    return lines.join("\n")
+  }
+  return feedback.feedback_content
+}
+
 // Raw Feedback Row Component
 interface RawFeedbackRowProps {
   feedback: RawFeedback
@@ -127,7 +138,7 @@ function RawFeedbackRow({ feedback, onDelete }: RawFeedbackRowProps) {
                 </Badge>
               </div>
               <p className="text-sm text-slate-500 mt-1 truncate">
-                {feedback.feedback_content}
+                {formatFeedbackContent(feedback)}
               </p>
             </div>
           </div>
@@ -172,7 +183,7 @@ function RawFeedbackRow({ feedback, onDelete }: RawFeedbackRowProps) {
               <div>
                 <h4 className="text-sm font-semibold mb-2 text-slate-800">Feedback Content</h4>
                 <p className="text-sm text-slate-600 leading-relaxed bg-white p-3 rounded-lg border border-slate-200 whitespace-pre-wrap">
-                  {feedback.feedback_content}
+                  {formatFeedbackContent(feedback)}
                 </p>
               </div>
             </div>
@@ -281,7 +292,7 @@ function FeedbackRow({ feedback, onUpdateStatus, onDelete, isUpdating = false }:
                 </Badge>
               </div>
               <p className="text-sm text-slate-500 mt-1 truncate">
-                {feedback.feedback_content}
+                {formatFeedbackContent(feedback)}
               </p>
             </div>
           </div>
@@ -326,7 +337,7 @@ function FeedbackRow({ feedback, onUpdateStatus, onDelete, isUpdating = false }:
               <div>
                 <h4 className="text-sm font-semibold mb-2 text-slate-800">Aggregated Feedback Content</h4>
                 <p className="text-sm text-slate-600 leading-relaxed bg-white p-3 rounded-lg border border-slate-200 whitespace-pre-wrap">
-                  {feedback.feedback_content}
+                  {formatFeedbackContent(feedback)}
                 </p>
               </div>
 

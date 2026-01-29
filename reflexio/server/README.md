@@ -320,6 +320,8 @@ Key files:
 |------|---------|
 | `storage_base.py` | BaseStorage abstract class |
 | `supabase_storage.py` | Production storage with vector embeddings |
+| `supabase_storage_utils.py` | Helpers: data conversion, SQL migration runner |
+| `supabase_migrations.py` | Data migrations that run alongside SQL schema migrations |
 | `local_json_storage.py` | Local file-based for testing |
 
 **Pattern**: **NEVER import SupabaseStorage/LocalJsonStorage directly** - Always use `request_context.storage`

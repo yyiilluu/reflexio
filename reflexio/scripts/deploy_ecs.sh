@@ -20,8 +20,8 @@ set -e
 # Configuration (modify these or set as environment variables)
 AWS_REGION="${AWS_REGION:-us-west-2}"
 AWS_ACCOUNT_ID="${AWS_ACCOUNT_ID:-$(aws sts get-caller-identity --query Account --output text 2>/dev/null)}"
-APP_NAME="${APP_NAME:-reflexio}"
-ECR_REPO_NAME="${ECR_REPO_NAME:-reflexio}"
+APP_NAME="${APP_NAME:-agenticmem}"
+ECR_REPO_NAME="${ECR_REPO_NAME:-agenticmem}"
 ECR_URI="${ECR_URI:-$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO_NAME}"
 CLUSTER_NAME="${CLUSTER_NAME:-$APP_NAME-cluster}"
 SERVICE_NAME="${SERVICE_NAME:-$APP_NAME-service}"
@@ -71,10 +71,10 @@ Examples:
 Environment Variables:
     AWS_REGION      AWS region (default: us-west-2)
     AWS_ACCOUNT_ID  AWS account ID (auto-detected)
-    APP_NAME        Application name (default: reflexio)
-    ECR_REPO_NAME   ECR repository name (default: reflexio)
-    CLUSTER_NAME    ECS cluster name (default: reflexio-cluster)
-    SERVICE_NAME    ECS service name (default: reflexio-service)
+    APP_NAME        Application name (default: agenticmem)
+    ECR_REPO_NAME   ECR repository name (default: agenticmem)
+    CLUSTER_NAME    ECS cluster name (default: agenticmem-cluster)
+    SERVICE_NAME    ECS service name (default: agenticmem-service)
 EOF
 }
 

@@ -5,9 +5,9 @@ import Link from "next/link"
 import { Button } from "@/components/ui/button"
 
 const phrases = [
-  "Makes Agents Personal",
-  "Never Repeats Mistakes",
-  "Adapts to Your Needs",
+  "Learn User Preferences",
+  "Reflects on Interactions",
+  "Improves Over Time",
 ]
 
 export function Hero() {
@@ -36,8 +36,8 @@ export function Hero() {
 
       <div className="max-w-4xl mx-auto text-center">
         <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight mb-6">
-          <span className="text-slate-800">Memory That</span>{" "}
-          <span className="block sm:inline-block sm:w-[320px] lg:w-[420px] text-center sm:text-left sm:whitespace-nowrap">
+          <span className="text-slate-800">Second Brain for AI Agents</span>{" "}
+          <span className="block text-center">
             <span
               className={`bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 bg-clip-text text-transparent transition-opacity duration-500 ${isVisible ? 'opacity-100' : 'opacity-0'}`}
             >
@@ -47,8 +47,8 @@ export function Hero() {
         </h1>
 
         <p className="text-lg sm:text-xl text-slate-600 max-w-2xl mx-auto mb-10 leading-relaxed">
-          Your agents don't just remember — they improve.
-          Reflexio is the agent learning infrastructure that personalizes your agents and enables them to continuously self-improve with every interaction.
+        Your agents don’t just remember — they improve.
+        Reflexio is the reflection layer that learns from interactions and feedback, making agents more personal and eliminating repeated mistakes..
         </p>
 
         <div className="flex flex-col sm:flex-row gap-4 justify-center">
@@ -75,7 +75,7 @@ export function Hero() {
         <div className="mt-16 flex flex-wrap items-center justify-center gap-8 text-sm text-slate-500">
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
-            <span>Enterprise-grade security</span>
+            <span>Feedback-driven learning</span>
           </div>
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-emerald-500"></div>

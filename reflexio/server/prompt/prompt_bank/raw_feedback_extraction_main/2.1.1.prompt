@@ -41,10 +41,10 @@ You MUST identify the triggering agent behavior
 ## SOP Extraction Logic (The "Skill" Test)
 
 A valid `when_condition` must act as a **Skill Trigger**.
-* **BAD (Topic-based):** "When talking about Python code." (Too broad)
-* **BAD (Interaction-based):** "When the user corrects the agent." (Too generic)
-* **GOOD (Intent-based):** "When the user requests help debugging a specific error trace."
-* **GOOD (Problem-based):** "When the user's initial high-level request is ambiguous."
+* **BAD (Topic-based):** "User talks about Python code." (Too broad)
+* **BAD (Interaction-based):** "User corrects the agent." (Too generic)
+* **GOOD (Intent-based):** "User requests help debugging a specific error trace."
+* **GOOD (Problem-based):** "User's initial high-level request is ambiguous."
 
 ━━━━━━━━━━━━━━━━━━━━━━
 ## Reasoning Procedure (REQUIRED)
@@ -76,7 +76,7 @@ If no valid feedback exists, return:
 {{
   "do_action": "Outline the high-level strategy before generating code implementation.",
   "do_not_action": "Jump straight to coding solutions.",
-  "when_condition": "When the user asks for architectural advice or complex implementation help."
+  "when_condition": "User asks for architectural advice or complex implementation help."
 }}
 
 **Example 2:**
@@ -85,7 +85,7 @@ If no valid feedback exists, return:
 {{
   "do_action": "Detect or ask for the project's package manager preference.",
   "do_not_action": "Assume `pip` is the default package manager.",
-  "when_condition": "When the user asks for package installation commands."
+  "when_condition": "User asks for package installation commands."
 }}
 
 ━━━━━━━━━━━━━━━━━━━━━━

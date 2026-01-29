@@ -431,13 +431,12 @@ def execute_migration(db_url: str) -> tuple[bool, str]:
     import glob
     from pathlib import Path
     import reflexio
+    from reflexio.server.services.storage.supabase_migrations import DATA_MIGRATIONS
 
     try:
         # Get migration files
         migration_dir = (
-            Path(os.path.dirname(reflexio.__file__)).parent
-            / "supabase"
-            / "migrations"
+            Path(os.path.dirname(reflexio.__file__)).parent / "supabase" / "migrations"
         )
         migration_files = sorted(glob.glob(os.path.join(migration_dir, "*.sql")))
         if not migration_files:
@@ -492,6 +491,10 @@ def execute_migration(db_url: str) -> tuple[bool, str]:
                         "INSERT INTO supabase_migrations.schema_migrations (version, statements, name) VALUES (%s, %s, %s)",
                         (version, statements, filename),
                     )
+
+                    # Run data migration if one exists for this version
+                    if version in DATA_MIGRATIONS:
+                        DATA_MIGRATIONS[version](conn, cursor)
 
                     executed_migrations.append(filename)
                 except Exception as e:

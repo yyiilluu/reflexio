@@ -1375,7 +1375,8 @@ class SupabaseStorage(BaseStorage):
             feedbacks (list[Feedback]): List of feedback objects to save
         """
         for feedback in feedbacks:
-            embedding = self._get_embedding(feedback.feedback_content)
+            embedding_text = feedback.when_condition or feedback.feedback_content
+            embedding = self._get_embedding(embedding_text)
             feedback.embedding = embedding
             self.client.table("feedbacks").upsert(feedback_to_data(feedback)).execute()
 

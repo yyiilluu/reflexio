@@ -4,8 +4,8 @@ import { Brain, TrendingUp, BarChart3 } from "lucide-react"
 
 const features = [
   {
-    title: "Personalized Memory Extraction",
-    description: "Define what your agents should learn from each conversation — preferences, constraints, habits, and domain knowledge — not just what to store.",
+    title: "Personalization Signals",
+    description: "Define what your agents should learn from each interaction — preferences, constraints, habits, and domain context — so responses adapt to the user, not just the past.",
     icon: Brain,
     gradient: "from-violet-500 to-purple-600",
     bgGradient: "from-violet-50 to-purple-50",
@@ -38,10 +38,10 @@ export function Features() {
             Core Capabilities
           </p>
           <h2 className="text-3xl sm:text-4xl font-bold text-slate-800 mb-4">
-            Everything You Need for Intelligent Memory
+          Built for Learning, Not Just Memory
           </h2>
           <p className="text-slate-600 text-lg max-w-2xl mx-auto">
-            From conversations to compounding intelligence — Reflexio is the learning system that personalizes your agents and makes them improve themselves.
+          Reflexio turns interactions and feedback into durable learning, so agents become more personal over time and stop repeating the same mistakes.
           </p>
         </div>
 
