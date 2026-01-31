@@ -64,11 +64,11 @@ aws sts get-caller-identity
 ```bash
 export AWS_REGION=us-west-2
 export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-export APP_NAME=reflexio
-export ECR_REPO_NAME=reflexio
+export APP_NAME=agenticmem
+export ECR_REPO_NAME=agenticmem
 export ECR_URI=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO_NAME
-export DOMAIN_NAME=reflexio.com
-export S3_BUCKET_NAME=reflexio
+export DOMAIN_NAME=reflexio.ai
+export S3_BUCKET_NAME=agenticmem
 export CF_DISTRIBUTION_ID=E15WBN9QYYCSND
 
 echo "Account: $AWS_ACCOUNT_ID"
@@ -419,7 +419,7 @@ cat > /tmp/task-definition.json << EOF
     "networkMode": "awsvpc",
     "requiresCompatibilities": ["FARGATE"],
     "cpu": "1024",
-    "memory": "2048",
+    "memory": "4096",
     "executionRoleArn": "${EXECUTION_ROLE_ARN}",
     "taskRoleArn": "${TASK_ROLE_ARN}",
     "containerDefinitions": [

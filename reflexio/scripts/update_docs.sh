@@ -17,7 +17,7 @@ set -e
 
 # Configuration
 AWS_REGION="${AWS_REGION:-us-west-2}"
-S3_BUCKET_NAME="${S3_BUCKET_NAME:-reflexio}"
+S3_BUCKET_NAME="${S3_BUCKET_NAME:-agenticmem}"
 CF_DISTRIBUTION_ID="${CF_DISTRIBUTION_ID:-E15WBN9QYYCSND}"
 
 # Paths

@@ -943,6 +943,7 @@ class SupabaseStorage(BaseStorage):
                 "p_filter_user_id": search_user_profile_request.user_id,
                 "p_search_mode": self.search_mode.value,
                 "p_rrf_k": 60,
+                "p_filter_extractor_name": search_user_profile_request.extractor_name,
             },
         ).execute()
 

@@ -255,6 +255,11 @@ class ProfileDeduplicator(BaseDeduplicator):
 
             now_ts = int(datetime.now(timezone.utc).timestamp())
 
+            # Merge extractor_names from all profiles in group
+            merged_extractor_names = self._merge_extractor_names(
+                [all_add_profiles[i] for i in group.item_indices]
+            )
+
             merged_profile = UserProfile(
                 profile_id=str(uuid.uuid4()),
                 user_id=user_id,
@@ -266,6 +271,7 @@ class ProfileDeduplicator(BaseDeduplicator):
                 custom_features=merged_custom_features,
                 source=template_profile.source,  # Use first profile's source
                 status=template_profile.status,
+                extractor_names=merged_extractor_names,
             )
             merged_add_profiles.append(merged_profile)
 
@@ -322,4 +328,26 @@ class ProfileDeduplicator(BaseDeduplicator):
             if profile.custom_features:
                 merged.update(profile.custom_features)
 
+        return merged if merged else None
+
+    def _merge_extractor_names(
+        self, profiles: list[UserProfile]
+    ) -> Optional[list[str]]:
+        """
+        Merge extractor_names from multiple profiles, preserving order and removing duplicates.
+
+        Args:
+            profiles: List of profiles to merge extractor_names from
+
+        Returns:
+            Merged list of unique extractor names or None if no extractor_names
+        """
+        seen: set[str] = set()
+        merged: list[str] = []
+        for profile in profiles:
+            if profile.extractor_names:
+                for name in profile.extractor_names:
+                    if name not in seen:
+                        seen.add(name)
+                        merged.append(name)
         return merged if merged else None

@@ -18,8 +18,8 @@ export const metadata: Metadata = {
   title: "Reflexio - Agent Personalization and Self-improvement",
   description: "Frontend portal for Reflexio service for agent personalization and self-improvements learnt from user interactions",
   icons: {
-    icon: "/reflexio_fav.svg",
-    shortcut: "/reflexio_fav.svg",
+    icon: { url: "/reflexio_fav.svg", type: "image/svg+xml" },
+    shortcut: { url: "/reflexio_fav.svg", type: "image/svg+xml" },
     apple: "/reflexio_fav.svg",
   },
 };

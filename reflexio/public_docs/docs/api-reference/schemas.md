@@ -199,6 +199,7 @@ Request model for searching user profiles.
 | `query` | string | Semantic search query | Required |
 | `source` | string | Filter by interaction source | Optional |
 | `custom_feature` | string | Filter by custom features | Optional |
+| `extractor_name` | string | Filter by extractor name | Optional |
 | `threshold` | float | Similarity threshold for results | 0.7 |
 | `top_k` | integer | Number of results to return | 5 |
 

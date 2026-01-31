@@ -381,6 +381,7 @@ class ProfileExtractor:
                             ),
                         ),
                         custom_features=custom_features,
+                        extractor_names=[self.config.extractor_name],
                     )
 
                     new_profiles.append(added_profile)

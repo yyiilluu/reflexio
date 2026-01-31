@@ -41,6 +41,7 @@ def response_to_user_profile(item: dict[str, Any]) -> UserProfile:
         custom_features=item["custom_features"],
         source=item.get("source", ""),
         status=Status(item["status"]) if item.get("status") else None,
+        extractor_names=item.get("extractor_names"),
     )
 
 
@@ -95,6 +96,7 @@ def user_profile_to_data(profile: UserProfile) -> dict[str, Any]:
         "embedding": profile.embedding,
         "source": profile.source,
         "status": profile.status.value if profile.status else None,
+        "extractor_names": profile.extractor_names,
     }
 
 

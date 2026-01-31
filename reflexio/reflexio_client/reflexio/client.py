@@ -347,6 +347,7 @@ class ReflexioClient:
         top_k: Optional[int] = None,
         source: Optional[str] = None,
         custom_feature: Optional[str] = None,
+        extractor_name: Optional[str] = None,
         threshold: Optional[float] = None,
     ) -> SearchUserProfileResponse:
         """Search for user profiles.
@@ -361,6 +362,7 @@ class ReflexioClient:
             top_k (Optional[int]): Maximum number of results to return (default: 10)
             source (Optional[str]): Filter by source
             custom_feature (Optional[str]): Filter by custom feature
+            extractor_name (Optional[str]): Filter by extractor name
             threshold (Optional[float]): Similarity threshold (default: 0.7)
 
         Returns:
@@ -377,6 +379,7 @@ class ReflexioClient:
             top_k=top_k,
             source=source,
             custom_feature=custom_feature,
+            extractor_name=extractor_name,
             threshold=threshold,
         )
         response = self._make_request(

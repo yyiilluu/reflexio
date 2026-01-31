@@ -33,6 +33,7 @@ class SearchUserProfileRequest(BaseModel):
     top_k: Optional[int] = 10
     source: Optional[str] = None
     custom_feature: Optional[str] = None
+    extractor_name: Optional[str] = None
     threshold: Optional[float] = 0.5
 
 

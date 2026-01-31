@@ -617,6 +617,7 @@ response = client.search_profiles(
 | `top_k` | int | No | `10` | Maximum number of results to return |
 | `source` | str | No | `None` | Filter by interaction source |
 | `custom_feature` | str | No | `None` | Filter by custom features |
+| `extractor_name` | str | No | `None` | Filter by extractor name |
 | `threshold` | float | No | `0.7` | Similarity threshold (0.0-1.0) |
 
 #### SearchUserProfileResponse Schema
@@ -664,6 +665,14 @@ response = client.search_profiles(
     source="sales_chat",
     top_k=10,
     threshold=0.6
+)
+
+# Filter by extractor name
+response = client.search_profiles(
+    user_id="user_123",
+    query="product preferences",
+    extractor_name="preferences_extractor",
+    top_k=10
 )
 
 # Search with time filter

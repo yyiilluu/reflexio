@@ -473,7 +473,7 @@ cat > /tmp/task-definition.json << EOF
     "networkMode": "awsvpc",
     "requiresCompatibilities": ["FARGATE"],
     "cpu": "1024",
-    "memory": "2048",
+    "memory": "4096",
     "executionRoleArn": "${EXECUTION_ROLE_ARN}",
     "taskRoleArn": "${TASK_ROLE_ARN}",
     "containerDefinitions": [

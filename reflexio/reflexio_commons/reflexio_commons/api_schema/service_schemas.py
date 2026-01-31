@@ -106,6 +106,7 @@ class UserProfile(BaseModel):
     custom_features: Optional[dict] = None
     source: Optional[str] = None
     status: Optional[Status] = None  # indicates the status of the profile
+    extractor_names: Optional[list[str]] = None
     embedding: list[float] = []
 
 
