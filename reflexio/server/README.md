@@ -53,6 +53,7 @@ Description: FastAPI backend server that processes user interactions to generate
 - `DELETE /api/delete_feedback` - Delete feedback by ID
 - `DELETE /api/delete_raw_feedback` - Delete raw feedback by ID
 - `GET /api/get_operation_status` - Get background operation status
+- `POST /api/cancel_operation` - Cancel an in-progress operation (rerun or manual generation)
 
 **Authentication Endpoints**:
 - `POST /api/verify-email` - Verify email with token
@@ -189,12 +190,13 @@ Called by API endpoints via `Reflexio`
 - `service_utils.py`: Utilities (`construct_messages_from_interactions()`, `format_interactions_to_history_string()`, `extract_json_from_string()`)
 
 **Operation State Management** (via `OperationStateManager` in `operation_state_utils.py`):
-- Centralized manager for all `_operation_state` table interactions with 5 use cases:
+- Centralized manager for all `_operation_state` table interactions with 6 use cases:
   1. **Progress tracking**: Rerun + manual batch operations (key: `{service}::{org_id}::progress`)
   2. **Concurrency lock**: Atomic lock with request queuing (key: `{service}::{org_id}[::scope_id]::lock`)
   3. **Extractor bookmark**: Track last-processed interactions per extractor (key: `{service}::{org_id}[::scope_id]::{name}`)
   4. **Aggregator bookmark**: Track last-processed raw_feedback_id per aggregator
   5. **Simple lock**: Non-queuing lock for cleanup operations
+  6. **Cancellation**: Cooperative cancellation for batch operations (`request_cancellation()`, `is_cancellation_requested()`, `mark_cancelled()`)
 - Stale lock timeout: 5 minutes (assumes crashed if lock held longer)
 - Lock scoping: Profile generation = per-user, Feedback generation = per-org
 - Re-run mechanism: If new request arrives during generation, `pending_request_id` is set and generation re-runs after completion

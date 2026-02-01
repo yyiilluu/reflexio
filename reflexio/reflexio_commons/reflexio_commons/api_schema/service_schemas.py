@@ -46,6 +46,7 @@ class OperationStatus(str, enum.Enum):
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
     FAILED = "failed"
+    CANCELLED = "cancelled"
 
 
 class RegularVsShadow(str, enum.Enum):
@@ -489,4 +490,14 @@ class GetOperationStatusRequest(BaseModel):
 class GetOperationStatusResponse(BaseModel):
     success: bool
     operation_status: Optional[OperationStatusInfo] = None
+    msg: Optional[str] = None
+
+
+class CancelOperationRequest(BaseModel):
+    service_name: Optional[str] = None  # None cancels both services
+
+
+class CancelOperationResponse(BaseModel):
+    success: bool
+    cancelled_services: list[str] = []
     msg: Optional[str] = None

@@ -254,6 +254,66 @@ class OperationStateManager:
             return state_entry.get("operation_state", state_entry)
         return None
 
+    def request_cancellation(self) -> bool:
+        """Request cancellation of an in-progress operation.
+
+        Sets the cancellation_requested flag in the progress state if the
+        operation is currently IN_PROGRESS.
+
+        Returns:
+            bool: True if cancellation was requested (operation was in progress), False otherwise
+        """
+        key = self._progress_key()
+        state_entry = self.storage.get_operation_state(key)
+        if not state_entry:
+            return False
+
+        state = state_entry.get("operation_state", state_entry)
+        if state.get("status") != OperationStatus.IN_PROGRESS.value:
+            return False
+
+        state["cancellation_requested"] = True
+        self.storage.update_operation_state(key, state)
+        logger.info(
+            "Cancellation requested for %s (org=%s)", self.service_name, self.org_id
+        )
+        return True
+
+    def is_cancellation_requested(self) -> bool:
+        """Check if cancellation has been requested for the current operation.
+
+        Returns:
+            bool: True if cancellation was requested
+        """
+        key = self._progress_key()
+        state_entry = self.storage.get_operation_state(key)
+        if not state_entry:
+            return False
+        state = state_entry.get("operation_state", state_entry)
+        return state.get("cancellation_requested", False)
+
+    def mark_cancelled(self) -> None:
+        """Mark the current operation as CANCELLED.
+
+        Sets status to CANCELLED, clears cancellation_requested flag,
+        and records completed_at timestamp.
+        """
+        key = self._progress_key()
+        state_entry = self.storage.get_operation_state(key)
+        if not state_entry:
+            return
+
+        state = state_entry.get("operation_state", state_entry)
+        state["status"] = OperationStatus.CANCELLED.value
+        state["cancellation_requested"] = False
+        state["completed_at"] = int(datetime.now(timezone.utc).timestamp())
+        self.storage.update_operation_state(key, state)
+        logger.info(
+            "Operation marked as cancelled for %s (org=%s)",
+            self.service_name,
+            self.org_id,
+        )
+
     # ── Use Case 2: Concurrency Lock ──
     # (Atomic lock with request queuing for generation services)
 

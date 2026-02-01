@@ -659,3 +659,104 @@ class TestSimpleLock:
         assert key == "test_service::org_123::lock"
         assert state["in_progress"] is False
         assert "completed_at" in state
+
+
+# ===============================
+# Use Case 6: Cancellation
+# ===============================
+
+
+class TestRequestCancellation:
+    """Tests for request_cancellation method."""
+
+    def test_request_cancellation_in_progress(self, manager, mock_storage):
+        """Cancellation flag is set when operation is IN_PROGRESS."""
+        mock_storage.get_operation_state.return_value = {
+            "operation_state": {"status": OperationStatus.IN_PROGRESS.value}
+        }
+
+        result = manager.request_cancellation()
+        assert result is True
+
+        mock_storage.update_operation_state.assert_called_once()
+        key, state = mock_storage.update_operation_state.call_args[0]
+        assert key == "test_service::org_123::progress"
+        assert state["cancellation_requested"] is True
+
+    def test_request_cancellation_not_in_progress(self, manager, mock_storage):
+        """Cancellation returns False when operation is COMPLETED."""
+        mock_storage.get_operation_state.return_value = {
+            "operation_state": {"status": OperationStatus.COMPLETED.value}
+        }
+
+        result = manager.request_cancellation()
+        assert result is False
+        mock_storage.update_operation_state.assert_not_called()
+
+    def test_request_cancellation_no_state(self, manager, mock_storage):
+        """Cancellation returns False when no state exists."""
+        mock_storage.get_operation_state.return_value = None
+
+        result = manager.request_cancellation()
+        assert result is False
+
+    def test_request_cancellation_failed_state(self, manager, mock_storage):
+        """Cancellation returns False when operation is FAILED."""
+        mock_storage.get_operation_state.return_value = {
+            "operation_state": {"status": OperationStatus.FAILED.value}
+        }
+
+        result = manager.request_cancellation()
+        assert result is False
+
+
+class TestIsCancellationRequested:
+    """Tests for is_cancellation_requested method."""
+
+    def test_cancellation_requested_true(self, manager, mock_storage):
+        mock_storage.get_operation_state.return_value = {
+            "operation_state": {"cancellation_requested": True}
+        }
+        assert manager.is_cancellation_requested() is True
+
+    def test_cancellation_requested_false(self, manager, mock_storage):
+        mock_storage.get_operation_state.return_value = {
+            "operation_state": {"cancellation_requested": False}
+        }
+        assert manager.is_cancellation_requested() is False
+
+    def test_cancellation_not_set(self, manager, mock_storage):
+        mock_storage.get_operation_state.return_value = {
+            "operation_state": {"status": "in_progress"}
+        }
+        assert manager.is_cancellation_requested() is False
+
+    def test_cancellation_no_state(self, manager, mock_storage):
+        mock_storage.get_operation_state.return_value = None
+        assert manager.is_cancellation_requested() is False
+
+
+class TestMarkCancelled:
+    """Tests for mark_cancelled method."""
+
+    def test_mark_cancelled(self, manager, mock_storage):
+        mock_storage.get_operation_state.return_value = {
+            "operation_state": {
+                "status": OperationStatus.IN_PROGRESS.value,
+                "cancellation_requested": True,
+            }
+        }
+
+        manager.mark_cancelled()
+
+        mock_storage.update_operation_state.assert_called_once()
+        key, state = mock_storage.update_operation_state.call_args[0]
+        assert key == "test_service::org_123::progress"
+        assert state["status"] == OperationStatus.CANCELLED.value
+        assert state["cancellation_requested"] is False
+        assert "completed_at" in state
+
+    def test_mark_cancelled_no_state(self, manager, mock_storage):
+        mock_storage.get_operation_state.return_value = None
+        manager.mark_cancelled()
+        mock_storage.update_operation_state.assert_not_called()

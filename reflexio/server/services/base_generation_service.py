@@ -83,6 +83,7 @@ class BaseGenerationService(
         self.configurator = request_context.configurator
         self.request_context = request_context
         self.service_config: Optional[TGenerationServiceConfig] = None
+        self._is_batch_mode: bool = False
 
     @abstractmethod
     def _load_extractor_configs(self) -> list[TExtractorConfig]:
@@ -293,6 +294,16 @@ class BaseGenerationService(
             while True:
                 self._run_generation(request)
 
+                # If in batch mode and cancellation was requested, clear lock
+                # to prevent queued pending requests from running, then stop
+                if self._is_batch_mode and state_manager.is_cancellation_requested():
+                    state_manager.clear_lock(scope_id=scope_id)
+                    logger.info(
+                        "Cancellation detected in run() for %s, cleared lock to prevent pending re-runs",
+                        self._get_service_name(),
+                    )
+                    break
+
                 # Check if another request came in during our run
                 pending_request_id = state_manager.release_lock(
                     my_request_id, scope_id=scope_id
@@ -411,6 +422,7 @@ class BaseGenerationService(
 
         Shared logic for both run_rerun() and run_manual_regular().
         Initializes progress, processes each user, and finalizes.
+        Checks for cancellation before each user.
 
         Args:
             user_ids: List of user IDs to process
@@ -422,6 +434,7 @@ class BaseGenerationService(
             Tuple of (users_processed, total_generated)
         """
         total_users = len(user_ids)
+        self._is_batch_mode = True
 
         # Initialize progress
         state_manager.initialize_progress(
@@ -429,44 +442,58 @@ class BaseGenerationService(
             request_params=request_params,
         )
 
-        # Process each user
-        users_processed = 0
-        for user_id in user_ids:
-            state_manager.set_current_item(user_id)
+        try:
+            # Process each user
+            users_processed = 0
+            for user_id in user_ids:
+                # Check for cancellation before starting next user
+                if state_manager.is_cancellation_requested():
+                    logger.info(
+                        "Cancellation requested for %s, stopping after %d/%d users",
+                        self._get_base_service_name(),
+                        users_processed,
+                        total_users,
+                    )
+                    state_manager.mark_cancelled()
+                    return users_processed, self._get_generated_count(request)
 
-            try:
-                run_request = self._create_run_request_for_item(user_id, request)
-                self.run(run_request)
-                users_processed += 1
+                state_manager.set_current_item(user_id)
 
-                state_manager.update_progress(
-                    item_id=user_id,
-                    count=0,  # Extractors collect their own data
-                    success=True,
-                    total_users=total_users,
-                )
+                try:
+                    run_request = self._create_run_request_for_item(user_id, request)
+                    self.run(run_request)
+                    users_processed += 1
 
-            except Exception as e:
-                logger.error(
-                    "Failed to process user %s for %s: %s",
-                    user_id,
-                    self._get_base_service_name(),
-                    str(e),
-                )
-                state_manager.update_progress(
-                    item_id=user_id,
-                    count=0,
-                    success=False,
-                    total_users=total_users,
-                    error=str(e),
-                )
-                continue
+                    state_manager.update_progress(
+                        item_id=user_id,
+                        count=0,  # Extractors collect their own data
+                        success=True,
+                        total_users=total_users,
+                    )
 
-        # Get generated count and finalize
-        total_generated = self._get_generated_count(request)
-        state_manager.finalize_progress(users_processed, total_generated)
+                except Exception as e:
+                    logger.error(
+                        "Failed to process user %s for %s: %s",
+                        user_id,
+                        self._get_base_service_name(),
+                        str(e),
+                    )
+                    state_manager.update_progress(
+                        item_id=user_id,
+                        count=0,
+                        success=False,
+                        total_users=total_users,
+                        error=str(e),
+                    )
+                    continue
 
-        return users_processed, total_generated
+            # Get generated count and finalize
+            total_generated = self._get_generated_count(request)
+            state_manager.finalize_progress(users_processed, total_generated)
+
+            return users_processed, total_generated
+        finally:
+            self._is_batch_mode = False
 
     # ===============================
     # Rerun methods (optional - override to enable rerun functionality)

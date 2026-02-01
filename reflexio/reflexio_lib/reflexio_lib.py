@@ -42,6 +42,8 @@ from reflexio_commons.api_schema.service_schemas import (
     OperationStatusInfo,
     GetOperationStatusRequest,
     GetOperationStatusResponse,
+    CancelOperationRequest,
+    CancelOperationResponse,
 )
 from reflexio_commons.api_schema.retriever_schema import (
     GetProfileStatisticsResponse,
@@ -92,6 +94,7 @@ from reflexio.server.api_endpoints.request_context import RequestContext
 from reflexio.server.services.configurator.configurator import SimpleConfigurator
 from reflexio_commons.config_schema import Config
 
+from reflexio.server.services.operation_state_utils import OperationStateManager
 from reflexio.server.site_var.site_var_manager import SiteVarManager
 
 # Error message for when storage is not configured
@@ -1309,6 +1312,63 @@ class Reflexio:
         except Exception as e:
             return GetOperationStatusResponse(
                 success=False, msg=f"Failed to get operation status: {str(e)}"
+            )
+
+    def cancel_operation(
+        self, request: Union[CancelOperationRequest, dict]
+    ) -> CancelOperationResponse:
+        """Cancel an in-progress operation (rerun or manual generation).
+
+        Sets a cancellation flag so the batch loop stops before the next user.
+        The current LLM call finishes, but no new users are started.
+
+        Args:
+            request (Union[CancelOperationRequest, dict]): Request containing optional service_name.
+                If service_name is None, cancels both profile_generation and feedback_generation.
+
+        Returns:
+            CancelOperationResponse: Response with list of services that were cancelled
+        """
+        if not self._is_storage_configured():
+            return CancelOperationResponse(
+                success=False, msg=STORAGE_NOT_CONFIGURED_MSG
+            )
+        try:
+            if isinstance(request, dict):
+                request = CancelOperationRequest(**request)
+
+            # Determine which services to cancel
+            if request.service_name:
+                service_names = [request.service_name]
+            else:
+                service_names = ["profile_generation", "feedback_generation"]
+
+            cancelled_services = []
+            for svc in service_names:
+                mgr = OperationStateManager(
+                    storage=self.request_context.storage,
+                    org_id=self.request_context.org_id,
+                    service_name=svc,
+                )
+                if mgr.request_cancellation():
+                    cancelled_services.append(svc)
+
+            if cancelled_services:
+                return CancelOperationResponse(
+                    success=True,
+                    cancelled_services=cancelled_services,
+                    msg=f"Cancellation requested for: {', '.join(cancelled_services)}",
+                )
+            else:
+                return CancelOperationResponse(
+                    success=True,
+                    cancelled_services=[],
+                    msg="No in-progress operations found to cancel",
+                )
+
+        except Exception as e:
+            return CancelOperationResponse(
+                success=False, msg=f"Failed to cancel operation: {str(e)}"
             )
 
     def upgrade_all_raw_feedbacks(

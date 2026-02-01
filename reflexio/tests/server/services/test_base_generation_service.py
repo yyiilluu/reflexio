@@ -1257,5 +1257,119 @@ class TestRerunWithExtractorNamesFilter:
         assert response["success"] is True
 
 
+# ===============================
+# Test: Cancellation in batch operations
+# ===============================
+
+
+class TestCancellationInBatch:
+    """Tests for cancellation during batch operations."""
+
+    def test_batch_stops_on_cancellation(self, llm_client, request_context):
+        """Test that _run_batch_with_progress stops when cancellation is requested."""
+        service = ConcreteGenerationService(
+            llm_client,
+            request_context,
+            extractor_configs=[MockExtractorConfig(extractor_name="extractor1")],
+        )
+
+        # Set up mock storage that tracks operation state and simulates cancellation
+        state_store = {}
+
+        def get_state(key):
+            return state_store.get(key)
+
+        def upsert_state(key, state):
+            state_store[key] = {"operation_state": state}
+
+        def update_state(key, state):
+            # After processing user1, simulate cancellation being requested
+            if (
+                state.get("current_user_id") is None
+                and len(state.get("processed_user_ids", [])) >= 1
+            ):
+                state["cancellation_requested"] = True
+            state_store[key] = {"operation_state": state}
+
+        service.storage.get_operation_state = get_state
+        service.storage.upsert_operation_state = upsert_state
+        service.storage.update_operation_state = update_state
+
+        request = MagicMock()
+        request.interactions = [
+            Interaction(user_id="user1", request_id="req1", content="test1"),
+            Interaction(user_id="user2", request_id="req2", content="test2"),
+            Interaction(user_id="user3", request_id="req3", content="test3"),
+        ]
+
+        response = service.run_rerun(request)
+
+        assert response["success"] is True
+        # user1 processed, then cancellation detected before user2/user3
+        assert response["count"] < 3  # Cancellation should stop before all users
+
+    def test_fresh_rerun_works_after_cancel(self, llm_client, request_context):
+        """Test that a new rerun works after a cancelled operation (status = cancelled, not in_progress)."""
+        service = ConcreteGenerationService(
+            llm_client,
+            request_context,
+            extractor_configs=[MockExtractorConfig(extractor_name="extractor1")],
+        )
+
+        # Set up initial state as CANCELLED
+        state_store = {}
+        progress_key = "test_generation::test_org::progress"
+        state_store[progress_key] = {
+            "operation_state": {
+                "status": "cancelled",
+                "cancellation_requested": False,
+            }
+        }
+
+        def get_state(key):
+            return state_store.get(key)
+
+        def upsert_state(key, state):
+            state_store[key] = {"operation_state": state}
+
+        def update_state(key, state):
+            state_store[key] = {"operation_state": state}
+
+        service.storage.get_operation_state = get_state
+        service.storage.upsert_operation_state = upsert_state
+        service.storage.update_operation_state = update_state
+
+        request = MagicMock()
+        request.interactions = [
+            Interaction(user_id="user1", request_id="req1", content="test1"),
+        ]
+
+        # check_in_progress should NOT block since status is "cancelled" (not "in_progress")
+        response = service.run_rerun(request)
+        assert response["success"] is True
+
+    def test_is_batch_mode_reset_after_batch(self, llm_client, request_context):
+        """Test that _is_batch_mode is reset to False after batch completes."""
+        service = ConcreteGenerationService(
+            llm_client,
+            request_context,
+            extractor_configs=[MockExtractorConfig(extractor_name="extractor1")],
+        )
+
+        get_state, upsert_state, update_state = create_mock_operation_state_storage()
+        service.storage.get_operation_state = get_state
+        service.storage.upsert_operation_state = upsert_state
+        service.storage.update_operation_state = update_state
+
+        request = MagicMock()
+        request.interactions = [
+            Interaction(user_id="user1", request_id="req1", content="test1"),
+        ]
+
+        assert service._is_batch_mode is False
+        service.run_rerun(request)
+        assert service._is_batch_mode is False  # Reset after batch finishes
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

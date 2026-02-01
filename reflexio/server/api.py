@@ -70,6 +70,8 @@ from reflexio_commons.api_schema.service_schemas import (
     DowngradeRawFeedbacksResponse,
     GetOperationStatusRequest,
     GetOperationStatusResponse,
+    CancelOperationRequest,
+    CancelOperationResponse,
 )
 from reflexio_commons.api_schema.retriever_schema import (
     GetInteractionsRequest,
@@ -1450,3 +1452,28 @@ def get_operation_status_endpoint(
     response = reflexio.get_operation_status(request)
 
     return response
+
+
+@app.post(
+    "/api/cancel_operation",
+    response_model=CancelOperationResponse,
+    response_model_exclude_none=True,
+)
+@limiter.limit("10/minute")
+def cancel_operation_endpoint(
+    request: Request,
+    payload: CancelOperationRequest,
+    org_id: str = Depends(get_org_id_for_self_host),
+):
+    """Cancel an in-progress operation (rerun or manual generation).
+
+    Args:
+        request (Request): The HTTP request object (for rate limiting)
+        payload (CancelOperationRequest): Request containing optional service_name
+        org_id (str): Organization ID
+
+    Returns:
+        CancelOperationResponse: Response with list of services that were cancelled
+    """
+    reflexio = get_reflexio(org_id=org_id)
+    return reflexio.cancel_operation(payload)

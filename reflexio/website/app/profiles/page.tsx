@@ -26,7 +26,7 @@ import {
   CheckCircle,
   RotateCcw,
 } from "lucide-react"
-import { getProfiles, getAllProfiles, deleteProfile, getProfileStatistics, upgradeAllProfiles, downgradeAllProfiles, rerunProfileGeneration, getOperationStatus, type UserProfile as ApiUserProfile, type ProfileStatistics, type Status, type OperationStatusInfo } from "@/lib/api"
+import { getProfiles, getAllProfiles, deleteProfile, getProfileStatistics, upgradeAllProfiles, downgradeAllProfiles, rerunProfileGeneration, getOperationStatus, cancelOperation, type UserProfile as ApiUserProfile, type ProfileStatistics, type Status, type OperationStatusInfo } from "@/lib/api"
 import {
   Dialog,
   DialogContent,
@@ -577,7 +577,7 @@ export default function ProfilesPage() {
         if (response.success && response.operation_status) {
           const status = response.operation_status
 
-          // Show toast when operation transitions from in_progress to completed/failed
+          // Show toast when operation transitions from in_progress to completed/failed/cancelled
           if (previousStatus === "in_progress" && status.status === "completed") {
             setMessageModalConfig({
               title: "Profile Generation Completed",
@@ -591,6 +591,18 @@ export default function ProfilesPage() {
             fetchProfileStatistics()
             // Stop polling since operation is complete
             setShouldPollStatus(false)
+          } else if (previousStatus === "in_progress" && status.status === "cancelled") {
+            setMessageModalConfig({
+              title: "Profile Generation Cancelled",
+              message: `Operation was cancelled after processing ${status.processed_users}/${status.total_users} users.`,
+              type: "success"
+            })
+            setShowMessageModal(true)
+            setShowOperationBanner(false)
+            // Refresh profiles after cancellation
+            fetchProfiles(userId, topK, activeStatusTab)
+            fetchProfileStatistics()
+            setShouldPollStatus(false)
           } else if (previousStatus === "in_progress" && status.status === "failed") {
             setMessageModalConfig({
               title: "Profile Generation Failed",
@@ -602,7 +614,7 @@ export default function ProfilesPage() {
             // Stop polling since operation failed
             setShouldPollStatus(false)
           } else if (status.status !== "in_progress") {
-            // If status is not in_progress (completed/failed), stop polling
+            // If status is not in_progress (completed/failed/cancelled), stop polling
             setShouldPollStatus(false)
           }
 
@@ -974,12 +986,31 @@ export default function ProfilesPage() {
                 </div>
               </div>
               <Button
-                variant="ghost"
+                variant="outline"
                 size="sm"
-                onClick={() => setShowOperationBanner(false)}
-                style={{ color: "#1d3557" }}
+                onClick={async () => {
+                  try {
+                    const result = await cancelOperation("profile_generation")
+                    if (result.success && result.cancelled_services.length > 0) {
+                      setShouldPollStatus(false)
+                      setShowOperationBanner(false)
+                      setMessageModalConfig({
+                        title: "Profile Generation Cancelled",
+                        message: `Cancellation requested. The current user will finish processing, then the operation will stop.`,
+                        type: "success"
+                      })
+                      setShowMessageModal(true)
+                      fetchProfiles(userId, topK, activeStatusTab)
+                      fetchProfileStatistics()
+                    }
+                  } catch (err) {
+                    console.error("Failed to cancel operation:", err)
+                  }
+                }}
+                className="border-red-300 text-red-700 hover:bg-red-50"
               >
-                <XCircle className="h-4 w-4" />
+                <XCircle className="h-4 w-4 mr-1" />
+                Cancel
               </Button>
             </div>
           </div>

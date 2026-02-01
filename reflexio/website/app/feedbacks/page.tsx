@@ -43,6 +43,7 @@ import {
   rerunFeedbackGeneration,
   runFeedbackAggregation,
   getOperationStatus,
+  cancelOperation,
   upgradeAllRawFeedbacks,
   downgradeAllRawFeedbacks,
   deleteFeedback,
@@ -544,10 +545,11 @@ export default function FeedbacksPage() {
         if (response.success && response.operation_status) {
           setOperationStatusFeedback(response.operation_status)
 
-          // If operation completed or failed, refresh data and stop polling
+          // If operation completed, failed, or cancelled, refresh data and stop polling
           if (
             response.operation_status.status === "completed" ||
-            response.operation_status.status === "failed"
+            response.operation_status.status === "failed" ||
+            response.operation_status.status === "cancelled"
           ) {
             // Refresh feedback data
             const [rawResponse, feedbackResponse] = await Promise.all([
@@ -576,7 +578,7 @@ export default function FeedbacksPage() {
               clearInterval(intervalId)
             }
 
-            // Show completion message via modal
+            // Show completion/failure/cancellation message via modal
             if (response.operation_status.status === "completed") {
               setMessageModalConfig({
                 title: "Feedback Generation Completed",
@@ -584,6 +586,14 @@ export default function FeedbacksPage() {
                 type: "success"
               })
               setShowMessageModal(true)
+            } else if (response.operation_status.status === "cancelled") {
+              setMessageModalConfig({
+                title: "Feedback Generation Cancelled",
+                message: `Operation was cancelled after processing ${response.operation_status.processed_users}/${response.operation_status.total_users} users.`,
+                type: "success"
+              })
+              setShowMessageModal(true)
+              setShowOperationBannerFeedback(false)
             } else if (response.operation_status.status === "failed") {
               setMessageModalConfig({
                 title: "Feedback Generation Failed",
@@ -1106,12 +1116,46 @@ export default function FeedbacksPage() {
                 </div>
               </div>
               <Button
-                variant="ghost"
+                variant="outline"
                 size="sm"
-                onClick={() => setShowOperationBannerFeedback(false)}
-                style={{ color: "#1d3557" }}
+                onClick={async () => {
+                  try {
+                    const result = await cancelOperation("feedback_generation")
+                    if (result.success && result.cancelled_services.length > 0) {
+                      // Hide banner (triggers useEffect cleanup which stops polling)
+                      setShowOperationBannerFeedback(false)
+                      setMessageModalConfig({
+                        title: "Feedback Generation Cancelled",
+                        message: `Cancellation requested. The current user will finish processing, then the operation will stop.`,
+                        type: "success"
+                      })
+                      setShowMessageModal(true)
+                      // Refresh data
+                      const [rawResponse, feedbackResponse] = await Promise.all([
+                        getRawFeedbacks({ limit: 10000 }),
+                        getFeedbacks({ limit: 1000 }),
+                      ])
+                      if (rawResponse.success) {
+                        const allRaw = rawResponse.raw_feedbacks.sort((a, b) => b.created_at - a.created_at)
+                        setRawFeedbacks(allRaw)
+                        setRawFeedbackCounts({
+                          current: allRaw.filter(f => f.status === null || f.status === undefined).length,
+                          pending: allRaw.filter(f => f.status === "pending").length,
+                          archived: allRaw.filter(f => f.status === "archived").length,
+                        })
+                      }
+                      if (feedbackResponse.success) {
+                        setFeedbacks(feedbackResponse.feedbacks.sort((a, b) => b.created_at - a.created_at))
+                      }
+                    }
+                  } catch (err) {
+                    console.error("Failed to cancel operation:", err)
+                  }
+                }}
+                className="border-red-300 text-red-700 hover:bg-red-50"
               >
-                <XCircle className="h-4 w-4" />
+                <XCircle className="h-4 w-4 mr-1" />
+                Cancel
               </Button>
             </div>
           </div>
