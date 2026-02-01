@@ -1,48 +1,19 @@
 """
-Utility functions for per-extractor interaction data collection and operation state management.
+Utility functions for per-extractor interaction data collection.
 
 These functions are shared across ProfileExtractor, FeedbackExtractor, and AgentSuccessEvaluator
-to handle per-extractor stride checking, source filtering, and operation state tracking.
+to handle per-extractor stride checking, source filtering, and sliding window iteration.
 """
 
 import logging
-from typing import Any, Optional, TypeVar
+from typing import Optional, TypeVar
 
-from reflexio_commons.api_schema.service_schemas import Interaction
 from reflexio_commons.api_schema.internal_schema import RequestInteractionDataModel
 
 
 logger = logging.getLogger(__name__)
 
 TExtractorConfig = TypeVar("TExtractorConfig")
-
-
-def get_extractor_operation_state_key(
-    org_id: str,
-    service_name: str,
-    extractor_name: str,
-    user_id: Optional[str] = None,
-) -> str:
-    """
-    Generate a unique operation state key for a specific extractor.
-
-    Args:
-        org_id: Organization identifier
-        service_name: Service name (e.g., "profile_extractor", "feedback_extractor", "agent_success_extractor")
-        extractor_name: Unique extractor name from config
-        user_id: Optional user ID for user-level extractors (profile). Not used for feedback/agent_success.
-
-    Returns:
-        Unique key for operation state storage
-
-    Key format examples:
-        - Profile: "profile_extractor::{org_id}::{user_id}::{extractor_name}"
-        - Feedback: "feedback_extractor::{org_id}::{extractor_name}"
-        - AgentSuccess: "agent_success_extractor::{org_id}::{extractor_name}"
-    """
-    if user_id:
-        return f"{service_name}::{org_id}::{user_id}::{extractor_name}"
-    return f"{service_name}::{org_id}::{extractor_name}"
 
 
 def get_extractor_window_params(
@@ -158,43 +129,6 @@ def should_extractor_run_by_stride(
         return True  # No stride configured, always run
 
     return new_interaction_count >= stride_size
-
-
-def update_extractor_operation_state(
-    storage: Any,
-    state_key: str,
-    processed_interactions: list[Interaction],
-) -> None:
-    """
-    Update operation state for an extractor after processing.
-
-    Args:
-        storage: Storage instance with upsert_operation_state method
-        state_key: Operation state key for this extractor
-        processed_interactions: Interactions that were processed
-    """
-    if not processed_interactions:
-        return
-
-    last_processed_ids = [
-        interaction.interaction_id for interaction in processed_interactions
-    ]
-    last_processed_timestamp = max(
-        (
-            interaction.created_at
-            for interaction in processed_interactions
-            if interaction.created_at is not None
-        ),
-        default=None,
-    )
-
-    state_payload: dict[str, Any] = {
-        "last_processed_interaction_ids": last_processed_ids,
-    }
-    if last_processed_timestamp is not None:
-        state_payload["last_processed_timestamp"] = last_processed_timestamp
-
-    storage.upsert_operation_state(state_key, state_payload)
 
 
 def filter_interactions_by_source(

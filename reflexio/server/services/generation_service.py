@@ -1,5 +1,4 @@
 import logging
-import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
@@ -31,6 +30,8 @@ from reflexio.server.services.agent_success_evaluation.agent_success_evaluation_
     AgentSuccessEvaluationRequest,
 )
 
+
+from reflexio.server.services.operation_state_utils import OperationStateManager
 
 logger = logging.getLogger(__name__)
 # Stale lock timeout - if cleanup started > 10 min ago and still "in_progress", assume it crashed
@@ -212,7 +213,7 @@ class GenerationService:
     def _cleanup_old_interactions_if_needed(self) -> None:
         """
         Check total interaction count and cleanup oldest interactions if threshold exceeded.
-        Uses operation_state to prevent race conditions when multiple requests arrive simultaneously.
+        Uses OperationStateManager simple lock to prevent race conditions.
         """
         from reflexio.server import (
             INTERACTION_CLEANUP_THRESHOLD,
@@ -227,27 +228,11 @@ class GenerationService:
             if total_count < INTERACTION_CLEANUP_THRESHOLD:
                 return  # No cleanup needed
 
-            # Check if another cleanup is in progress
-            cleanup_state_key = f"interaction_cleanup::{self.org_id}"
-            state = self.storage.get_operation_state(cleanup_state_key)
-            current_time = int(time.time())
-
-            if state and state.get("in_progress", False):
-                # Check if the lock is stale (cleanup crashed)
-                started_at = state.get("started_at", 0)
-                if current_time - started_at < CLEANUP_STALE_LOCK_SECONDS:
-                    logger.info("Skipping cleanup - another cleanup is in progress")
-                    return
-                else:
-                    logger.warning(
-                        "Stale cleanup lock detected (started %d seconds ago), proceeding with cleanup",
-                        current_time - started_at,
-                    )
-
-            # Mark cleanup as in progress BEFORE executing
-            self.storage.upsert_operation_state(
-                cleanup_state_key, {"in_progress": True, "started_at": current_time}
+            mgr = OperationStateManager(
+                self.storage, self.org_id, "interaction_cleanup"
             )
+            if not mgr.acquire_simple_lock(stale_seconds=CLEANUP_STALE_LOCK_SECONDS):
+                return
 
             try:
                 # Perform cleanup
@@ -261,11 +246,7 @@ class GenerationService:
                     INTERACTION_CLEANUP_THRESHOLD,
                 )
             finally:
-                # Always mark cleanup as completed, even if it failed
-                self.storage.upsert_operation_state(
-                    cleanup_state_key,
-                    {"in_progress": False, "completed_at": int(time.time())},
-                )
+                mgr.release_simple_lock()
 
         except Exception as e:
             logger.error("Failed to cleanup old interactions: %s", e)

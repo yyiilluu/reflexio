@@ -14,12 +14,11 @@ from reflexio_commons.api_schema.internal_schema import RequestInteractionDataMo
 
 from reflexio_commons.config_schema import ProfileExtractorConfig
 from reflexio.server.services.extractor_interaction_utils import (
-    get_extractor_operation_state_key,
     get_extractor_window_params,
     get_effective_source_filter,
     should_extractor_run_by_stride,
-    update_extractor_operation_state,
 )
+from reflexio.server.services.operation_state_utils import OperationStateManager
 
 if TYPE_CHECKING:
     from reflexio.server.services.profile.profile_generation_service import (
@@ -98,18 +97,17 @@ class ProfileExtractor:
             else self.model_setting.get("default_generation_model_name", "gpt-5-mini")
         )
 
-    def _get_operation_state_key(self) -> str:
+    def _create_state_manager(self) -> OperationStateManager:
         """
-        Get unique operation state key for this extractor.
+        Create an OperationStateManager for this extractor.
 
         Returns:
-            Operation state key in format: "profile_extractor::{org_id}::{user_id}::{extractor_name}"
+            OperationStateManager configured for profile_extractor
         """
-        return get_extractor_operation_state_key(
-            org_id=self.request_context.org_id,
-            service_name="profile_extractor",
-            extractor_name=self.config.extractor_name,
-            user_id=self.service_config.user_id,
+        return OperationStateManager(
+            self.request_context.storage,
+            self.request_context.org_id,
+            "profile_extractor",
         )
 
     def _get_interactions(self) -> Optional[list[RequestInteractionDataModel]]:
@@ -149,7 +147,7 @@ class ProfileExtractor:
         if should_skip:
             return None
 
-        state_key = self._get_operation_state_key()
+        mgr = self._create_state_manager()
         storage = self.request_context.storage
 
         # Stride check only for auto_run=True (regular flow)
@@ -158,8 +156,10 @@ class ProfileExtractor:
             (
                 state,
                 new_interactions,
-            ) = storage.get_operation_state_with_new_request_interaction(
-                state_key, self.service_config.user_id, effective_source
+            ) = mgr.get_extractor_state_with_new_interactions(
+                extractor_name=self.config.extractor_name,
+                user_id=self.service_config.user_id,
+                sources=effective_source,
             )
             new_count = sum(len(ri.interactions) for ri in new_interactions)
 
@@ -210,9 +210,11 @@ class ProfileExtractor:
         all_interactions = extract_interactions_from_request_interaction_data_models(
             request_interaction_data_models
         )
-        state_key = self._get_operation_state_key()
-        update_extractor_operation_state(
-            self.request_context.storage, state_key, all_interactions
+        mgr = self._create_state_manager()
+        mgr.update_extractor_bookmark(
+            extractor_name=self.config.extractor_name,
+            processed_interactions=all_interactions,
+            user_id=self.service_config.user_id,
         )
 
     def should_extract_profile(
@@ -386,6 +388,8 @@ class ProfileExtractor:
 
                     new_profiles.append(added_profile)
             elif update_type == "delete":
+                if not update_content:
+                    continue
                 tobe_removed_profiles = [
                     profile
                     for profile in existing_profiles
@@ -395,6 +399,8 @@ class ProfileExtractor:
                     )
                 ]
             elif update_type == "mention":
+                if not update_content:
+                    continue
                 for profile in existing_profiles:
                     if any(
                         check_string_token_overlap(profile.profile_content, content)

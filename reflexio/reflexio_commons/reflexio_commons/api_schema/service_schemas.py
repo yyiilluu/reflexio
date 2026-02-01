@@ -483,7 +483,7 @@ class OperationStatusInfo(BaseModel):
 
 
 class GetOperationStatusRequest(BaseModel):
-    service_name: str = "rerun_profile_generation"
+    service_name: str = "profile_generation"
 
 
 class GetOperationStatusResponse(BaseModel):

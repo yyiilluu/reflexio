@@ -148,10 +148,10 @@ def sample_request_interaction_models(sample_interactions):
 class TestOperationStateKey:
     """Tests for operation state key generation."""
 
-    def test_key_does_not_include_user_id(
+    def test_state_manager_key_does_not_include_user_id(
         self, request_context, mock_llm_client, extractor_config, service_config
     ):
-        """Test that feedback extractor key does NOT include user_id (not user-scoped)."""
+        """Test that feedback extractor state manager builds keys without user_id (not user-scoped)."""
         extractor = FeedbackExtractor(
             request_context=request_context,
             llm_client=mock_llm_client,
@@ -160,12 +160,15 @@ class TestOperationStateKey:
             agent_context="Test agent",
         )
 
-        key = extractor._get_operation_state_key()
+        mgr = extractor._create_state_manager()
 
+        assert mgr.service_name == "feedback_extractor"
+        assert mgr.org_id == "test_org"
+        # Verify the bookmark key format does NOT include user_id
+        key = mgr._bookmark_key(name="quality_feedback")
         assert "feedback_extractor" in key
         assert "test_org" in key
         assert "quality_feedback" in key
-        # Key should NOT contain user_id pattern
         assert key == "feedback_extractor::test_org::quality_feedback"
 
     def test_different_feedback_names_have_different_keys(
@@ -196,10 +199,11 @@ class TestOperationStateKey:
             agent_context="Test agent",
         )
 
-        assert (
-            extractor1._get_operation_state_key()
-            != extractor2._get_operation_state_key()
-        )
+        mgr1 = extractor1._create_state_manager()
+        mgr2 = extractor2._create_state_manager()
+        key1 = mgr1._bookmark_key(name="quality_feedback")
+        key2 = mgr2._bookmark_key(name="speed_feedback")
+        assert key1 != key2
 
 
 # ===============================

@@ -547,7 +547,7 @@ export default function ProfilesPage() {
   useEffect(() => {
     const checkInitialOperationStatus = async () => {
       try {
-        const response = await getOperationStatus("rerun_profile_generation")
+        const response = await getOperationStatus("profile_generation")
         if (response.success && response.operation_status) {
           setOperationStatus(response.operation_status)
           // If there's an in-progress operation, start polling
@@ -573,7 +573,7 @@ export default function ProfilesPage() {
 
     const checkOperationStatus = async () => {
       try {
-        const response = await getOperationStatus("rerun_profile_generation")
+        const response = await getOperationStatus("profile_generation")
         if (response.success && response.operation_status) {
           const status = response.operation_status
 

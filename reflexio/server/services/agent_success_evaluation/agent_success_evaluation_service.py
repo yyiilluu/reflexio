@@ -154,6 +154,15 @@ class AgentSuccessEvaluationService(
         """
         return "agent_success_evaluation"
 
+    def _get_base_service_name(self) -> str:
+        """
+        Get the base service name for OperationStateManager keys.
+
+        Returns:
+            str: "agent_success_evaluation"
+        """
+        return "agent_success_evaluation"
+
     def _should_track_in_progress(self) -> bool:
         """
         Agent success evaluation does NOT track in-progress state.
@@ -166,7 +175,9 @@ class AgentSuccessEvaluationService(
         """
         return False
 
-    def _get_in_progress_state_key(self, request: AgentSuccessEvaluationRequest) -> str:
+    def _get_lock_scope_id(
+        self, request: AgentSuccessEvaluationRequest
+    ) -> Optional[str]:
         """
         Not used since _should_track_in_progress returns False.
 

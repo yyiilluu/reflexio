@@ -540,7 +540,7 @@ export default function FeedbacksPage() {
 
     const pollStatus = async () => {
       try {
-        const response = await getOperationStatus("rerun_feedback_generation")
+        const response = await getOperationStatus("feedback_generation")
         if (response.success && response.operation_status) {
           setOperationStatusFeedback(response.operation_status)
 

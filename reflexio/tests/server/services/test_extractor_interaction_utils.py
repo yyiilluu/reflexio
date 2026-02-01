@@ -2,31 +2,25 @@
 Unit tests for extractor_interaction_utils module.
 
 Tests the shared utility functions used by all extractors for:
-- Operation state key generation
 - Window/stride parameter extraction
 - Source filtering
 - Stride checking
-- Operation state updates
 """
 
 from dataclasses import dataclass
 from typing import Optional
-from unittest.mock import MagicMock
-
-from reflexio_commons.api_schema.service_schemas import Interaction
 
 from reflexio_commons.api_schema.internal_schema import (
     RequestInteractionDataModel,
 )
 from reflexio_commons.api_schema.service_schemas import (
     Request,
+    Interaction,
 )
 from reflexio.server.services.extractor_interaction_utils import (
-    get_extractor_operation_state_key,
     get_extractor_window_params,
     get_effective_source_filter,
     should_extractor_run_by_stride,
-    update_extractor_operation_state,
     iter_sliding_windows,
 )
 
@@ -54,59 +48,6 @@ class MockFeedbackConfig:
     extraction_window_size: Optional[int] = None
     extraction_window_stride: Optional[int] = None
     request_sources_enabled: Optional[list[str]] = None
-
-
-# ===============================
-# Test: get_extractor_operation_state_key
-# ===============================
-
-
-class TestGetExtractorOperationStateKey:
-    """Tests for operation state key generation."""
-
-    def test_profile_extractor_key_with_user_id(self):
-        """Test key format for profile extractor (user-scoped)."""
-        key = get_extractor_operation_state_key(
-            org_id="org123",
-            service_name="profile_extractor",
-            extractor_name="preferences",
-            user_id="user456",
-        )
-
-        assert key == "profile_extractor::org123::user456::preferences"
-
-    def test_feedback_extractor_key_without_user_id(self):
-        """Test key format for feedback extractor (not user-scoped)."""
-        key = get_extractor_operation_state_key(
-            org_id="org123",
-            service_name="feedback_extractor",
-            extractor_name="quality_feedback",
-            user_id=None,
-        )
-
-        assert key == "feedback_extractor::org123::quality_feedback"
-
-    def test_agent_success_extractor_key(self):
-        """Test key format for agent success extractor."""
-        key = get_extractor_operation_state_key(
-            org_id="org123",
-            service_name="agent_success_extractor",
-            extractor_name="task_completion",
-            user_id=None,
-        )
-
-        assert key == "agent_success_extractor::org123::task_completion"
-
-    def test_key_with_special_characters_in_names(self):
-        """Test that special characters in names are preserved."""
-        key = get_extractor_operation_state_key(
-            org_id="org-123",
-            service_name="profile_extractor",
-            extractor_name="user-prefs_v2",
-            user_id="user_456",
-        )
-
-        assert key == "profile_extractor::org-123::user_456::user-prefs_v2"
 
 
 # ===============================
@@ -333,107 +274,6 @@ class TestShouldExtractorRunByStride:
         )
         # No interactions means nothing to process - always skip
         assert result is False
-
-
-# ===============================
-# Test: update_extractor_operation_state
-# ===============================
-
-
-class TestUpdateExtractorOperationState:
-    """Tests for operation state update functionality."""
-
-    def test_updates_state_with_interactions(self):
-        """Test that operation state is updated with processed interactions."""
-        mock_storage = MagicMock()
-        mock_storage.get_operation_state.return_value = None
-
-        interactions = [
-            Interaction(
-                interaction_id=1,
-                user_id="user1",
-                content="Hello",
-                request_id="req1",
-                created_at=1000,
-            ),
-            Interaction(
-                interaction_id=2,
-                user_id="user1",
-                content="World",
-                request_id="req1",
-                created_at=1001,
-            ),
-        ]
-
-        update_extractor_operation_state(
-            storage=mock_storage,
-            state_key="test_key",
-            processed_interactions=interactions,
-        )
-
-        # Verify upsert was called with correct state
-        mock_storage.upsert_operation_state.assert_called_once()
-        call_args = mock_storage.upsert_operation_state.call_args
-        assert call_args[0][0] == "test_key"
-
-        state = call_args[0][1]
-        assert "last_processed_interaction_ids" in state
-        assert 1 in state["last_processed_interaction_ids"]
-        assert 2 in state["last_processed_interaction_ids"]
-        assert state["last_processed_timestamp"] == 1001
-
-    def test_handles_empty_interactions_by_skipping(self):
-        """Test that empty interactions list causes early return without update."""
-        mock_storage = MagicMock()
-        mock_storage.get_operation_state.return_value = None
-
-        update_extractor_operation_state(
-            storage=mock_storage,
-            state_key="test_key",
-            processed_interactions=[],
-        )
-
-        # Should NOT upsert when there are no interactions
-        mock_storage.upsert_operation_state.assert_not_called()
-
-    def test_uses_latest_timestamp(self):
-        """Test that the latest timestamp is used from interactions."""
-        mock_storage = MagicMock()
-        mock_storage.get_operation_state.return_value = None
-
-        interactions = [
-            Interaction(
-                interaction_id=1,
-                user_id="user1",
-                content="First",
-                request_id="req1",
-                created_at=1000,
-            ),
-            Interaction(
-                interaction_id=2,
-                user_id="user1",
-                content="Last",
-                request_id="req1",
-                created_at=2000,
-            ),
-            Interaction(
-                interaction_id=3,
-                user_id="user1",
-                content="Middle",
-                request_id="req1",
-                created_at=1500,
-            ),
-        ]
-
-        update_extractor_operation_state(
-            storage=mock_storage,
-            state_key="test_key",
-            processed_interactions=interactions,
-        )
-
-        call_args = mock_storage.upsert_operation_state.call_args
-        state = call_args[0][1]
-        assert state["last_processed_timestamp"] == 2000
 
 
 # ===============================

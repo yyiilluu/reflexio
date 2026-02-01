@@ -1282,10 +1282,12 @@ class Reflexio:
             if isinstance(request, dict):
                 request = GetOperationStatusRequest(**request)
 
+            # Build the progress key: {service_name}::{org_id}::progress
+            org_id = self.request_context.org_id
+            progress_key = f"{request.service_name}::{org_id}::progress"
+
             # Get operation state from storage
-            state_entry = self.request_context.storage.get_operation_state(
-                request.service_name
-            )
+            state_entry = self.request_context.storage.get_operation_state(progress_key)
 
             if not state_entry:
                 return GetOperationStatusResponse(

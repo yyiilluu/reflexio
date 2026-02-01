@@ -17,6 +17,7 @@ from reflexio_commons.api_schema.service_schemas import (
     RawFeedback,
 )
 from reflexio.server.api_endpoints.request_context import RequestContext
+from reflexio.server.services.operation_state_utils import OperationStateManager
 from reflexio_commons.config_schema import (
     FeedbackAggregatorConfig,
 )
@@ -51,17 +52,18 @@ class FeedbackAggregator:
     # private methods - operation state
     # ===============================
 
-    def _get_operation_state_service_name(self, feedback_name: str) -> str:
+    def _create_state_manager(self) -> OperationStateManager:
         """
-        Generate consistent service name for operation state tracking.
-
-        Args:
-            feedback_name: Name of the feedback type
+        Create an OperationStateManager for the feedback aggregator.
 
         Returns:
-            str: Service name in format "feedback_aggregator::{org_id}::{feedback_name}::{agent_version}"
+            OperationStateManager configured for feedback_aggregator
         """
-        return f"feedback_aggregator::{self.request_context.org_id}::{feedback_name}::{self.agent_version}"
+        return OperationStateManager(
+            self.storage,
+            self.request_context.org_id,
+            "feedback_aggregator",
+        )
 
     def _get_new_raw_feedbacks_count(
         self, feedback_name: str, rerun: bool = False
@@ -81,16 +83,11 @@ class FeedbackAggregator:
         if rerun:
             last_processed_id = 0
         else:
-            # Get operation state
-            service_name = self._get_operation_state_service_name(feedback_name)
-            operation_state = self.storage.get_operation_state(service_name)
-
-            # Extract last processed ID (default to 0 if no state exists)
-            last_processed_id = 0
-            if operation_state:
-                last_processed_id = operation_state.get(
-                    "last_processed_raw_feedback_id", 0
-                )
+            mgr = self._create_state_manager()
+            bookmark = mgr.get_aggregator_bookmark(
+                name=feedback_name, version=self.agent_version
+            )
+            last_processed_id = bookmark if bookmark is not None else 0
 
         # Count feedbacks with ID greater than last processed using efficient count query
         # Only count current raw feedbacks (status=None), not archived or pending ones
@@ -153,15 +150,11 @@ class FeedbackAggregator:
         # Find max raw_feedback_id
         max_id = max(feedback.raw_feedback_id for feedback in raw_feedbacks)
 
-        # Save state
-        service_name = self._get_operation_state_service_name(feedback_name)
-        state = {"last_processed_raw_feedback_id": max_id}
-        self.storage.upsert_operation_state(service_name, state)
-
-        logger.info(
-            "Updated operation state for '%s' with last_processed_raw_feedback_id: %d",
-            feedback_name,
-            max_id,
+        mgr = self._create_state_manager()
+        mgr.update_aggregator_bookmark(
+            name=feedback_name,
+            version=self.agent_version,
+            last_processed_id=max_id,
         )
 
     def _format_structured_cluster_input(

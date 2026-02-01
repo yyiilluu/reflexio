@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 import logging
 import uuid
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
 from reflexio_commons.api_schema.service_schemas import (
     DeleteUserProfileRequest,
@@ -245,6 +245,15 @@ class ProfileGenerationService(
             return "rerun_profile_generation"
         return "profile_generation"
 
+    def _get_base_service_name(self) -> str:
+        """
+        Get the base service name for OperationStateManager keys.
+
+        Returns:
+            str: "profile_generation"
+        """
+        return "profile_generation"
+
     def _should_track_in_progress(self) -> bool:
         """
         Profile generation should track in-progress state to prevent duplicates.
@@ -254,19 +263,19 @@ class ProfileGenerationService(
         """
         return True
 
-    def _get_in_progress_state_key(self, request: ProfileGenerationRequest) -> str:
+    def _get_lock_scope_id(self, request: ProfileGenerationRequest) -> Optional[str]:
         """
-        Get the operation state key for in-progress tracking.
+        Get the scope ID for lock key construction.
 
-        Profile generation is user-scoped, so the key includes user_id.
+        Profile generation is user-scoped, so returns user_id.
 
         Args:
             request: The ProfileGenerationRequest
 
         Returns:
-            str: Key in format "profile_generation_in_progress::{org_id}::{user_id}"
+            str: The user_id from the request
         """
-        return f"profile_generation_in_progress::{self.org_id}::{request.user_id}"
+        return request.user_id
 
     # ===============================
     # Rerun hook implementations (override base class methods)
@@ -327,32 +336,41 @@ class ProfileGenerationService(
     def _create_run_request_for_item(
         self,
         user_id: str,
-        request: RerunProfileGenerationRequest,
+        request: Union[RerunProfileGenerationRequest, ManualProfileGenerationRequest],
     ) -> ProfileGenerationRequest:
         """Create ProfileGenerationRequest for a single user.
 
-        Passes filter constraints instead of data - extractors collect their own.
+        Handles both rerun and manual request types.
 
         Args:
             user_id: The user ID to process
-            request: The original rerun request
+            request: The original rerun or manual request
 
         Returns:
             ProfileGenerationRequest for this user with filter constraints
         """
+        # Handle rerun requests (have start_time/end_time datetime objects)
+        if isinstance(request, RerunProfileGenerationRequest):
+            return ProfileGenerationRequest(
+                user_id=user_id,
+                request_id=f"rerun_{uuid.uuid4().hex[:8]}",
+                source=request.source,
+                extractor_names=request.extractor_names,
+                rerun_start_time=int(request.start_time.timestamp())
+                if request.start_time
+                else None,
+                rerun_end_time=int(request.end_time.timestamp())
+                if request.end_time
+                else None,
+                auto_run=False,
+            )
+        # Handle manual requests (ManualProfileGenerationRequest)
         return ProfileGenerationRequest(
             user_id=user_id,
-            request_id=f"rerun_{uuid.uuid4().hex[:8]}",
+            request_id=f"manual_{uuid.uuid4().hex[:8]}",
             source=request.source,
             extractor_names=request.extractor_names,
-            # Pass filter constraints instead of data
-            rerun_start_time=int(request.start_time.timestamp())
-            if request.start_time
-            else None,
-            rerun_end_time=int(request.end_time.timestamp())
-            if request.end_time
-            else None,
-            auto_run=False,  # Rerun skips stride check
+            auto_run=False,
         )
 
     def _create_rerun_response(
@@ -507,7 +525,7 @@ class ProfileGenerationService(
         profile extraction (not feedback or agent success).
 
         Each extractor collects its own data using its configured window_size.
-        No operation state tracking - runs synchronously.
+        Uses progress tracking via OperationStateManager.
 
         Args:
             request: ManualProfileGenerationRequest with optional user_id, source, and extractor_names
@@ -515,49 +533,59 @@ class ProfileGenerationService(
         Returns:
             ManualProfileGenerationResponse with success status and count
         """
-        # 1. Get users to process
-        if request.user_id:
-            user_ids = [request.user_id]
-        else:
-            user_ids = self.storage.get_all_user_ids()
+        state_manager = self._create_state_manager()
 
-        if not user_ids:
-            return ManualProfileGenerationResponse(
-                success=True,
-                msg="No users found to process",
-                profiles_generated=0,
+        try:
+            # Check for existing in-progress operation
+            error = state_manager.check_in_progress()
+            if error:
+                return ManualProfileGenerationResponse(
+                    success=False, msg=error, profiles_generated=0
+                )
+
+            # 1. Get users to process
+            if request.user_id:
+                user_ids = [request.user_id]
+            else:
+                user_ids = self.storage.get_all_user_ids()
+
+            if not user_ids:
+                return ManualProfileGenerationResponse(
+                    success=True,
+                    msg="No users found to process",
+                    profiles_generated=0,
+                )
+
+            # 2. Run batch with progress tracking
+            request_params = {
+                "user_id": request.user_id,
+                "source": request.source,
+                "extractor_names": request.extractor_names,
+                "mode": "manual_regular",
+            }
+            users_processed, _ = self._run_batch_with_progress(
+                user_ids=user_ids,
+                request=request,
+                request_params=request_params,
+                state_manager=state_manager,
             )
 
-        processed_users = 0
-        for user_id in user_ids:
-            try:
-                # 2. Create ProfileGenerationRequest - extractors collect their own data
-                profile_request = ProfileGenerationRequest(
-                    user_id=user_id,
-                    request_id=f"manual_{uuid.uuid4().hex[:8]}",
-                    source=request.source,
-                    extractor_names=request.extractor_names,
-                    auto_run=False,  # Manual skips stride check
-                )
-                self.run(profile_request)
-                processed_users += 1
+            # 3. Count generated profiles (CURRENT status = None)
+            total_profiles = self._count_manual_generated(request)
 
-            except Exception as e:
-                logger.error(
-                    "Failed to run manual profile generation for user %s: %s",
-                    user_id,
-                    str(e),
-                )
-                continue
+            return ManualProfileGenerationResponse(
+                success=True,
+                msg=f"Generated {total_profiles} profiles for {users_processed} user(s)",
+                profiles_generated=total_profiles,
+            )
 
-        # 3. Count generated profiles (CURRENT status = None)
-        total_profiles = self._count_manual_generated(request)
-
-        return ManualProfileGenerationResponse(
-            success=True,
-            msg=f"Generated {total_profiles} profiles for {processed_users} user(s)",
-            profiles_generated=total_profiles,
-        )
+        except Exception as e:
+            state_manager.mark_progress_failed(str(e))
+            return ManualProfileGenerationResponse(
+                success=False,
+                msg=f"Failed to run manual profile generation: {str(e)}",
+                profiles_generated=0,
+            )
 
     def _count_manual_generated(self, request: ManualProfileGenerationRequest) -> int:
         """

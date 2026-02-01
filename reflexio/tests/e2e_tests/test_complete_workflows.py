@@ -55,8 +55,8 @@ def test_complete_workflow_end_to_end(
     assert publish_response.success is True
 
     # Get the auto-generated request_id from stored interactions for THIS user
-    user_interactions = (
-        reflexio_instance.request_context.storage.get_user_interaction(user_id)
+    user_interactions = reflexio_instance.request_context.storage.get_user_interaction(
+        user_id
     )
     assert len(user_interactions) > 0, "Should have interactions for user"
     request_id = user_interactions[0].request_id if user_interactions else None
@@ -560,11 +560,11 @@ def test_rerun_profile_generation_with_filters(
 
     # Check operation status
     operation_status = reflexio_instance.get_operation_status(
-        GetOperationStatusRequest(service_name="rerun_profile_generation")
+        GetOperationStatusRequest(service_name="profile_generation")
     )
     assert operation_status.success is True
     assert operation_status.operation_status is not None
-    assert operation_status.operation_status.service_name == "rerun_profile_generation"
+    assert operation_status.operation_status.service_name == "profile_generation"
 
     # Test rerun with time filters
     now = datetime.now(timezone.utc)
@@ -687,8 +687,10 @@ def test_full_workflow_with_all_features(
     assert raw_feedbacks[0].agent_version == agent_version
 
     # Step 4: Verify agent success evaluations were generated
-    agent_success_results = reflexio_instance.request_context.storage.get_agent_success_evaluation_results(
-        agent_version=agent_version
+    agent_success_results = (
+        reflexio_instance.request_context.storage.get_agent_success_evaluation_results(
+            agent_version=agent_version
+        )
     )
     assert (
         len(agent_success_results) > 0
@@ -796,8 +798,10 @@ def test_rerun_operations_consistency(
     initial_feedbacks = reflexio_instance.request_context.storage.get_raw_feedbacks(
         feedback_name="test_feedback"
     )
-    initial_agent_success = reflexio_instance.request_context.storage.get_agent_success_evaluation_results(
-        agent_version=agent_version
+    initial_agent_success = (
+        reflexio_instance.request_context.storage.get_agent_success_evaluation_results(
+            agent_version=agent_version
+        )
     )
 
     initial_interaction_count = len(initial_interactions)
@@ -844,18 +848,18 @@ def test_rerun_operations_consistency(
     ), "Interactions should remain unchanged"
 
     # Step 6: Verify feedbacks unchanged
-    feedbacks_after_rerun = (
-        reflexio_instance.request_context.storage.get_raw_feedbacks(
-            feedback_name="test_feedback"
-        )
+    feedbacks_after_rerun = reflexio_instance.request_context.storage.get_raw_feedbacks(
+        feedback_name="test_feedback"
     )
     assert (
         len(feedbacks_after_rerun) == initial_feedback_count
     ), "Raw feedbacks should remain unchanged"
 
     # Step 7: Verify agent success results unchanged
-    agent_success_after_rerun = reflexio_instance.request_context.storage.get_agent_success_evaluation_results(
-        agent_version=agent_version
+    agent_success_after_rerun = (
+        reflexio_instance.request_context.storage.get_agent_success_evaluation_results(
+            agent_version=agent_version
+        )
     )
     assert (
         len(agent_success_after_rerun) == initial_agent_success_count
@@ -881,10 +885,8 @@ def test_rerun_operations_consistency(
     assert len(pending_profiles_after_second) >= pending_count_before_second_rerun
 
     # Step 9: Verify CURRENT profiles still unchanged after second rerun
-    current_profiles_final = (
-        reflexio_instance.request_context.storage.get_user_profile(
-            user_id, status_filter=[None]
-        )
+    current_profiles_final = reflexio_instance.request_context.storage.get_user_profile(
+        user_id, status_filter=[None]
     )
     assert (
         len(current_profiles_final) == initial_profile_count

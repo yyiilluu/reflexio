@@ -940,9 +940,7 @@ def get_all_profiles(
         status_filter_list = [Status.ARCHIVED]
 
     # Get all profiles using Reflexio's get_all_profiles method
-    response = reflexio.get_all_profiles(
-        limit=limit, status_filter=status_filter_list
-    )
+    response = reflexio.get_all_profiles(limit=limit, status_filter=status_filter_list)
 
     # Filter out embedding fields from profiles
     for profile in response.user_profiles:
@@ -1432,13 +1430,13 @@ def downgrade_all_raw_feedbacks_endpoint(
     response_model_exclude_none=True,
 )
 def get_operation_status_endpoint(
-    service_name: str = "rerun_profile_generation",
+    service_name: str = "profile_generation",
     org_id: str = Depends(get_org_id_for_self_host),
 ):
-    """Get the status of an operation (e.g., profile generation rerun).
+    """Get the status of an operation (e.g., profile generation rerun or manual).
 
     Args:
-        service_name (str): The service name to query. Defaults to "rerun_profile_generation"
+        service_name (str): The service name to query. Defaults to "profile_generation"
         org_id (str): Organization ID
 
     Returns:

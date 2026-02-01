@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 import logging
 import uuid
-from typing import Optional
+from typing import Optional, Union
 
 from reflexio_commons.api_schema.service_schemas import (
     RawFeedback,
@@ -238,6 +238,15 @@ class FeedbackGenerationService(
             return "rerun_feedback_generation"
         return "feedback_generation"
 
+    def _get_base_service_name(self) -> str:
+        """
+        Get the base service name for OperationStateManager keys.
+
+        Returns:
+            str: "feedback_generation"
+        """
+        return "feedback_generation"
+
     def _should_track_in_progress(self) -> bool:
         """
         Feedback generation should track in-progress state to prevent duplicates.
@@ -247,19 +256,19 @@ class FeedbackGenerationService(
         """
         return True
 
-    def _get_in_progress_state_key(self, request: FeedbackGenerationRequest) -> str:
+    def _get_lock_scope_id(self, request: FeedbackGenerationRequest) -> Optional[str]:
         """
-        Get the operation state key for in-progress tracking.
+        Get the scope ID for lock key construction.
 
-        Feedback generation is org-scoped (not user-scoped), so the key only includes org_id.
+        Feedback generation is org-scoped, so returns None (no user scope).
 
         Args:
             request: The FeedbackGenerationRequest
 
         Returns:
-            str: Key in format "feedback_generation_in_progress::{org_id}"
+            None: Feedback uses org-level scope only
         """
-        return f"feedback_generation_in_progress::{self.org_id}"
+        return None
 
     def _trigger_feedback_aggregation(self) -> None:
         """
@@ -372,33 +381,42 @@ class FeedbackGenerationService(
     def _create_run_request_for_item(
         self,
         user_id: str,
-        request: RerunFeedbackGenerationRequest,
+        request: Union[RerunFeedbackGenerationRequest, ManualFeedbackGenerationRequest],
     ) -> FeedbackGenerationRequest:
         """Create FeedbackGenerationRequest for a single user.
 
-        Passes filter constraints instead of data - extractors collect their own.
+        Handles both rerun and manual request types.
 
         Args:
             user_id: The user ID to process
-            request: The original rerun request
+            request: The original rerun or manual request
 
         Returns:
             FeedbackGenerationRequest for this user with filter constraints
         """
+        # Handle rerun requests (have start_time/end_time datetime objects)
+        if isinstance(request, RerunFeedbackGenerationRequest):
+            return FeedbackGenerationRequest(
+                request_id=f"rerun_feedback_{uuid.uuid4().hex[:8]}",
+                agent_version=request.agent_version,
+                user_id=user_id,
+                source=request.source,
+                rerun_start_time=int(request.start_time.timestamp())
+                if request.start_time
+                else None,
+                rerun_end_time=int(request.end_time.timestamp())
+                if request.end_time
+                else None,
+                feedback_name=request.feedback_name,
+                auto_run=False,
+            )
+        # Handle manual requests (ManualFeedbackGenerationRequest)
         return FeedbackGenerationRequest(
-            request_id=f"rerun_feedback_{uuid.uuid4().hex[:8]}",
+            request_id=f"manual_{uuid.uuid4().hex[:8]}",
             agent_version=request.agent_version,
             user_id=user_id,
             source=request.source,
-            # Pass filter constraints instead of data
-            rerun_start_time=int(request.start_time.timestamp())
-            if request.start_time
-            else None,
-            rerun_end_time=int(request.end_time.timestamp())
-            if request.end_time
-            else None,
-            feedback_name=request.feedback_name,  # Filter to run only specific extractor
-            auto_run=False,  # Rerun skips stride check
+            auto_run=False,
         )
 
     def _create_rerun_response(
@@ -451,7 +469,7 @@ class FeedbackGenerationService(
 
         Processes feedbacks per-user. Each extractor collects its own data
         using its configured window_size.
-        No operation state tracking - runs synchronously.
+        Uses progress tracking via OperationStateManager.
 
         Args:
             request: ManualFeedbackGenerationRequest with agent_version, optional source and feedback_name
@@ -459,58 +477,70 @@ class FeedbackGenerationService(
         Returns:
             ManualFeedbackGenerationResponse with success status and count
         """
-        # 1. Get user_ids with recent interactions
-        requests_dict = self.storage.get_request_groups(
-            user_id=None,  # All users
-            top_k=1000,  # Get recent request groups to find users
-        )
+        state_manager = self._create_state_manager()
 
-        # Get unique user_ids
-        user_ids: set[str] = set()
-        for request_group_requests in requests_dict.values():
-            for rig in request_group_requests:
-                # Apply source filter if provided
-                if request.source and rig.request.source != request.source:
-                    continue
-                user_ids.add(rig.request.user_id)
+        try:
+            # Check for existing in-progress operation
+            error = state_manager.check_in_progress()
+            if error:
+                return ManualFeedbackGenerationResponse(
+                    success=False, msg=error, feedbacks_generated=0
+                )
 
-        if not user_ids:
+            # 1. Get user_ids with recent interactions
+            requests_dict = self.storage.get_request_groups(
+                user_id=None,  # All users
+                top_k=1000,  # Get recent request groups to find users
+            )
+
+            # Get unique user_ids
+            user_ids_set: set[str] = set()
+            for request_group_requests in requests_dict.values():
+                for rig in request_group_requests:
+                    # Apply source filter if provided
+                    if request.source and rig.request.source != request.source:
+                        continue
+                    user_ids_set.add(rig.request.user_id)
+
+            user_ids = list(user_ids_set)
+
+            if not user_ids:
+                return ManualFeedbackGenerationResponse(
+                    success=True,
+                    msg="No interactions found to process",
+                    feedbacks_generated=0,
+                )
+
+            # 2. Run batch with progress tracking
+            request_params = {
+                "agent_version": request.agent_version,
+                "source": request.source,
+                "feedback_name": request.feedback_name,
+                "mode": "manual_regular",
+            }
+            self._run_batch_with_progress(
+                user_ids=user_ids,
+                request=request,
+                request_params=request_params,
+                state_manager=state_manager,
+            )
+
+            # 3. Count generated feedbacks (CURRENT status = None)
+            total_feedbacks = self._count_manual_generated(request)
+
             return ManualFeedbackGenerationResponse(
                 success=True,
-                msg="No interactions found to process",
-                feedbacks_generated=0,
+                msg=f"Generated {total_feedbacks} feedbacks",
+                feedbacks_generated=total_feedbacks,
             )
 
-        # 2. Process each user - extractors collect their own data
-        try:
-            for user_id in user_ids:
-                feedback_request = FeedbackGenerationRequest(
-                    request_id=f"manual_{uuid.uuid4().hex[:8]}",
-                    agent_version=request.agent_version,
-                    user_id=user_id,  # Per-user feedback extraction
-                    source=request.source,
-                    auto_run=False,  # Manual skips stride check
-                )
-                self.run(feedback_request)
         except Exception as e:
-            logger.error(
-                "Failed to run manual feedback generation: %s",
-                str(e),
-            )
+            state_manager.mark_progress_failed(str(e))
             return ManualFeedbackGenerationResponse(
                 success=False,
                 msg=f"Failed to generate feedbacks: {str(e)}",
                 feedbacks_generated=0,
             )
-
-        # 3. Count generated feedbacks (CURRENT status = None)
-        total_feedbacks = self._count_manual_generated(request)
-
-        return ManualFeedbackGenerationResponse(
-            success=True,
-            msg=f"Generated {total_feedbacks} feedbacks",
-            feedbacks_generated=total_feedbacks,
-        )
 
     def _count_manual_generated(self, request: ManualFeedbackGenerationRequest) -> int:
         """

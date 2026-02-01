@@ -155,11 +155,14 @@ class ConcreteGenerationService(BaseGenerationService):
         }
 
     # In-progress tracking hooks
+    def _get_base_service_name(self):
+        return "test_generation"
+
     def _should_track_in_progress(self):
         return False  # Disabled by default for tests
 
-    def _get_in_progress_state_key(self, request):
-        return f"test_in_progress::{getattr(request, 'user_id', 'unknown')}"
+    def _get_lock_scope_id(self, request):
+        return getattr(request, "user_id", None)
 
 
 # ===============================
@@ -933,9 +936,11 @@ class InProgressTrackingService(ConcreteGenerationService):
     def _should_track_in_progress(self):
         return True  # Enable in-progress tracking
 
-    def _get_in_progress_state_key(self, request):
-        user_id = getattr(request, "user_id", "unknown")
-        return f"test_in_progress::{self.org_id}::{user_id}"
+    def _get_base_service_name(self):
+        return "test_generation"
+
+    def _get_lock_scope_id(self, request):
+        return getattr(request, "user_id", "unknown")
 
     def _run_generation(self, request):
         """Override to track generation calls."""
@@ -1036,7 +1041,7 @@ class TestInProgressLockMechanism:
             extractor_configs=[MockExtractorConfig(extractor_name="extractor1")],
         )
 
-        # Track call count for get_operation_state (used by _release_in_progress_lock)
+        # Track call count for get_operation_state (used by release_lock)
         release_call_count = [0]
 
         def mock_get_state(state_key):
@@ -1104,6 +1109,10 @@ class TestInProgressLockMechanism:
 
     def test_release_lock_no_pending_clears_state(self, llm_client, request_context):
         """Test that releasing lock with no pending request clears the state."""
+        from reflexio.server.services.operation_state_utils import (
+            OperationStateManager,
+        )
+
         service = InProgressTrackingService(
             llm_client,
             request_context,
@@ -1122,7 +1131,8 @@ class TestInProgressLockMechanism:
         )
         service.storage.upsert_operation_state = MagicMock()
 
-        result = service._release_in_progress_lock("test_key", "my_request")
+        mgr = OperationStateManager(service.storage, service.org_id, "test_generation")
+        result = mgr.release_lock("my_request", scope_id="test_user")
 
         # Should return None (no pending) and clear the lock
         assert result is None
@@ -1134,6 +1144,10 @@ class TestInProgressLockMechanism:
         self, llm_client, request_context
     ):
         """Test that releasing lock with pending request transfers ownership."""
+        from reflexio.server.services.operation_state_utils import (
+            OperationStateManager,
+        )
+
         service = InProgressTrackingService(
             llm_client,
             request_context,
@@ -1152,7 +1166,8 @@ class TestInProgressLockMechanism:
         )
         service.storage.upsert_operation_state = MagicMock()
 
-        result = service._release_in_progress_lock("test_key", "my_request")
+        mgr = OperationStateManager(service.storage, service.org_id, "test_generation")
+        result = mgr.release_lock("my_request", scope_id="test_user")
 
         # Should return pending_request_id and transfer ownership
         assert result == "new_request"
@@ -1164,6 +1179,10 @@ class TestInProgressLockMechanism:
 
     def test_release_lock_ignores_if_not_owner(self, llm_client, request_context):
         """Test that release does nothing if caller is not the current owner."""
+        from reflexio.server.services.operation_state_utils import (
+            OperationStateManager,
+        )
+
         service = InProgressTrackingService(
             llm_client,
             request_context,
@@ -1182,7 +1201,8 @@ class TestInProgressLockMechanism:
         )
         service.storage.upsert_operation_state = MagicMock()
 
-        result = service._release_in_progress_lock("test_key", "my_request")
+        mgr = OperationStateManager(service.storage, service.org_id, "test_generation")
+        result = mgr.release_lock("my_request", scope_id="test_user")
 
         # Should return None and NOT update state (not the owner)
         assert result is None

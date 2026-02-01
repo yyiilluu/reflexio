@@ -14,7 +14,11 @@ import os
 import tempfile
 from unittest.mock import MagicMock, patch
 
-from reflexio_commons.api_schema.service_schemas import Interaction, Request
+from reflexio_commons.api_schema.service_schemas import (
+    Interaction,
+    Request,
+    UserProfile,
+)
 from reflexio_commons.api_schema.internal_schema import RequestInteractionDataModel
 from reflexio_commons.config_schema import ProfileExtractorConfig
 
@@ -127,10 +131,10 @@ def sample_request_interaction_models(sample_interactions):
 class TestOperationStateKey:
     """Tests for operation state key generation."""
 
-    def test_key_includes_user_id(
+    def test_state_manager_includes_user_id_in_bookmark_key(
         self, request_context, mock_llm_client, extractor_config, service_config
     ):
-        """Test that profile extractor key includes user_id (user-scoped)."""
+        """Test that profile extractor state manager builds keys with user_id (user-scoped)."""
         extractor = ProfileExtractor(
             request_context=request_context,
             llm_client=mock_llm_client,
@@ -139,8 +143,12 @@ class TestOperationStateKey:
             agent_context="Test agent",
         )
 
-        key = extractor._get_operation_state_key()
+        mgr = extractor._create_state_manager()
 
+        assert mgr.service_name == "profile_extractor"
+        assert mgr.org_id == "test_org"
+        # Verify the bookmark key format includes user_id
+        key = mgr._bookmark_key(name="test_extractor", scope_id=service_config.user_id)
         assert "profile_extractor" in key
         assert "test_org" in key
         assert "test_user" in key
@@ -173,10 +181,11 @@ class TestOperationStateKey:
             agent_context="Test agent",
         )
 
-        assert (
-            extractor1._get_operation_state_key()
-            != extractor2._get_operation_state_key()
-        )
+        mgr1 = extractor1._create_state_manager()
+        mgr2 = extractor2._create_state_manager()
+        key1 = mgr1._bookmark_key(name="test_extractor", scope_id=config1.user_id)
+        key2 = mgr2._bookmark_key(name="test_extractor", scope_id=config2.user_id)
+        assert key1 != key2
 
 
 # ===============================
@@ -512,3 +521,106 @@ class TestRun:
         # Verify operation state was updated
         if result is not None:
             request_context.storage.upsert_operation_state.assert_called()
+
+
+# ===============================
+# Test: Null guard for delete/mention update_content
+# ===============================
+
+
+class TestProfileUpdateNullContent:
+    """Regression tests for None/empty update_content in delete and mention actions."""
+
+    def _make_extractor(self, request_context, mock_llm_client, service_config):
+        config = ProfileExtractorConfig(
+            extractor_name="test_extractor",
+            profile_content_definition_prompt="Extract user preferences",
+        )
+        return ProfileExtractor(
+            request_context=request_context,
+            llm_client=mock_llm_client,
+            extractor_config=config,
+            service_config=service_config,
+            agent_context="Test agent",
+        )
+
+    def _make_existing_profile(self) -> UserProfile:
+        return UserProfile(
+            profile_id="p1",
+            user_id="test_user",
+            profile_content="User prefers dark mode",
+            last_modified_timestamp=1000,
+            generated_from_request_id="req1",
+        )
+
+    def test_delete_with_none_content_does_not_crash(
+        self, request_context, mock_llm_client, service_config
+    ):
+        """delete action with None update_content should be skipped, not crash."""
+        extractor = self._make_extractor(
+            request_context, mock_llm_client, service_config
+        )
+        existing = [self._make_existing_profile()]
+
+        result = extractor._get_profile_updates_from_existing_profiles(
+            user_id="test_user",
+            request_id="req2",
+            existing_profiles=existing,
+            profile_updates={"delete": None},
+        )
+
+        assert result is None
+
+    def test_delete_with_empty_list_does_not_crash(
+        self, request_context, mock_llm_client, service_config
+    ):
+        """delete action with empty list should be skipped, not crash."""
+        extractor = self._make_extractor(
+            request_context, mock_llm_client, service_config
+        )
+        existing = [self._make_existing_profile()]
+
+        result = extractor._get_profile_updates_from_existing_profiles(
+            user_id="test_user",
+            request_id="req2",
+            existing_profiles=existing,
+            profile_updates={"delete": []},
+        )
+
+        assert result is None
+
+    def test_mention_with_none_content_does_not_crash(
+        self, request_context, mock_llm_client, service_config
+    ):
+        """mention action with None update_content should be skipped, not crash."""
+        extractor = self._make_extractor(
+            request_context, mock_llm_client, service_config
+        )
+        existing = [self._make_existing_profile()]
+
+        result = extractor._get_profile_updates_from_existing_profiles(
+            user_id="test_user",
+            request_id="req2",
+            existing_profiles=existing,
+            profile_updates={"mention": None},
+        )
+
+        assert result is None
+
+    def test_mention_with_empty_list_does_not_crash(
+        self, request_context, mock_llm_client, service_config
+    ):
+        """mention action with empty list should be skipped, not crash."""
+        extractor = self._make_extractor(
+            request_context, mock_llm_client, service_config
+        )
+        existing = [self._make_existing_profile()]
+
+        result = extractor._get_profile_updates_from_existing_profiles(
+            user_id="test_user",
+            request_id="req2",
+            existing_profiles=existing,
+            profile_updates={"mention": []},
+        )
+
+        assert result is None

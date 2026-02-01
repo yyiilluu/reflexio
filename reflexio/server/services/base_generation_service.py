@@ -4,13 +4,17 @@ Base class for generation services
 
 import enum
 import logging
-import time
 import uuid
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Generic, Optional, TypeVar
 
 from reflexio_commons.api_schema.service_schemas import Status
+
+from reflexio.server.api_endpoints.request_context import RequestContext
+from reflexio.server.llm.litellm_client import LiteLLMClient
+from reflexio.server.services.extractor_config_utils import filter_extractor_configs
+from reflexio.server.services.operation_state_utils import OperationStateManager
 
 
 class StatusChangeOperation(str, enum.Enum):
@@ -20,15 +24,7 @@ class StatusChangeOperation(str, enum.Enum):
     DOWNGRADE = "downgrade"
 
 
-from reflexio.server.api_endpoints.request_context import RequestContext
-from reflexio.server.llm.litellm_client import LiteLLMClient
-from reflexio.server.services.extractor_config_utils import filter_extractor_configs
-from reflexio.server.services.operation_state_utils import OperationStateManager
-
 logger = logging.getLogger(__name__)
-
-# Stale lock timeout - if generation started > 5 min ago and still "in_progress", assume it crashed
-GENERATION_STALE_LOCK_SECONDS = 300
 
 # Type variables for generic base service
 TExtractorConfig = TypeVar(
@@ -138,6 +134,18 @@ class BaseGenerationService(
         """
 
     @abstractmethod
+    def _get_base_service_name(self) -> str:
+        """
+        Get the base service name for OperationStateManager keys.
+
+        This is the service identity used for progress/lock key construction,
+        independent of whether the operation is a rerun or regular run.
+
+        Returns:
+            Base service name (e.g., "profile_generation", "feedback_generation")
+        """
+
+    @abstractmethod
     def _process_results(self, results: list) -> None:
         """
         Process and save results. Can access self.service_config for context.
@@ -160,19 +168,17 @@ class BaseGenerationService(
         """
 
     @abstractmethod
-    def _get_in_progress_state_key(self, request: TRequest) -> str:
+    def _get_lock_scope_id(self, request: TRequest) -> Optional[str]:
         """
-        Get the operation state key for in-progress tracking.
+        Get the scope ID for lock key construction.
 
-        The key should be scoped appropriately:
-        - Profile services: per-user (e.g., "profile_generation_in_progress::{org_id}::{user_id}")
-        - Feedback services: per-org (e.g., "feedback_generation_in_progress::{org_id}")
+        Profile services return user_id (per-user lock), feedback services return None (per-org lock).
 
         Args:
             request: The generation request
 
         Returns:
-            str: Unique key for tracking in-progress generation
+            Optional[str]: Scope ID (e.g., user_id) or None for org-level scope
         """
 
     def _filter_extractor_configs_by_service_config(
@@ -240,142 +246,17 @@ class BaseGenerationService(
         return results
 
     # ===============================
-    # In-progress state management methods
+    # In-progress state management via OperationStateManager
     # ===============================
 
-    def _check_and_acquire_in_progress_lock(
-        self, state_key: str, request_id: str
-    ) -> bool:
-        """
-        Atomically check and acquire in-progress lock.
-
-        Uses a single atomic database operation to prevent race conditions where
-        multiple requests could both acquire the lock simultaneously.
-
-        If a valid in-progress operation exists, updates pending_request_id so the
-        running operation knows to re-run when it finishes. If no valid lock exists
-        or the lock is stale, acquires the lock.
-
-        Args:
-            state_key: The operation state key for in-progress tracking
-            request_id: Current request ID
+    def _create_state_manager(self) -> OperationStateManager:
+        """Create an OperationStateManager for this service.
 
         Returns:
-            bool: True if lock acquired (proceed with generation), False if skipped
+            OperationStateManager instance configured for this service
         """
-        result = self.storage.try_acquire_in_progress_lock(
-            state_key, request_id, GENERATION_STALE_LOCK_SECONDS
-        )
-
-        acquired = result.get("acquired", False)
-
-        if acquired:
-            logger.info(
-                "Acquired in-progress lock for %s: state_key=%s, request_id=%s",
-                self._get_service_name(),
-                state_key,
-                request_id,
-            )
-            return True
-        else:
-            logger.info(
-                "Skipping %s - another operation is in progress (state_key=%s). "
-                "Updated pending_request_id to %s",
-                self._get_service_name(),
-                state_key,
-                request_id,
-            )
-            return False
-
-    def _release_in_progress_lock(
-        self, state_key: str, my_request_id: str
-    ) -> Optional[str]:
-        """
-        Release the in-progress lock and check if a new request came in.
-
-        If a pending request exists (different from current), returns its ID so
-        the caller can re-run. Otherwise clears the lock.
-
-        Args:
-            state_key: The operation state key
-            my_request_id: The request ID of the current operation
-
-        Returns:
-            Optional[str]: pending_request_id if a new request needs processing, None otherwise
-        """
-        state_record = self.storage.get_operation_state(state_key)
-
-        if not state_record:
-            return None
-
-        # Extract operation_state from the record (storage returns nested structure)
-        state = (
-            state_record.get("operation_state", {})
-            if isinstance(state_record.get("operation_state"), dict)
-            else state_record
-        )
-
-        pending_request_id = state.get("pending_request_id")
-        current_request_id = state.get("current_request_id")
-
-        # Only process if we still own the lock
-        if current_request_id == my_request_id:
-            if pending_request_id and pending_request_id != my_request_id:
-                # Another request came in, transfer ownership and signal re-run
-                self.storage.upsert_operation_state(
-                    state_key,
-                    {
-                        "in_progress": True,
-                        "started_at": int(time.time()),
-                        "current_request_id": pending_request_id,
-                        "pending_request_id": None,
-                    },
-                )
-                logger.info(
-                    "New request %s came in during %s, will re-run (state_key=%s)",
-                    pending_request_id,
-                    self._get_service_name(),
-                    state_key,
-                )
-                return pending_request_id
-            else:
-                # No pending request, clear the lock
-                self.storage.upsert_operation_state(
-                    state_key,
-                    {
-                        "in_progress": False,
-                        "current_request_id": None,
-                        "pending_request_id": None,
-                    },
-                )
-                logger.info(
-                    "Released in-progress lock for %s: state_key=%s, request_id=%s",
-                    self._get_service_name(),
-                    state_key,
-                    my_request_id,
-                )
-
-        return None
-
-    def _clear_in_progress_lock(self, state_key: str) -> None:
-        """
-        Clear the in-progress state (used for error cleanup).
-
-        Args:
-            state_key: The operation state key to clear
-        """
-        self.storage.upsert_operation_state(
-            state_key,
-            {
-                "in_progress": False,
-                "current_request_id": None,
-                "pending_request_id": None,
-            },
-        )
-        logger.debug(
-            "Cleared in-progress lock for %s: state_key=%s",
-            self._get_service_name(),
-            state_key,
+        return OperationStateManager(
+            self.storage, self.org_id, self._get_base_service_name()
         )
 
     def run(self, request: TRequest) -> None:
@@ -397,19 +278,14 @@ class BaseGenerationService(
             self._run_generation(request)
             return
 
-        # Get state key and request ID for in-progress tracking
-        state_key = self._get_in_progress_state_key(request)
+        # Get scope ID and request ID for in-progress tracking
+        scope_id = self._get_lock_scope_id(request)
         my_request_id = getattr(request, "request_id", None) or str(uuid.uuid4())
 
+        state_manager = self._create_state_manager()
+
         # Try to acquire lock
-        if not self._check_and_acquire_in_progress_lock(state_key, my_request_id):
-            logger.info(
-                "Skipping %s - another operation is in progress (state_key=%s). "
-                "Updated pending_request_id to %s",
-                self._get_service_name(),
-                state_key,
-                my_request_id,
-            )
+        if not state_manager.acquire_lock(my_request_id, scope_id=scope_id):
             return  # Another operation is running, we've updated pending_request_id
 
         # Re-run loop: keep running until no new requests come in
@@ -418,14 +294,13 @@ class BaseGenerationService(
                 self._run_generation(request)
 
                 # Check if another request came in during our run
-                pending_request_id = self._release_in_progress_lock(
-                    state_key, my_request_id
+                pending_request_id = state_manager.release_lock(
+                    my_request_id, scope_id=scope_id
                 )
 
                 logger.info(
-                    "Try released in-progress lock for %s: state_key=%s, request_id=%s, pending_request_id=%s",
+                    "Released in-progress lock for %s: request_id=%s, pending_request_id=%s",
                     self._get_service_name(),
-                    state_key,
                     my_request_id,
                     pending_request_id,
                 )
@@ -438,7 +313,7 @@ class BaseGenerationService(
 
         except Exception:
             # Clear lock on error to prevent deadlock
-            self._clear_in_progress_lock(state_key)
+            state_manager.clear_lock(scope_id=scope_id)
             raise
 
     def _run_generation(self, request: TRequest) -> None:
@@ -520,6 +395,78 @@ class BaseGenerationService(
                 str(e),
                 type(e).__name__,
             )
+
+    # ===============================
+    # Batch with progress (shared by rerun + manual)
+    # ===============================
+
+    def _run_batch_with_progress(
+        self,
+        user_ids: list[str],
+        request: TRequest,
+        request_params: dict,
+        state_manager: OperationStateManager,
+    ) -> tuple[int, int]:
+        """Run a batch of users with progress tracking.
+
+        Shared logic for both run_rerun() and run_manual_regular().
+        Initializes progress, processes each user, and finalizes.
+
+        Args:
+            user_ids: List of user IDs to process
+            request: The original request object
+            request_params: Parameters dict for progress state
+            state_manager: OperationStateManager instance
+
+        Returns:
+            Tuple of (users_processed, total_generated)
+        """
+        total_users = len(user_ids)
+
+        # Initialize progress
+        state_manager.initialize_progress(
+            total_users=total_users,
+            request_params=request_params,
+        )
+
+        # Process each user
+        users_processed = 0
+        for user_id in user_ids:
+            state_manager.set_current_item(user_id)
+
+            try:
+                run_request = self._create_run_request_for_item(user_id, request)
+                self.run(run_request)
+                users_processed += 1
+
+                state_manager.update_progress(
+                    item_id=user_id,
+                    count=0,  # Extractors collect their own data
+                    success=True,
+                    total_users=total_users,
+                )
+
+            except Exception as e:
+                logger.error(
+                    "Failed to process user %s for %s: %s",
+                    user_id,
+                    self._get_base_service_name(),
+                    str(e),
+                )
+                state_manager.update_progress(
+                    item_id=user_id,
+                    count=0,
+                    success=False,
+                    total_users=total_users,
+                    error=str(e),
+                )
+                continue
+
+        # Get generated count and finalize
+        total_generated = self._get_generated_count(request)
+        state_manager.finalize_progress(users_processed, total_generated)
+
+        return users_processed, total_generated
 
     # ===============================
     # Rerun methods (optional - override to enable rerun functionality)
@@ -613,10 +560,8 @@ class BaseGenerationService(
         1. Check for existing in-progress operations
         2. Get user IDs to process
         3. Pre-process hook
-        4. Initialize operation state tracking
-        5. Process each user by calling self.run()
-        6. Update state after each user
-        7. Finalize operation state
+        4. Run batch with progress tracking
+        5. Return response
 
         Child classes must implement the hook methods to enable rerun functionality:
         - _get_rerun_user_ids()
@@ -630,8 +575,7 @@ class BaseGenerationService(
         Returns:
             A response object with success status, message, and count
         """
-        service_name = self._get_service_name()
-        state_manager = OperationStateManager(self.storage, service_name)
+        state_manager = self._create_state_manager()
 
         try:
             # 1. Check for existing in-progress operation
@@ -645,65 +589,27 @@ class BaseGenerationService(
                 return self._create_rerun_response(
                     False, "No interactions found matching the specified filters", 0
                 )
-            total_users = len(user_ids)
 
             # 3. Pre-process hook (e.g., delete existing pending items)
             self._pre_process_rerun(request)
 
-            # 4. Initialize operation state
-            state_manager.initialize(
-                total_users=total_users,
+            # 4. Run batch with progress tracking
+            users_processed, total_generated = self._run_batch_with_progress(
+                user_ids=user_ids,
+                request=request,
                 request_params=self._build_rerun_request_params(request),
+                state_manager=state_manager,
             )
-
-            # 5. Process each user - extractors collect their own data
-            users_processed = 0
-
-            for user_id in user_ids:
-                # Update current user being processed
-                state_manager.set_current_user(user_id)
-
-                try:
-                    run_request = self._create_run_request_for_item(user_id, request)
-                    self.run(run_request)
-                    users_processed += 1
-
-                    # Update success state
-                    state_manager.update_progress(
-                        user_id=user_id,
-                        interaction_count=0,  # Extractors collect their own data
-                        success=True,
-                        total_users=total_users,
-                    )
-
-                except Exception as e:
-                    logger.error(
-                        "Failed to process user %s for %s: %s",
-                        user_id,
-                        service_name,
-                        str(e),
-                    )
-                    # Update failure state
-                    state_manager.update_progress(
-                        user_id=user_id,
-                        interaction_count=0,
-                        success=False,
-                        total_users=total_users,
-                        error=str(e),
-                    )
-                    continue
-
-            # 6. Get generated count and finalize operation state
-            total_generated = self._get_generated_count(request)
-            state_manager.finalize(users_processed, total_generated)
 
             msg = f"Completed for {users_processed} user(s)"
             return self._create_rerun_response(True, msg, total_generated)
 
         except Exception as e:
-            state_manager.mark_failed(str(e))
+            state_manager.mark_progress_failed(str(e))
             return self._create_rerun_response(
-                False, f"Failed to run {service_name}: {str(e)}", 0
+                False,
+                f"Failed to run {self._get_base_service_name()}: {str(e)}",
+                0,
             )
 
     # ===============================

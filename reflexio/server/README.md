@@ -183,17 +183,20 @@ Called by API endpoints via `Reflexio`
 
 - `base_generation_service.py`: Abstract base for all services (parallel extractor execution via ThreadPoolExecutor)
 - `extractor_config_utils.py`: Shared utility for filtering extractor configs by source, `allow_manual_trigger`, and extractor names
-- `extractor_interaction_utils.py`: Per-extractor utilities for stride checking, operation state management, and source filtering
+- `extractor_interaction_utils.py`: Per-extractor utilities for stride checking and source filtering
+- `operation_state_utils.py`: Centralized `OperationStateManager` for all `_operation_state` table interactions (progress tracking, concurrency locks, extractor/aggregator bookmarks, simple locks)
 - `deduplication_utils.py`: Base deduplicator class for LLM-based semantic matching (used by ProfileDeduplicator and FeedbackDeduplicator)
 - `service_utils.py`: Utilities (`construct_messages_from_interactions()`, `format_interactions_to_history_string()`, `extract_json_from_string()`)
 
-**In-Progress Lock Management**:
-- Prevents duplicate generation when back-to-back requests arrive
-- Uses **atomic lock acquisition** via `try_acquire_in_progress_lock()` (Supabase RPC function)
+**Operation State Management** (via `OperationStateManager` in `operation_state_utils.py`):
+- Centralized manager for all `_operation_state` table interactions with 5 use cases:
+  1. **Progress tracking**: Rerun + manual batch operations (key: `{service}::{org_id}::progress`)
+  2. **Concurrency lock**: Atomic lock with request queuing (key: `{service}::{org_id}[::scope_id]::lock`)
+  3. **Extractor bookmark**: Track last-processed interactions per extractor (key: `{service}::{org_id}[::scope_id]::{name}`)
+  4. **Aggregator bookmark**: Track last-processed raw_feedback_id per aggregator
+  5. **Simple lock**: Non-queuing lock for cleanup operations
 - Stale lock timeout: 5 minutes (assumes crashed if lock held longer)
-- Lock scoping:
-  - **Profile generation**: Per-user (`profile_generation_in_progress::{org_id}::{user_id}`)
-  - **Feedback generation**: Per-org (`feedback_generation_in_progress::{org_id}`)
+- Lock scoping: Profile generation = per-user, Feedback generation = per-org
 - Re-run mechanism: If new request arrives during generation, `pending_request_id` is set and generation re-runs after completion
 
 ### Profile Generation
@@ -331,8 +334,8 @@ Key files:
 - `get_request_groups()` → `dict[str, list[RequestInteractionDataModel]]` (groups by request_id)
 - `get_feedbacks(status_filter, feedback_status_filter)` - Filter by profile status and approval status
 - Vector search via LiteLLMClient embeddings
-- Operation state: `get_operation_state_with_new_interactions()` for stride-based processing
-- **Atomic lock**: `try_acquire_in_progress_lock()` - Atomic lock acquisition for concurrent request handling
+- Operation state: `get_operation_state()`, `upsert_operation_state()`, `get_operation_state_with_new_request_interaction()`, `try_acquire_in_progress_lock()`
+- All operation state interactions are managed through `OperationStateManager` (in `operation_state_utils.py`)
 - Profile status: `Status` enum (CURRENT=None, PENDING, ARCHIVED)
 
 ### Configurator
@@ -436,7 +439,7 @@ All services follow BaseGenerationService:
   - Gets per-extractor window/stride parameters (override or global fallback)
   - Applies source filtering based on `request_sources_enabled`
   - Checks stride threshold before running
-  - Updates per-extractor operation state after processing
+  - Updates per-extractor bookmark state after processing (via `OperationStateManager`)
 
 **Per-Extractor Window Overrides**: Each extractor config can override global window settings:
 - `extraction_window_size_override`: Override global `extraction_window_size` for this extractor
