@@ -354,6 +354,12 @@ class FeedbackGenerationService(
                 # Apply source filter if provided
                 if request.source and rig.request.source != request.source:
                     continue
+                # Apply agent_version filter if provided
+                if (
+                    request.agent_version
+                    and rig.request.agent_version != request.agent_version
+                ):
+                    continue
                 user_ids.add(rig.request.user_id)
 
         return list(user_ids)

@@ -169,6 +169,13 @@ class FeedbackExtractor:
                 )
                 return None
 
+        # Only filter by agent_version during rerun (non-auto_run) mode
+        rerun_agent_version = (
+            self.service_config.agent_version
+            if not self.service_config.auto_run
+            else None
+        )
+
         # Get window interactions with time range filter
         if window_size and window_size > 0:
             request_groups, _ = storage.get_last_k_interactions_grouped(
@@ -177,6 +184,7 @@ class FeedbackExtractor:
                 sources=effective_source,
                 start_time=self.service_config.rerun_start_time,
                 end_time=self.service_config.rerun_end_time,
+                agent_version=rerun_agent_version,
             )
             return request_groups
         else:
@@ -192,6 +200,7 @@ class FeedbackExtractor:
                 sources=effective_source,
                 start_time=self.service_config.rerun_start_time,
                 end_time=self.service_config.rerun_end_time,
+                agent_version=rerun_agent_version,
             )
             return request_groups
 

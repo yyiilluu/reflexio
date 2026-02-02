@@ -1,0 +1,503 @@
+"""
+Simulate a multi-turn customer support conversation between two independent AI agents.
+
+Each agent (customer and support) has its own system prompt and message history.
+The output is a JSONL file matching the format used in evaluation data.
+
+Usage:
+    python demo/simulate_conversation.py
+    python demo/simulate_conversation.py --model gpt-4o --max-turns 20
+    python demo/simulate_conversation.py --scenario devops_backup_failure --output my_output.jsonl
+"""
+
+import argparse
+import json
+import logging
+from datetime import datetime
+from pathlib import Path
+
+import litellm
+from dotenv import load_dotenv
+
+from scenarios import DEFAULT_SCENARIO, SCENARIOS
+
+logger = logging.getLogger(__name__)
+
+# Load env from project root .env
+load_dotenv(dotenv_path=Path(__file__).resolve().parent.parent / ".env")
+
+RESOLUTION_PHRASES = [
+    "resolves everything",
+    "that's all",
+    "that resolves everything",
+]
+
+OUTPUT_DIR = Path(__file__).resolve().parent / "output"
+
+
+def get_reflexio_context(reflexio_config: dict, query: str) -> str:
+    """
+    Fetch user profiles and agent feedback from Reflexio and format them as a context block
+    to inject into the agent's system prompt.
+
+    Args:
+        reflexio_config (dict): Must contain 'client' (ReflexioClient), 'user_id' (str),
+            and 'agent_version' (str)
+        query (str): The latest customer message to use as a search query
+
+    Returns:
+        str: Formatted markdown context block, or empty string on failure
+    """
+    try:
+        client = reflexio_config["client"]
+        user_id = reflexio_config["user_id"]
+        agent_version = reflexio_config["agent_version"]
+
+        profile_section = ""
+        try:
+            profile_resp = client.search_profiles(
+                user_id=user_id, query=query, top_k=10, threshold=0.1
+            )
+            if profile_resp.success and profile_resp.user_profiles:
+                lines = []
+                for p in profile_resp.user_profiles:
+                    lines.append(f"- {p.profile_content}")
+                profile_section = "\n## Known User Preferences & Context\n" + "\n".join(
+                    lines
+                )
+        except Exception as e:
+            logger.warning(f"Failed to fetch profiles: {e}")
+
+        feedback_section = ""
+        try:
+            feedback_resp = client.search_raw_feedbacks(
+                query=query, agent_version=agent_version, top_k=5, threshold=0.1
+            )
+            if feedback_resp.success and feedback_resp.raw_feedbacks:
+                lines = []
+                for fb in feedback_resp.raw_feedbacks:
+                    parts = [f"- {fb.feedback_content}"]
+                    if fb.do_action:
+                        parts.append(f"  DO: {fb.do_action}")
+                    if fb.do_not_action:
+                        parts.append(f"  DON'T: {fb.do_not_action}")
+                    if fb.when_condition:
+                        parts.append(f"  WHEN: {fb.when_condition}")
+                    lines.append("\n".join(parts))
+                feedback_section = (
+                    "\n## Agent Feedback & Improvement Instructions\n"
+                    + "\n".join(lines)
+                )
+        except Exception as e:
+            logger.warning(f"Failed to fetch feedbacks: {e}")
+
+        if not profile_section and not feedback_section:
+            return ""
+
+        return (
+            "\n\n---\n# CONTEXT (from past interactions)"
+            + profile_section
+            + feedback_section
+            + "\n---"
+        )
+    except Exception as e:
+        logger.warning(f"Failed to get Reflexio context: {e}")
+        return ""
+
+
+def get_mem0_context(mem0_config: dict, query: str) -> str:
+    """
+    Fetch relevant memories from mem0 and format them as a context block
+    to inject into the agent's system prompt.
+
+    Args:
+        mem0_config (dict): Must contain 'api_key' (str) and 'user_id' (str)
+        query (str): The latest customer message to use as a search query
+
+    Returns:
+        str: Formatted markdown context block, or empty string on failure
+    """
+    try:
+        from mem0 import MemoryClient
+
+        client = MemoryClient(api_key=mem0_config["api_key"])
+        results = client.search(
+            query,
+            user_id=mem0_config["user_id"],
+            top_k=5,
+        )
+
+        if not results:
+            return ""
+
+        lines = []
+        for result in results:
+            memory = result.get("memory", "")
+            if memory:
+                lines.append(f"- {memory}")
+
+        if not lines:
+            return ""
+
+        return (
+            "\n\n---\n# CONTEXT (from mem0 memories)"
+            "\n## Remembered User Information\n" + "\n".join(lines) + "\n---"
+        )
+    except Exception as e:
+        logger.warning(f"Failed to get mem0 context: {e}")
+        return ""
+
+
+def check_resolution(content: str) -> bool:
+    """
+    Check if the customer's message contains a resolution phrase signaling the conversation is done.
+
+    Args:
+        content (str): The customer's message text
+
+    Returns:
+        bool: True if a resolution phrase is detected
+    """
+    lower = content.lower()
+    return any(phrase in lower for phrase in RESOLUTION_PHRASES)
+
+
+def get_completion(model: str, messages: list[dict]) -> str:
+    """
+    Call the LLM and return the assistant's response text.
+
+    Args:
+        model (str): The model identifier (e.g. 'gpt-4o-mini')
+        messages (list[dict]): The conversation messages in OpenAI format
+
+    Returns:
+        str: The assistant's response content
+    """
+    response = litellm.completion(model=model, messages=messages)
+    return response.choices[0].message.content.strip()
+
+
+def simulate(
+    scenario_name: str,
+    model: str,
+    max_turns: int,
+    output_path: Path | None,
+    reflexio_config: dict | None = None,
+    mem0_config: dict | None = None,
+) -> Path:
+    """
+    Run a full conversation simulation between customer and agent.
+
+    Args:
+        scenario_name (str): Key into the SCENARIOS dict
+        model (str): LLM model to use for both agents
+        max_turns (int): Maximum number of turns before stopping
+        output_path (Path | None): Where to write the JSONL file. Auto-generated if None.
+        reflexio_config (dict | None): Optional Reflexio config with 'client', 'user_id', 'agent_version'
+        mem0_config (dict | None): Optional mem0 config with 'api_key' and 'user_id'
+
+    Returns:
+        Path: The path to the written JSONL file
+    """
+    scenario = SCENARIOS[scenario_name]
+    base_system_prompt = scenario.agent_system_prompt
+
+    # Each agent maintains its own message history
+    customer_messages = [{"role": "system", "content": scenario.customer_system_prompt}]
+    agent_messages = [{"role": "system", "content": base_system_prompt}]
+
+    turns: list[dict] = []
+    turn_num = 0
+
+    # --- Turn 1: Customer opening message ---
+    turn_num += 1
+    customer_text = scenario.customer_opening_message
+    turns.append(
+        {"turn": turn_num, "role": "customer", "content": customer_text, "labels": []}
+    )
+    print(f"[Turn {turn_num}] Customer: {customer_text}")
+
+    # Add to histories: customer said this (assistant in customer's history, user in agent's history)
+    customer_messages.append({"role": "assistant", "content": customer_text})
+    agent_messages.append({"role": "user", "content": customer_text})
+
+    while turn_num < max_turns:
+        # --- Agent responds (with optional Reflexio context injection) ---
+        turn_num += 1
+        turn_system_prompt = None
+
+        if reflexio_config:
+            # Get latest customer message as query
+            latest_customer_msg = customer_text
+            context = get_reflexio_context(reflexio_config, latest_customer_msg)
+            if context:
+                enhanced_prompt = base_system_prompt + context
+                agent_messages[0]["content"] = enhanced_prompt
+                turn_system_prompt = enhanced_prompt
+        elif mem0_config:
+            latest_customer_msg = customer_text
+            context = get_mem0_context(mem0_config, latest_customer_msg)
+            if context:
+                enhanced_prompt = base_system_prompt + context
+                agent_messages[0]["content"] = enhanced_prompt
+                turn_system_prompt = enhanced_prompt
+
+        agent_text = get_completion(model, agent_messages)
+
+        # Restore original system prompt
+        if reflexio_config or mem0_config:
+            agent_messages[0]["content"] = base_system_prompt
+
+        turn_dict = {
+            "turn": turn_num,
+            "role": "agent",
+            "content": agent_text,
+            "labels": [],
+        }
+        if turn_system_prompt:
+            turn_dict["system_prompt"] = turn_system_prompt
+            turn_dict["context_source"] = "reflexio" if reflexio_config else "mem0"
+        turns.append(turn_dict)
+        print(f"[Turn {turn_num}] Agent: {agent_text}")
+
+        # Add to histories
+        agent_messages.append({"role": "assistant", "content": agent_text})
+        customer_messages.append({"role": "user", "content": agent_text})
+
+        if turn_num >= max_turns:
+            print(f"\n--- Max turns ({max_turns}) reached ---")
+            break
+
+        # --- Customer responds ---
+        turn_num += 1
+        customer_text = get_completion(model, customer_messages)
+        turns.append(
+            {
+                "turn": turn_num,
+                "role": "customer",
+                "content": customer_text,
+                "labels": [],
+            }
+        )
+        print(f"[Turn {turn_num}] Customer: {customer_text}")
+
+        # Add to histories
+        customer_messages.append({"role": "assistant", "content": customer_text})
+        agent_messages.append({"role": "user", "content": customer_text})
+
+        # Check for resolution
+        if check_resolution(customer_text):
+            print("\n--- Conversation resolved naturally ---")
+            break
+
+        if turn_num >= max_turns:
+            print(f"\n--- Max turns ({max_turns}) reached ---")
+
+    # Write output
+    if output_path is None:
+        OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        if reflexio_config:
+            suffix = "_reflexio"
+        elif mem0_config:
+            suffix = "_mem0"
+        else:
+            suffix = ""
+        output_path = OUTPUT_DIR / f"{scenario_name}{suffix}_{timestamp}.jsonl"
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(output_path, "w") as f:
+        for turn in turns:
+            f.write(json.dumps(turn) + "\n")
+
+    print(f"\nWrote {len(turns)} turns to {output_path}")
+    return output_path
+
+
+def simulate_stream(
+    scenario_name: str,
+    model: str,
+    max_turns: int,
+    reflexio_config: dict | None = None,
+    mem0_config: dict | None = None,
+):
+    """
+    Generator version of simulate() that yields each turn as it's produced for real-time streaming.
+
+    Yields dicts with an "event" key:
+    - {"event": "scenario", ...} — scenario metadata (first yield)
+    - {"event": "turn", ...} — each conversation turn as it's generated
+    - {"event": "done", "filename": ...} — final event with the output filename
+
+    Also writes each turn incrementally to a JSONL file.
+
+    Args:
+        scenario_name (str): Key into the SCENARIOS dict
+        model (str): LLM model to use for both agents
+        max_turns (int): Maximum number of turns before stopping
+        reflexio_config (dict | None): Optional Reflexio config with 'client', 'user_id', 'agent_version'
+        mem0_config (dict | None): Optional mem0 config with 'api_key' and 'user_id'
+    """
+    scenario = SCENARIOS[scenario_name]
+    base_system_prompt = scenario.agent_system_prompt
+
+    # Yield scenario metadata first
+    yield {
+        "event": "scenario",
+        "key": scenario_name,
+        "name": scenario.name,
+        "description": scenario.description,
+        "agent_system_prompt": scenario.agent_system_prompt,
+        "customer_system_prompt": scenario.customer_system_prompt,
+        "customer_opening_message": scenario.customer_opening_message,
+        "max_turns": scenario.max_turns,
+    }
+
+    # Prepare output file
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    if reflexio_config:
+        suffix = "_reflexio"
+    elif mem0_config:
+        suffix = "_mem0"
+    else:
+        suffix = ""
+    output_path = OUTPUT_DIR / f"{scenario_name}{suffix}_{timestamp}.jsonl"
+
+    # Each agent maintains its own message history
+    customer_messages = [{"role": "system", "content": scenario.customer_system_prompt}]
+    agent_messages = [{"role": "system", "content": base_system_prompt}]
+
+    turn_num = 0
+
+    # --- Turn 1: Customer opening message ---
+    turn_num += 1
+    customer_text = scenario.customer_opening_message
+    turn_dict = {
+        "turn": turn_num,
+        "role": "customer",
+        "content": customer_text,
+        "labels": [],
+    }
+
+    with open(output_path, "a") as f:
+        f.write(json.dumps(turn_dict) + "\n")
+
+    yield {"event": "turn", **turn_dict}
+    print(f"[Turn {turn_num}] Customer: {customer_text}")
+
+    customer_messages.append({"role": "assistant", "content": customer_text})
+    agent_messages.append({"role": "user", "content": customer_text})
+
+    while turn_num < max_turns:
+        # --- Agent responds (with optional Reflexio context injection) ---
+        turn_num += 1
+        turn_system_prompt = None
+
+        if reflexio_config:
+            latest_customer_msg = customer_text
+            context = get_reflexio_context(reflexio_config, latest_customer_msg)
+            if context:
+                enhanced_prompt = base_system_prompt + context
+                agent_messages[0]["content"] = enhanced_prompt
+                turn_system_prompt = enhanced_prompt
+        elif mem0_config:
+            latest_customer_msg = customer_text
+            context = get_mem0_context(mem0_config, latest_customer_msg)
+            if context:
+                enhanced_prompt = base_system_prompt + context
+                agent_messages[0]["content"] = enhanced_prompt
+                turn_system_prompt = enhanced_prompt
+
+        agent_text = get_completion(model, agent_messages)
+
+        # Restore original system prompt
+        if reflexio_config or mem0_config:
+            agent_messages[0]["content"] = base_system_prompt
+
+        turn_dict = {
+            "turn": turn_num,
+            "role": "agent",
+            "content": agent_text,
+            "labels": [],
+        }
+        if turn_system_prompt:
+            turn_dict["system_prompt"] = turn_system_prompt
+            turn_dict["context_source"] = "reflexio" if reflexio_config else "mem0"
+
+        with open(output_path, "a") as f:
+            f.write(json.dumps(turn_dict) + "\n")
+
+        yield {"event": "turn", **turn_dict}
+        print(f"[Turn {turn_num}] Agent: {agent_text}")
+
+        agent_messages.append({"role": "assistant", "content": agent_text})
+        customer_messages.append({"role": "user", "content": agent_text})
+
+        if turn_num >= max_turns:
+            print(f"\n--- Max turns ({max_turns}) reached ---")
+            break
+
+        # --- Customer responds ---
+        turn_num += 1
+        customer_text = get_completion(model, customer_messages)
+        turn_dict = {
+            "turn": turn_num,
+            "role": "customer",
+            "content": customer_text,
+            "labels": [],
+        }
+
+        with open(output_path, "a") as f:
+            f.write(json.dumps(turn_dict) + "\n")
+
+        yield {"event": "turn", **turn_dict}
+        print(f"[Turn {turn_num}] Customer: {customer_text}")
+
+        customer_messages.append({"role": "assistant", "content": customer_text})
+        agent_messages.append({"role": "user", "content": customer_text})
+
+        if check_resolution(customer_text):
+            print("\n--- Conversation resolved naturally ---")
+            break
+
+        if turn_num >= max_turns:
+            print(f"\n--- Max turns ({max_turns}) reached ---")
+
+    print(f"\nWrote turns to {output_path}")
+    yield {"event": "done", "filename": output_path.name}
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Simulate a customer support conversation between two AI agents."
+    )
+    parser.add_argument(
+        "--scenario",
+        default=DEFAULT_SCENARIO,
+        choices=list(SCENARIOS.keys()),
+        help=f"Scenario to simulate (default: {DEFAULT_SCENARIO})",
+    )
+    parser.add_argument(
+        "--model",
+        default="gpt-4o-mini",
+        help="LLM model to use (default: gpt-4o-mini)",
+    )
+    parser.add_argument(
+        "--max-turns",
+        type=int,
+        default=30,
+        help="Maximum number of conversation turns (default: 30)",
+    )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help="Output JSONL file path (default: demo/output/<scenario>_<timestamp>.jsonl)",
+    )
+    args = parser.parse_args()
+    simulate(args.scenario, args.model, args.max_turns, args.output)
+
+
+if __name__ == "__main__":
+    main()

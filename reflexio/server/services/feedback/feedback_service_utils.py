@@ -72,8 +72,16 @@ class StructuredFeedbackContent(BaseModel):
 
     @property
     def has_feedback(self) -> bool:
-        """Check if this output contains actual feedback."""
-        return self.when_condition is not None
+        """Check if this output contains actual feedback.
+
+        Requires a non-empty when_condition and at least one non-empty action (do or don't).
+        """
+        has_condition = bool(self.when_condition and self.when_condition.strip())
+        has_action = bool(
+            (self.do_action and self.do_action.strip())
+            or (self.do_not_action and self.do_not_action.strip())
+        )
+        return has_condition and has_action
 
 
 # ===============================

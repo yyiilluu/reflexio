@@ -12,6 +12,7 @@ Description: AI agent memory system that makes AI agents personalized and self-i
 | `reflexio/website/` | Next.js frontend - profiles, interactions, feedbacks, evaluations, auth UI | `app/`, `components/` |
 | `supabase/` | Local Supabase - user data (profiles, interactions, feedbacks), atomic lock RPC | Migrations |
 | `supabase_login/` | Cloud Supabase - authentication (organizations, API keys) | [README](supabase_login/README.md) |
+| `demo/` | Conversation simulation demo - scenarios, simulator, and live viewer | [README](demo/readme.md) |
 | `docs/` | Deployment guides | AWS ECS, Supabase migration, AWS SES email setup |
 
 ## Architecture

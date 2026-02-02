@@ -2326,6 +2326,7 @@ class LocalJsonStorage(BaseStorage):
         sources: Optional[list[str]] = None,
         start_time: Optional[int] = None,
         end_time: Optional[int] = None,
+        agent_version: Optional[str] = None,
     ) -> tuple[list[RequestInteractionDataModel], list[Interaction]]:
         """
         Get the last K interactions ordered by interaction_id (most recent first), grouped by request.
@@ -2338,6 +2339,8 @@ class LocalJsonStorage(BaseStorage):
                 If provided, only interactions from requests with source in this list are returned.
             start_time (Optional[int]): Unix timestamp. Only return interactions created at or after this time.
             end_time (Optional[int]): Unix timestamp. Only return interactions created at or before this time.
+            agent_version (Optional[str]): Filter by agent_version on the request.
+                If provided, only interactions from requests with this agent_version are returned.
 
         Returns:
             tuple[list[RequestInteractionDataModel], list[Interaction]]:
@@ -2381,11 +2384,15 @@ class LocalJsonStorage(BaseStorage):
             if end_time is not None:
                 if interaction.created_at is None or interaction.created_at > end_time:
                     continue
-            # Check source filter if specified
-            if sources is not None:
+            # Check source or agent_version filter if specified
+            if sources is not None or agent_version is not None:
                 request = self.get_request(interaction.request_id)
-                if request is None or request.source not in sources:
-                    continue
+                if sources is not None:
+                    if request is None or request.source not in sources:
+                        continue
+                if agent_version is not None:
+                    if request is None or request.agent_version != agent_version:
+                        continue
             flat_interactions.append(interaction)
 
         # Group by request_id

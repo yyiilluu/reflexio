@@ -1,0 +1,862 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Conversation Viewer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        bg: '#f1faee',
+                        accent: '#a8dadc',
+                        primary: '#457b9d',
+                        dark: '#1d3557',
+                        red: '#e63946',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { background-color: #f1faee; }
+        .chat-panel::-webkit-scrollbar,
+        .context-content::-webkit-scrollbar { width: 6px; }
+        .chat-panel::-webkit-scrollbar-thumb,
+        .context-content::-webkit-scrollbar-thumb {
+            background-color: #a8dadc; border-radius: 3px;
+        }
+        pre { white-space: pre-wrap; word-wrap: break-word; }
+        /* Markdown prose inside chat bubbles */
+        .md-prose p { margin: 0.3em 0; }
+        .md-prose p:first-child { margin-top: 0; }
+        .md-prose p:last-child { margin-bottom: 0; }
+        .md-prose ul, .md-prose ol { margin: 0.3em 0; padding-left: 1.4em; }
+        .md-prose li { margin: 0.15em 0; }
+        .md-prose code { font-size: 0.85em; padding: 0.1em 0.3em; border-radius: 3px; }
+        .md-prose pre { margin: 0.4em 0; padding: 0.5em; border-radius: 4px; overflow-x: auto; }
+        .md-prose pre code { padding: 0; }
+        .md-prose strong { font-weight: 600; }
+        .md-prose h1, .md-prose h2, .md-prose h3 { font-weight: 600; margin: 0.4em 0 0.2em; }
+        /* Light bubble (user) code styling */
+        .md-light code { background: rgba(0,0,0,0.06); }
+        .md-light pre { background: rgba(0,0,0,0.06); }
+        /* Dark bubble (agent) code styling */
+        .md-dark code { background: rgba(255,255,255,0.15); }
+        .md-dark pre { background: rgba(255,255,255,0.15); }
+        /* Context panel markdown */
+        .md-context code { background: rgba(0,0,0,0.06); font-size: 0.85em; padding: 0.1em 0.3em; border-radius: 3px; }
+        .md-context pre { background: rgba(0,0,0,0.06); padding: 0.5em; border-radius: 4px; margin: 0.3em 0; overflow-x: auto; }
+        .md-context pre code { padding: 0; }
+    </style>
+</head>
+<body class="h-screen flex flex-col overflow-hidden">
+    <!-- Header -->
+    <header class="bg-dark text-white px-6 py-3 flex items-center justify-between shrink-0">
+        <h1 class="text-lg font-semibold tracking-wide">Conversation Viewer</h1>
+        <div class="flex items-center gap-3">
+            <select id="conversation-select"
+                    class="bg-primary text-white text-sm rounded px-3 py-1.5 outline-none cursor-pointer min-w-[300px]">
+                <option value="">Loading...</option>
+            </select>
+            <button onclick="openSettings()" class="relative p-1.5 rounded hover:bg-primary/50 transition-colors" title="Settings">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                </svg>
+                <span id="reflexio-indicator" class="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-gray-400 border border-dark"></span>
+            </button>
+        </div>
+    </header>
+
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="fixed inset-0 z-50 hidden">
+        <div class="absolute inset-0 bg-black/40" onclick="closeSettings()"></div>
+        <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-lg shadow-xl w-[480px] max-h-[80vh] flex flex-col">
+            <!-- Modal header -->
+            <div class="px-5 py-4 border-b border-gray-200 flex items-center justify-between shrink-0">
+                <h2 class="text-base font-semibold text-dark">Settings</h2>
+                <button onclick="closeSettings()" class="text-gray-400 hover:text-dark transition-colors">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Modal tabs -->
+            <div class="flex border-b border-gray-200 shrink-0">
+                <button id="modal-tab-publish" onclick="switchModalTab('publish')"
+                        class="flex-1 px-4 py-2.5 text-sm font-medium text-dark border-b-2 border-primary bg-primary/5">
+                    Publish
+                </button>
+                <button id="modal-tab-play" onclick="switchModalTab('play')"
+                        class="flex-1 px-4 py-2.5 text-sm font-medium text-primary/60 border-b-2 border-transparent hover:bg-gray-50">
+                    Simulate
+                </button>
+            </div>
+
+            <!-- Tab content -->
+            <div class="overflow-y-auto">
+                <!-- Publish tab -->
+                <div id="modal-panel-publish" class="px-5 py-4 space-y-5">
+                    <!-- Reflexio Connection -->
+                    <div>
+                        <h3 class="text-sm font-semibold text-dark mb-3">Reflexio Connection</h3>
+                        <div class="space-y-2">
+                            <div>
+                                <label class="block text-xs text-gray-500 mb-1">Server URL</label>
+                                <input id="reflexio-url" type="text" value="http://localhost:8081"
+                                       class="w-full border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-primary">
+                            </div>
+                            <div class="grid grid-cols-2 gap-2">
+                                <div>
+                                    <label class="block text-xs text-gray-500 mb-1">Email</label>
+                                    <input id="reflexio-email" type="text" value="local_supabase"
+                                           class="w-full border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-primary">
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-gray-500 mb-1">Password</label>
+                                    <input id="reflexio-password" type="password" value="s"
+                                           class="w-full border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-primary">
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <button onclick="reflexioLogin()" id="connect-btn"
+                                        class="bg-primary hover:bg-dark text-white text-sm font-medium px-4 py-1.5 rounded transition-colors">
+                                    Connect
+                                </button>
+                                <span id="connect-status" class="text-xs"></span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <hr class="border-gray-200">
+
+                    <!-- Publish Interactions -->
+                    <div>
+                        <h3 class="text-sm font-semibold text-dark mb-3">Publish Interactions</h3>
+                        <div class="space-y-2">
+                            <div class="grid grid-cols-2 gap-2">
+                                <div>
+                                    <label class="block text-xs text-gray-500 mb-1">User ID</label>
+                                    <input id="publish-user-id" type="text" value="demo-user"
+                                           class="w-full border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-primary">
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-gray-500 mb-1">Agent Version</label>
+                                    <input id="publish-agent-version" type="text" value="demo-v1"
+                                           class="w-full border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-primary">
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <button onclick="publishInteractions()" id="publish-btn"
+                                        class="bg-primary hover:bg-dark text-white text-sm font-medium px-4 py-1.5 rounded transition-colors">
+                                    Publish
+                                </button>
+                                <span id="publish-status" class="text-xs"></span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <hr class="border-gray-200">
+
+                    <!-- Publish to mem0 -->
+                    <div>
+                        <h3 class="text-sm font-semibold text-dark mb-3">Publish to mem0</h3>
+                        <p class="text-xs text-gray-500 mb-2">Send all interactions from the current conversation to mem0 as memories.</p>
+                        <div class="space-y-2">
+                            <div>
+                                <label class="block text-xs text-gray-500 mb-1">User ID</label>
+                                <input id="mem0-user-id" type="text" value="demo-user"
+                                       class="w-full border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-primary">
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <button onclick="publishToMem0()" id="mem0-publish-btn"
+                                        class="bg-primary hover:bg-dark text-white text-sm font-medium px-4 py-1.5 rounded transition-colors">
+                                    Publish to mem0
+                                </button>
+                                <span id="mem0-publish-status" class="text-xs"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Simulate tab -->
+                <div id="modal-panel-play" class="px-5 py-4 space-y-5 hidden">
+                    <!-- Scenario Selection -->
+                    <div>
+                        <h3 class="text-sm font-semibold text-dark mb-2">Scenario</h3>
+                        <select id="scenario-select"
+                                class="w-full border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-primary">
+                            <option value="">Loading...</option>
+                        </select>
+                        <p id="scenario-description" class="text-xs text-gray-500 mt-1"></p>
+                    </div>
+
+                    <hr class="border-gray-200">
+
+                    <!-- Play / Clear -->
+                    <div>
+                        <h3 class="text-sm font-semibold text-dark mb-3">Run Simulation</h3>
+                        <div class="flex gap-2">
+                            <button onclick="runSimulation()"
+                                    id="play-btn"
+                                    class="flex-1 bg-primary hover:bg-dark text-white text-sm font-medium py-2 rounded transition-colors flex items-center justify-center gap-2">
+                                <span id="play-icon">&#9654;</span>
+                                <span id="play-text">Play</span>
+                            </button>
+                            <button onclick="clearConversation()"
+                                    id="clear-btn"
+                                    class="flex-1 bg-red hover:bg-red/80 text-white text-sm font-medium py-2 rounded transition-colors">
+                                Clear
+                            </button>
+                        </div>
+                    </div>
+
+                    <hr class="border-gray-200">
+
+                    <!-- Context Source Selection -->
+                    <div>
+                        <h3 class="text-sm font-semibold text-dark mb-3">Context Injection</h3>
+                        <div class="space-y-2">
+                            <label class="flex items-center gap-2 cursor-pointer">
+                                <input type="radio" name="context-source" value="none" checked
+                                       onchange="switchContextSource('none')"
+                                       class="w-4 h-4 text-primary focus:ring-primary">
+                                <span class="text-sm text-dark">None</span>
+                            </label>
+                            <label class="flex items-center gap-2 cursor-pointer">
+                                <input type="radio" name="context-source" value="reflexio"
+                                       onchange="switchContextSource('reflexio')"
+                                       class="w-4 h-4 text-primary focus:ring-primary">
+                                <span class="text-sm text-dark">Reflexio</span>
+                                <span class="text-[10px] text-gray-400">(requires connection)</span>
+                            </label>
+                            <label class="flex items-center gap-2 cursor-pointer">
+                                <input type="radio" name="context-source" value="mem0"
+                                       onchange="switchContextSource('mem0')"
+                                       class="w-4 h-4 text-primary focus:ring-primary">
+                                <span class="text-sm text-dark">mem0</span>
+                            </label>
+
+                            <!-- Reflexio fields -->
+                            <div id="reflexio-sim-fields" class="hidden space-y-2 pl-6">
+                                <div class="grid grid-cols-2 gap-2">
+                                    <div>
+                                        <label class="block text-xs text-gray-500 mb-1">User ID</label>
+                                        <input id="sim-user-id" type="text" value="demo-user"
+                                               class="w-full border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-primary">
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs text-gray-500 mb-1">Agent Version</label>
+                                        <input id="sim-agent-version" type="text" value="demo-v1"
+                                               class="w-full border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-primary">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- mem0 fields -->
+                            <div id="mem0-sim-fields" class="hidden space-y-2 pl-6">
+                                <div>
+                                    <label class="block text-xs text-gray-500 mb-1">User ID</label>
+                                    <input id="sim-mem0-user-id" type="text" value="demo-user"
+                                           class="w-full border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-primary">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main content -->
+    <div class="flex flex-1 overflow-hidden">
+        <!-- Left panel: Conversation (70%) -->
+        <div class="w-[70%] flex flex-col border-r border-accent">
+            <div class="px-5 py-2.5 border-b border-accent bg-white/50">
+                <h2 class="text-sm font-semibold text-dark uppercase tracking-wider">Conversation</h2>
+            </div>
+            <div id="chat-panel" class="chat-panel flex-1 overflow-y-auto px-5 py-4 space-y-3">
+                <div id="empty-state" class="flex items-center justify-center h-full text-primary/60 text-sm">
+                    No conversations found. Open Settings to run a simulation.
+                </div>
+            </div>
+        </div>
+
+        <!-- Right panel: Agent Context (30%) -->
+        <div class="w-[30%] flex flex-col bg-white/30">
+            <div class="px-4 py-2.5 border-b border-accent bg-white/50">
+                <h2 class="text-sm font-semibold text-dark uppercase tracking-wider">Agent Context</h2>
+            </div>
+
+            <!-- Tabs -->
+            <div class="flex border-b border-accent">
+                <button id="tab-system" onclick="switchTab('system')"
+                        class="flex-1 px-3 py-2 text-xs font-medium text-dark border-b-2 border-primary bg-accent/30">
+                    System Prompt
+                </button>
+                <button id="tab-messages" onclick="switchTab('messages')"
+                        class="flex-1 px-3 py-2 text-xs font-medium text-primary/60 border-b-2 border-transparent hover:bg-accent/10">
+                    Message History
+                </button>
+            </div>
+
+            <!-- Context content -->
+            <div id="context-content" class="context-content flex-1 overflow-y-auto px-4 py-3 text-sm">
+                <p class="text-primary/40 text-xs">Select a conversation to view agent context.</p>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        // --- State ---
+        let conversations = [];
+        let currentTurns = [];
+        let currentScenario = null;
+        let selectedTurn = null;
+        let activeTab = 'system';
+        let reflexioConnected = false;
+        let contextSource = 'none'; // 'none', 'reflexio', or 'mem0'
+        let scenarios = [];
+
+        const selectEl = document.getElementById('conversation-select');
+        const chatPanel = document.getElementById('chat-panel');
+        const emptyState = document.getElementById('empty-state');
+        const contextContent = document.getElementById('context-content');
+
+        // --- API helpers ---
+        async function api(url, options = {}) {
+            const res = await fetch(url, options);
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({ detail: res.statusText }));
+                throw new Error(err.detail || 'Request failed');
+            }
+            return res.json();
+        }
+
+        // --- Load conversation list ---
+        async function loadConversations(selectFilename = null) {
+            try {
+                conversations = await api('/api/conversations');
+            } catch {
+                conversations = [];
+            }
+
+            selectEl.innerHTML = '';
+            if (conversations.length === 0) {
+                selectEl.innerHTML = '<option value="">No conversations</option>';
+                currentTurns = [];
+                currentScenario = null;
+                renderChat();
+                renderContext();
+                return;
+            }
+
+            conversations.forEach(c => {
+                const opt = document.createElement('option');
+                opt.value = c.filename;
+                const ts = c.timestamp ? new Date(c.timestamp).toLocaleString() : '';
+                const tags = [];
+                if (c.filename.includes('reflexio')) tags.push('[Reflexio]');
+                if (c.filename.includes('mem0')) tags.push('[mem0]');
+                const tagStr = tags.length > 0 ? ' ' + tags.join(' ') : '';
+                opt.textContent = `${c.scenario_name} — ${c.turn_count} turns — ${ts}${tagStr}`;
+                selectEl.appendChild(opt);
+            });
+
+            if (selectFilename) {
+                selectEl.value = selectFilename;
+            }
+            await loadConversation(selectEl.value);
+        }
+
+        // --- Load single conversation ---
+        async function loadConversation(filename) {
+            if (!filename) {
+                currentTurns = [];
+                currentScenario = null;
+                selectedTurn = null;
+                renderChat();
+                renderContext();
+                return;
+            }
+
+            try {
+                const data = await api(`/api/conversation/${filename}`);
+                currentTurns = data.turns;
+                currentScenario = data.scenario;
+                // Select last turn by default
+                selectedTurn = currentTurns.length > 0 ? currentTurns[currentTurns.length - 1].turn : null;
+                renderChat();
+                renderContext();
+            } catch (e) {
+                console.error('Failed to load conversation:', e);
+            }
+        }
+
+        selectEl.addEventListener('change', () => loadConversation(selectEl.value));
+
+        // --- Render chat bubbles ---
+        function renderChat() {
+            if (currentTurns.length === 0) {
+                chatPanel.innerHTML = '';
+                chatPanel.appendChild(emptyState);
+                emptyState.style.display = 'flex';
+                return;
+            }
+            emptyState.style.display = 'none';
+
+            chatPanel.innerHTML = currentTurns.map(turn => {
+                const isUser = turn.role === 'customer';
+                const label = isUser ? 'User' : 'Agent';
+                const isSelected = turn.turn === selectedTurn;
+                const align = isUser ? 'items-end' : 'items-start';
+                const bubbleBg = isUser ? 'bg-gray-100 text-dark' : 'bg-primary text-white';
+                const mdTheme = isUser ? 'md-light' : 'md-dark';
+                const labelColor = isUser ? 'text-primary/60' : 'text-primary/60';
+                const ring = isSelected ? 'ring-2 ring-primary ring-offset-2' : '';
+
+                return `
+                    <div class="flex flex-col ${align}" data-turn="${turn.turn}">
+                        <span class="text-[10px] ${labelColor} mb-0.5 px-1 font-medium">${label} · Turn ${turn.turn}</span>
+                        <div class="${bubbleBg} ${ring} md-prose ${mdTheme} rounded-lg px-3.5 py-2.5 max-w-[85%] cursor-pointer text-sm leading-relaxed transition-shadow hover:shadow-md"
+                             onclick="selectTurn(${turn.turn})">
+                            ${renderMarkdown(turn.content)}
+                        </div>
+                    </div>`;
+            }).join('');
+
+            // Scroll selected turn into view
+            const el = chatPanel.querySelector(`[data-turn="${selectedTurn}"]`);
+            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+
+        // --- Select a turn ---
+        function selectTurn(turnNumber) {
+            selectedTurn = turnNumber;
+            renderChat();
+            renderContext();
+        }
+
+        // --- Tab switching ---
+        function switchTab(tab) {
+            activeTab = tab;
+            document.getElementById('tab-system').className = tab === 'system'
+                ? 'flex-1 px-3 py-2 text-xs font-medium text-dark border-b-2 border-primary bg-accent/30'
+                : 'flex-1 px-3 py-2 text-xs font-medium text-primary/60 border-b-2 border-transparent hover:bg-accent/10';
+            document.getElementById('tab-messages').className = tab === 'messages'
+                ? 'flex-1 px-3 py-2 text-xs font-medium text-dark border-b-2 border-primary bg-accent/30'
+                : 'flex-1 px-3 py-2 text-xs font-medium text-primary/60 border-b-2 border-transparent hover:bg-accent/10';
+            renderContext();
+        }
+
+        // --- Reconstruct agent context ---
+        function reconstructAgentContext(turns, scenario, selectedTurnNumber) {
+            const messages = [{ role: 'system', content: scenario.agent_system_prompt }];
+            for (const turn of turns) {
+                if (turn.turn > selectedTurnNumber) break;
+                if (turn.role === 'customer') {
+                    messages.push({ role: 'user', content: turn.content });
+                } else if (turn.role === 'agent') {
+                    messages.push({ role: 'assistant', content: turn.content });
+                }
+            }
+            return messages;
+        }
+
+        // --- Render context panel ---
+        function renderContext() {
+            if (!currentScenario || selectedTurn === null) {
+                contextContent.innerHTML = '<p class="text-primary/40 text-xs">Select a conversation to view agent context.</p>';
+                return;
+            }
+
+            if (activeTab === 'system') {
+                // Check if the selected turn (or the nearest preceding agent turn) has a per-turn system_prompt
+                let systemPrompt = currentScenario.agent_system_prompt;
+                let hasPerTurnPrompt = false;
+                for (let i = currentTurns.length - 1; i >= 0; i--) {
+                    const t = currentTurns[i];
+                    if (t.turn <= selectedTurn && t.role === 'agent' && t.system_prompt) {
+                        systemPrompt = t.system_prompt;
+                        hasPerTurnPrompt = true;
+                        break;
+                    }
+                }
+                let badge = '';
+                if (hasPerTurnPrompt) {
+                    // Find the turn that has the system_prompt to check context_source
+                    let source = 'Reflexio';
+                    for (let i = currentTurns.length - 1; i >= 0; i--) {
+                        const t = currentTurns[i];
+                        if (t.turn <= selectedTurn && t.role === 'agent' && t.system_prompt) {
+                            if (t.context_source === 'mem0') source = 'mem0';
+                            break;
+                        }
+                    }
+                    badge = `<span class="inline-block text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded bg-primary/10 text-primary mb-2">${source}-enhanced (Turn ${selectedTurn})</span>`;
+                }
+                contextContent.innerHTML = badge + `<div class="text-xs text-dark leading-relaxed md-prose md-context">${renderMarkdown(systemPrompt)}</div>`;
+                return;
+            }
+
+            // Message history tab
+            const messages = reconstructAgentContext(currentTurns, currentScenario, selectedTurn);
+            contextContent.innerHTML = messages.map(msg => {
+                let roleLabel, roleBg;
+                if (msg.role === 'system') { roleLabel = 'system'; roleBg = 'bg-amber-100 text-amber-800'; }
+                else if (msg.role === 'user') { roleLabel = 'user'; roleBg = 'bg-gray-100 text-gray-700'; }
+                else { roleLabel = 'assistant'; roleBg = 'bg-primary/10 text-primary'; }
+
+                return `
+                    <div class="mb-3">
+                        <span class="inline-block text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded ${roleBg} mb-1">${roleLabel}</span>
+                        <div class="text-xs text-dark/80 leading-relaxed md-prose md-context">${renderMarkdown(msg.content)}</div>
+                    </div>`;
+            }).join('');
+        }
+
+        // --- Play: run simulation via SSE streaming ---
+        async function runSimulation() {
+            const playBtn = document.getElementById('play-btn');
+            const playIcon = document.getElementById('play-icon');
+            const playText = document.getElementById('play-text');
+
+            playBtn.disabled = true;
+            playBtn.classList.add('opacity-60', 'cursor-not-allowed');
+            playIcon.innerHTML = '<svg class="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>';
+            playText.textContent = 'Running...';
+
+            // Reset state for new streaming simulation
+            currentTurns = [];
+            currentScenario = null;
+            selectedTurn = null;
+            renderChat();
+            renderContext();
+
+            try {
+                const selectedScenario = document.getElementById('scenario-select').value || 'devops_backup_failure';
+                const body = { scenario: selectedScenario, model: 'gpt-4o-mini', max_turns: 30 };
+                if (contextSource === 'reflexio' && reflexioConnected) {
+                    body.reflexio_enabled = true;
+                    body.reflexio_user_id = document.getElementById('sim-user-id').value;
+                    body.reflexio_agent_version = document.getElementById('sim-agent-version').value;
+                } else if (contextSource === 'mem0') {
+                    body.mem0_enabled = true;
+                    body.mem0_user_id = document.getElementById('sim-mem0-user-id').value;
+                }
+                const res = await fetch('/api/simulate/stream', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body),
+                });
+
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({ detail: res.statusText }));
+                    throw new Error(err.detail || 'Request failed');
+                }
+
+                const reader = res.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+
+                    // Parse SSE events from buffer (events end with double newline)
+                    const parts = buffer.split('\n\n');
+                    buffer = parts.pop(); // Keep incomplete chunk in buffer
+
+                    for (const part of parts) {
+                        if (!part.trim()) continue;
+
+                        let eventType = 'message';
+                        let data = '';
+
+                        for (const line of part.split('\n')) {
+                            if (line.startsWith('event: ')) {
+                                eventType = line.slice(7);
+                            } else if (line.startsWith('data: ')) {
+                                data = line.slice(6);
+                            }
+                        }
+
+                        if (!data) continue;
+                        const parsed = JSON.parse(data);
+
+                        if (eventType === 'scenario') {
+                            currentScenario = parsed;
+                            renderContext();
+                        } else if (eventType === 'turn') {
+                            currentTurns.push(parsed);
+                            selectedTurn = parsed.turn;
+                            playText.textContent = `Turn ${parsed.turn}...`;
+                            renderChat();
+                            renderContext();
+                        } else if (eventType === 'done') {
+                            await loadConversations(parsed.filename);
+                        } else if (eventType === 'error') {
+                            throw new Error(parsed.message || 'Streaming error');
+                        }
+                    }
+                }
+            } catch (e) {
+                alert('Simulation failed: ' + e.message);
+            } finally {
+                playBtn.disabled = false;
+                playBtn.classList.remove('opacity-60', 'cursor-not-allowed');
+                playIcon.innerHTML = '&#9654;';
+                playText.textContent = 'Play';
+            }
+        }
+
+        // --- Clear: reset UI to empty state ---
+        function clearConversation() {
+            currentTurns = [];
+            currentScenario = null;
+            selectedTurn = null;
+            renderChat();
+            renderContext();
+        }
+
+        // --- Settings modal ---
+        let activeModalTab = 'publish';
+
+        function openSettings() {
+            document.getElementById('settings-modal').classList.remove('hidden');
+        }
+
+        function closeSettings() {
+            document.getElementById('settings-modal').classList.add('hidden');
+        }
+
+        function switchModalTab(tab) {
+            activeModalTab = tab;
+            const activeClass = 'flex-1 px-4 py-2.5 text-sm font-medium text-dark border-b-2 border-primary bg-primary/5';
+            const inactiveClass = 'flex-1 px-4 py-2.5 text-sm font-medium text-primary/60 border-b-2 border-transparent hover:bg-gray-50';
+            document.getElementById('modal-tab-publish').className = tab === 'publish' ? activeClass : inactiveClass;
+            document.getElementById('modal-tab-play').className = tab === 'play' ? activeClass : inactiveClass;
+            document.getElementById('modal-panel-publish').classList.toggle('hidden', tab !== 'publish');
+            document.getElementById('modal-panel-play').classList.toggle('hidden', tab !== 'play');
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') closeSettings();
+        });
+
+        // --- Connection indicator ---
+        function updateConnectionIndicator() {
+            const indicator = document.getElementById('reflexio-indicator');
+            indicator.className = reflexioConnected
+                ? 'absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-green-400 border border-dark'
+                : 'absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-gray-400 border border-dark';
+        }
+
+        // --- Reflexio login ---
+        async function reflexioLogin() {
+            const btn = document.getElementById('connect-btn');
+            const status = document.getElementById('connect-status');
+            btn.disabled = true;
+            btn.textContent = 'Connecting...';
+            status.textContent = '';
+            status.className = 'text-xs';
+
+            try {
+                const res = await fetch('/api/reflexio/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        email: document.getElementById('reflexio-email').value,
+                        password: document.getElementById('reflexio-password').value,
+                        reflexio_url: document.getElementById('reflexio-url').value,
+                    }),
+                });
+
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({ detail: res.statusText }));
+                    throw new Error(err.detail || 'Connection failed');
+                }
+
+                reflexioConnected = true;
+                updateConnectionIndicator();
+                status.textContent = 'Connected';
+                status.className = 'text-xs text-green-600';
+            } catch (e) {
+                reflexioConnected = false;
+                updateConnectionIndicator();
+                status.textContent = e.message;
+                status.className = 'text-xs text-red-500';
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Connect';
+            }
+        }
+
+        // --- Publish interactions ---
+        async function publishInteractions() {
+            const status = document.getElementById('publish-status');
+            const btn = document.getElementById('publish-btn');
+
+            if (!reflexioConnected) {
+                status.textContent = 'Please connect first';
+                status.className = 'text-xs text-red-500';
+                return;
+            }
+
+            const filename = selectEl.value;
+            if (!filename) {
+                status.textContent = 'No conversation loaded';
+                status.className = 'text-xs text-red-500';
+                return;
+            }
+
+            btn.disabled = true;
+            btn.textContent = 'Publishing...';
+            status.textContent = '';
+            status.className = 'text-xs';
+
+            try {
+                const res = await fetch('/api/reflexio/publish', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        filename: filename,
+                        user_id: document.getElementById('publish-user-id').value,
+                        agent_version: document.getElementById('publish-agent-version').value,
+                    }),
+                });
+
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({ detail: res.statusText }));
+                    throw new Error(err.detail || 'Publish failed');
+                }
+
+                const data = await res.json();
+                status.textContent = data.message || 'Published';
+                status.className = 'text-xs text-green-600';
+            } catch (e) {
+                status.textContent = e.message;
+                status.className = 'text-xs text-red-500';
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Publish';
+            }
+        }
+
+        // --- Publish to mem0 ---
+        async function publishToMem0() {
+            const status = document.getElementById('mem0-publish-status');
+            const btn = document.getElementById('mem0-publish-btn');
+
+            const filename = selectEl.value;
+            if (!filename) {
+                status.textContent = 'No conversation loaded';
+                status.className = 'text-xs text-red-500';
+                return;
+            }
+
+            btn.disabled = true;
+            btn.textContent = 'Publishing...';
+            status.textContent = '';
+            status.className = 'text-xs';
+
+            try {
+                const res = await fetch('/api/mem0/publish', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        filename: filename,
+                        user_id: document.getElementById('mem0-user-id').value,
+                    }),
+                });
+
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({ detail: res.statusText }));
+                    throw new Error(err.detail || 'Publish failed');
+                }
+
+                const data = await res.json();
+                status.textContent = data.message || 'Published';
+                status.className = 'text-xs text-green-600';
+            } catch (e) {
+                status.textContent = e.message;
+                status.className = 'text-xs text-red-500';
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Publish to mem0';
+            }
+        }
+
+        // --- Switch context source for simulation ---
+        function switchContextSource(source) {
+            contextSource = source;
+            document.getElementById('reflexio-sim-fields').classList.toggle('hidden', source !== 'reflexio');
+            document.getElementById('mem0-sim-fields').classList.toggle('hidden', source !== 'mem0');
+        }
+
+        // --- Check Reflexio status on load ---
+        async function checkReflexioStatus() {
+            try {
+                const data = await api('/api/reflexio/status');
+                reflexioConnected = data.logged_in;
+                updateConnectionIndicator();
+            } catch {
+                // Ignore — server might not be reachable
+            }
+        }
+
+        // --- Utility ---
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function renderMarkdown(text) {
+            return marked.parse(text, { breaks: true });
+        }
+
+        // --- Load scenarios ---
+        async function loadScenarios() {
+            const scenarioSelect = document.getElementById('scenario-select');
+            const descEl = document.getElementById('scenario-description');
+            try {
+                scenarios = await api('/api/scenarios');
+            } catch {
+                scenarios = [];
+            }
+
+            scenarioSelect.innerHTML = '';
+            scenarios.forEach(s => {
+                const opt = document.createElement('option');
+                opt.value = s.key;
+                opt.textContent = s.name;
+                scenarioSelect.appendChild(opt);
+            });
+
+            // Show description for the initially selected scenario
+            if (scenarios.length > 0) {
+                descEl.textContent = scenarios[0].description;
+            }
+
+            scenarioSelect.addEventListener('change', () => {
+                const selected = scenarios.find(s => s.key === scenarioSelect.value);
+                descEl.textContent = selected ? selected.description : '';
+            });
+        }
+
+        // --- Init ---
+        loadConversations();
+        loadScenarios();
+        checkReflexioStatus();
+    </script>
+</body>
+</html>

@@ -2640,6 +2640,7 @@ class SupabaseStorage(BaseStorage):
         sources: Optional[list[str]] = None,
         start_time: Optional[int] = None,
         end_time: Optional[int] = None,
+        agent_version: Optional[str] = None,
     ) -> tuple[list[RequestInteractionDataModel], list[Interaction]]:
         """
         Get the last K interactions ordered by time (most recent first), grouped by request.
@@ -2655,6 +2656,8 @@ class SupabaseStorage(BaseStorage):
                 If provided, only interactions from requests with source in this list are returned.
             start_time (Optional[int]): Unix timestamp. Only return interactions created at or after this time.
             end_time (Optional[int]): Unix timestamp. Only return interactions created at or before this time.
+            agent_version (Optional[str]): Filter by agent_version on the request.
+                If provided, only interactions from requests with this agent_version are returned.
 
         Returns:
             tuple[list[RequestInteractionDataModel], list[Interaction]]:
@@ -2670,6 +2673,7 @@ class SupabaseStorage(BaseStorage):
                 "p_sources": sources,
                 "p_start_time": start_time,
                 "p_end_time": end_time,
+                "p_agent_version": agent_version,
             },
         ).execute()
 
