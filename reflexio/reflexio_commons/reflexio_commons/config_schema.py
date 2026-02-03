@@ -3,6 +3,11 @@ from pydantic import BaseModel
 from typing import Optional
 
 
+# Embedding vector dimensions. Changing this requires a DB migration and re-embedding,
+# so it is intentionally a constant rather than a configurable setting.
+EMBEDDING_DIMENSIONS = 512
+
+
 class SearchMode(str, Enum):
     """Search mode for hybrid search functionality.
 

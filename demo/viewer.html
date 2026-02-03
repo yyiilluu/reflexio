@@ -51,6 +51,14 @@
         .md-context code { background: rgba(0,0,0,0.06); font-size: 0.85em; padding: 0.1em 0.3em; border-radius: 3px; }
         .md-context pre { background: rgba(0,0,0,0.06); padding: 0.5em; border-radius: 4px; margin: 0.3em 0; overflow-x: auto; }
         .md-context pre code { padding: 0; }
+        /* Tool interaction styling (inside dark agent bubbles) */
+        .tool-interactions { border-top: 1px solid rgba(255,255,255,0.2); margin-top: 0.5em; padding-top: 0.5em; }
+        .tool-call { background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; padding: 0.4em 0.6em; margin-top: 0.35em; font-size: 0.8em; }
+        .tool-call summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 0.4em; }
+        .tool-call summary::-webkit-details-marker { display: none; }
+        .tool-call summary::before { content: '\25B6'; font-size: 0.6em; transition: transform 0.15s; }
+        .tool-call[open] summary::before { transform: rotate(90deg); }
+        .tool-call .tool-result { margin-top: 0.35em; padding: 0.4em; background: rgba(0,0,0,0.15); border-radius: 4px; white-space: pre-wrap; word-break: break-all; font-family: monospace; font-size: 0.9em; line-height: 1.4; }
     </style>
 </head>
 <body class="h-screen flex flex-col overflow-hidden">
@@ -150,6 +158,11 @@
                                     <input id="publish-agent-version" type="text" value="demo-v1"
                                            class="w-full border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-primary">
                                 </div>
+                            </div>
+                            <div>
+                                <label class="block text-xs text-gray-500 mb-1">Source</label>
+                                <input id="publish-source" type="text" placeholder="e.g. support-chat, slack, email"
+                                       class="w-full border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-primary">
                             </div>
                             <div class="flex items-center gap-2">
                                 <button onclick="publishInteractions()" id="publish-btn"
@@ -347,6 +360,7 @@
                 conversations = [];
             }
 
+            conversations.sort((a, b) => a.filename.localeCompare(b.filename));
             selectEl.innerHTML = '';
             if (conversations.length === 0) {
                 selectEl.innerHTML = '<option value="">No conversations</option>';
@@ -420,13 +434,15 @@
                 const mdTheme = isUser ? 'md-light' : 'md-dark';
                 const labelColor = isUser ? 'text-primary/60' : 'text-primary/60';
                 const ring = isSelected ? 'ring-2 ring-primary ring-offset-2' : '';
+                const toolHtml = (!isUser && turn.tool_interactions?.length)
+                    ? renderToolInteractions(turn.tool_interactions) : '';
 
                 return `
                     <div class="flex flex-col ${align}" data-turn="${turn.turn}">
                         <span class="text-[10px] ${labelColor} mb-0.5 px-1 font-medium">${label} · Turn ${turn.turn}</span>
                         <div class="${bubbleBg} ${ring} md-prose ${mdTheme} rounded-lg px-3.5 py-2.5 max-w-[85%] cursor-pointer text-sm leading-relaxed transition-shadow hover:shadow-md"
                              onclick="selectTurn(${turn.turn})">
-                            ${renderMarkdown(turn.content)}
+                            ${renderMarkdown(turn.content)}${toolHtml}
                         </div>
                     </div>`;
             }).join('');
@@ -731,6 +747,7 @@
                         filename: filename,
                         user_id: document.getElementById('publish-user-id').value,
                         agent_version: document.getElementById('publish-agent-version').value,
+                        source: document.getElementById('publish-source').value,
                     }),
                 });
 
@@ -818,6 +835,21 @@
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
+        }
+
+        function renderToolInteractions(interactions) {
+            const items = interactions.map(ti => {
+                const resultStr = escapeHtml(JSON.stringify(ti.result, null, 2));
+                return `<details class="tool-call" onclick="event.stopPropagation()">
+                    <summary>
+                        <span style="opacity:0.7">&#9881;</span>
+                        <strong>${escapeHtml(ti.function_name)}</strong>
+                        <span style="opacity:0.6">(${escapeHtml(Object.values(ti.arguments).join(', '))})</span>
+                    </summary>
+                    <div class="tool-result">${resultStr}</div>
+                </details>`;
+            }).join('');
+            return `<div class="tool-interactions">${items}</div>`;
         }
 
         function renderMarkdown(text) {

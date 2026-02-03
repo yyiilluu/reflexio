@@ -89,7 +89,7 @@ def test_archive_feedbacks_by_feedback_name(supabase_storage, cleanup_after_test
             feedback_content="Test feedback 1",
             feedback_status=FeedbackStatus.PENDING,
             feedback_metadata="",
-            embedding=[0.1] * 1536,
+            embedding=[0.1] * 512,
         ),
         Feedback(
             feedback_name="test_archival",
@@ -97,7 +97,7 @@ def test_archive_feedbacks_by_feedback_name(supabase_storage, cleanup_after_test
             feedback_content="Test feedback 2",
             feedback_status=FeedbackStatus.PENDING,
             feedback_metadata="",
-            embedding=[0.2] * 1536,
+            embedding=[0.2] * 512,
         ),
     ]
     supabase_storage.save_feedbacks(feedbacks)
@@ -128,7 +128,7 @@ def test_restore_archived_feedbacks(supabase_storage, cleanup_after_test):
             feedback_content="Test feedback 1",
             feedback_status=FeedbackStatus.PENDING,
             feedback_metadata="",
-            embedding=[0.1] * 1536,
+            embedding=[0.1] * 512,
         ),
     ]
     supabase_storage.save_feedbacks(feedbacks)
@@ -165,7 +165,7 @@ def test_delete_archived_feedbacks(supabase_storage, cleanup_after_test):
             feedback_content="Test feedback 1",
             feedback_status=FeedbackStatus.PENDING,
             feedback_metadata="",
-            embedding=[0.1] * 1536,
+            embedding=[0.1] * 512,
         ),
         Feedback(
             feedback_name="test_delete",
@@ -173,7 +173,7 @@ def test_delete_archived_feedbacks(supabase_storage, cleanup_after_test):
             feedback_content="Test feedback 2",
             feedback_status=FeedbackStatus.PENDING,
             feedback_metadata="",
-            embedding=[0.2] * 1536,
+            embedding=[0.2] * 512,
         ),
     ]
     supabase_storage.save_feedbacks(feedbacks)
@@ -214,7 +214,7 @@ def test_aggregator_archives_then_deletes_on_success(
             feedback_content="Old feedback 1",
             feedback_status=FeedbackStatus.PENDING,
             feedback_metadata="",
-            embedding=[0.1] * 1536,
+            embedding=[0.1] * 512,
         ),
         Feedback(
             feedback_name="test_aggregation",
@@ -222,7 +222,7 @@ def test_aggregator_archives_then_deletes_on_success(
             feedback_content="Old feedback 2",
             feedback_status=FeedbackStatus.PENDING,
             feedback_metadata="",
-            embedding=[0.2] * 1536,
+            embedding=[0.2] * 512,
         ),
     ]
     supabase_storage.save_feedbacks(existing_feedbacks)
@@ -233,21 +233,21 @@ def test_aggregator_archives_then_deletes_on_success(
             agent_version="1.0.0",
             request_id="1",
             feedback_content="New feedback 1",
-            embedding=[0.3] * 1536,
+            embedding=[0.3] * 512,
             feedback_name="test_aggregation",
         ),
         RawFeedback(
             agent_version="1.0.0",
             request_id="2",
             feedback_content="New feedback 2",
-            embedding=[0.4] * 1536,
+            embedding=[0.4] * 512,
             feedback_name="test_aggregation",
         ),
         RawFeedback(
             agent_version="1.0.0",
             request_id="3",
             feedback_content="New feedback 3",
-            embedding=[0.5] * 1536,
+            embedding=[0.5] * 512,
             feedback_name="test_aggregation",
         ),
     ]
@@ -326,7 +326,7 @@ def test_aggregator_restores_on_error(supabase_storage, cleanup_after_test, llm_
             feedback_content="Original feedback 1",
             feedback_status=FeedbackStatus.PENDING,
             feedback_metadata="",
-            embedding=[0.1] * 1536,
+            embedding=[0.1] * 512,
         ),
         Feedback(
             feedback_name="test_error",
@@ -334,7 +334,7 @@ def test_aggregator_restores_on_error(supabase_storage, cleanup_after_test, llm_
             feedback_content="Original feedback 2",
             feedback_status=FeedbackStatus.PENDING,
             feedback_metadata="",
-            embedding=[0.2] * 1536,
+            embedding=[0.2] * 512,
         ),
     ]
     supabase_storage.save_feedbacks(existing_feedbacks)
@@ -345,14 +345,14 @@ def test_aggregator_restores_on_error(supabase_storage, cleanup_after_test, llm_
             agent_version="1.0.0",
             request_id="1",
             feedback_content="New feedback 1",
-            embedding=[0.3] * 1536,
+            embedding=[0.3] * 512,
             feedback_name="test_error",
         ),
         RawFeedback(
             agent_version="1.0.0",
             request_id="2",
             feedback_content="New feedback 2",
-            embedding=[0.4] * 1536,
+            embedding=[0.4] * 512,
             feedback_name="test_error",
         ),
     ]

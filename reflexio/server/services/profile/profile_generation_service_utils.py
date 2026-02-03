@@ -215,21 +215,22 @@ def construct_profile_extraction_messages_from_request_groups(
     )
 
     # Configure system message (before interactions)
+    # Stable content (instructions, examples, definitions) goes in system message for token caching
     system_config = PromptConfig(
         prompt_id=ProfileGenerationServiceConstants.PROFILE_UPDATE_INSTRUCTION_START_PROMPT_ID,
         variables={
             "agent_context_prompt": agent_context_prompt,
             "context_prompt": context_prompt,
+            "profile_content_definition_prompt": profile_content_definition_prompt,
+            "metadata_definition_prompt": metadata_definition_prompt,
         },
     )
 
     # Configure final user message (after interactions)
-    # Format interactions grouped by request group
+    # Only dynamic per-call data goes in user message
     user_config = PromptConfig(
         prompt_id=ProfileGenerationServiceConstants.PROFILE_UPDATE_MAIN_PROMPT_ID,
         variables={
-            "profile_content_definition_prompt": profile_content_definition_prompt,
-            "metadata_definition_prompt": metadata_definition_prompt,
             "existing_profiles": formatted_existing_profiles,
             "interactions": format_request_groups_to_history_string(
                 request_interaction_data_models

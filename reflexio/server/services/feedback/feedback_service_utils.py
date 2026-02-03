@@ -151,10 +151,12 @@ def construct_feedback_extraction_messages_from_request_groups(
         list[dict]: List of messages ready for feedback extraction
     """
     # Configure system message (before interactions)
+    # Stable content (instructions, examples, definitions) goes in system message for token caching
     system_config = PromptConfig(
         prompt_id=FeedbackServiceConstants.RAW_FEEDBACK_EXTRACTION_CONTEXT_PROMPT_ID,
         variables={
             "agent_context_prompt": agent_context_prompt,
+            "feedback_definition_prompt": feedback_definition_prompt,
         },
     )
 
@@ -168,10 +170,10 @@ def construct_feedback_extraction_messages_from_request_groups(
         formatted_existing_feedbacks = "(No existing feedbacks)"
 
     # Configure final user message (after interactions)
+    # Only dynamic per-call data goes in user message
     user_config = PromptConfig(
         prompt_id=FeedbackServiceConstants.RAW_FEEDBACK_EXTRACTION_PROMPT_ID,
         variables={
-            "feedback_definition_prompt": feedback_definition_prompt,
             "existing_feedbacks": formatted_existing_feedbacks,
             "interactions": format_request_groups_to_history_string(
                 request_interaction_data_models

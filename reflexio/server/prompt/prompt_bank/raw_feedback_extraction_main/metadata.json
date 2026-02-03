@@ -1,8 +1,8 @@
 {
   "prompt_id": "raw_feedback_extraction_main",
-  "active_version": "2.1.1",
+  "active_version": "3.0.0",
   "created_at": 1703123456,
-  "last_updated": 1737734400,
+  "last_updated": 1738454400,
   "description": "Main prompt for extracting feedback from user interactions",
   "versions": {
     "1.0.0": {
@@ -30,6 +30,14 @@
         "existing_feedbacks"
       ],
       "changelog": "Structured JSON output with do_action, do_not_action, and when_condition fields for better clustering and aggregation"
+    },
+    "3.0.0": {
+      "created_at": 1738454400,
+      "variables": [
+        "existing_feedbacks",
+        "interactions"
+      ],
+      "changelog": "Moved stable instructions to system message, kept only dynamic data in user message for token caching"
     }
   }
 }

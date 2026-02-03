@@ -33,6 +33,11 @@ uvicorn serve_viewer:app --host 0.0.0.0 --port 8083 --reload --reload-dir demo -
 - `devops_backup_failure` — DevOps lead needs help with S3 backup timeouts and monitoring
 - `request_refund` — Customer disputes an unrecognized charge and requests a refund
 - `restaurant_togo_order` — Customer orders food but has a peanut allergy conflicting with their choice
+- `isp_outage_wfh` — Customer already tried basic troubleshooting but agent re-suggests it; area outage is the real cause
+- `subscription_cancel_upgrade` — PM wants to cancel but actually needs a team plan they don't know exists
+- `language_travel_prep` — Traveler needs practical Japanese phrases in 2 weeks, not a full curriculum
+- `coding_interview_help` — Developer preparing for interviews needs problem patterns, not textbook theory
+- `investment_short_term` — Saver needs low-risk options for 18-month house down payment, not standard portfolio advice
 
 ## Context Injection
 

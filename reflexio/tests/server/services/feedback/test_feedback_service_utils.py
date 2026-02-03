@@ -78,22 +78,30 @@ def test_construct_feedback_extraction_messages_with_request_groups():
     # Validate that messages were created
     assert len(messages) > 0, "No messages were created"
 
+    # Helper to extract text from a message's content (string or content blocks)
+    def extract_text(message):
+        content = message.get("content", "")
+        if isinstance(content, list):
+            extracted = ""
+            for item in content:
+                if isinstance(item, dict) and item.get("type") == "text":
+                    extracted += item.get("text", "")
+            return extracted
+        return str(content)
+
+    # Verify feedback definition is in the system message (moved there for token caching)
+    system_messages = [m for m in messages if m.get("role") == "system"]
+    assert system_messages, "Expected a system message"
+    system_text = extract_text(system_messages[0])
+    assert (
+        "Evaluate the quality of the agent's response" in system_text
+    ), "Expected feedback definition in system message"
+
     # Find the user message that contains the interactions
     found_interactions = False
     for message in messages:
-        # Messages are dicts with 'role' and 'content' keys
         if isinstance(message, dict) and "content" in message:
-            # Content can be a string or a list of content blocks
-            content = message.get("content", "")
-            if isinstance(content, list):
-                # Extract text from content blocks
-                extracted_text = ""
-                for item in content:
-                    if isinstance(item, dict) and item.get("type") == "text":
-                        extracted_text += item.get("text", "")
-                content = extracted_text
-            else:
-                content = str(content)
+            content = extract_text(message)
 
             # Check if this message contains the interaction section
             if (
@@ -118,11 +126,6 @@ def test_construct_feedback_extraction_messages_with_request_groups():
                 assert (
                     "user: ```click help button```" in content
                 ), f"Expected 'user: ```click help button```' in prompt"
-
-                # Also verify feedback definition prompt is in the content
-                assert (
-                    "Evaluate the quality of the agent's response" in content
-                ), f"Expected feedback definition in prompt"
 
                 found_interactions = True
                 break

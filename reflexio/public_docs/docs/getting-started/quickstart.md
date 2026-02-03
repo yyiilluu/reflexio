@@ -5,7 +5,7 @@ This guide helps you get Reflexio working end-to-end with your LLM agent.
 ## Installation
 
 ```bash
-pip install reflexio
+pip install reflexio-client
 ```
 
 ## Authentication

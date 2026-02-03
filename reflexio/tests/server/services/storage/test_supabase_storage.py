@@ -40,7 +40,7 @@ def mock_openai():
         "reflexio.server.services.storage.supabase_storage.LiteLLMClient"
     ) as mock_llm:
         mock_client = Mock()
-        mock_client.get_embedding.return_value = [0.1] * 1536  # Mock embedding vector
+        mock_client.get_embedding.return_value = [0.1] * 512  # Mock embedding vector
         mock_llm.return_value = mock_client
         yield mock_client
 
@@ -131,7 +131,7 @@ def feedback_data():
             agent_version="test_agent_v1",
             feedback_content="The agent was very helpful and provided accurate information",
             created_at=current_time,
-            embedding=[0.1] * 1536,
+            embedding=[0.1] * 512,
         ),
         "feedback_dict": {
             "feedback_id": 1,
@@ -142,7 +142,7 @@ def feedback_data():
             "feedback_metadata": "metadata_content",
             "created_at": datetime.fromtimestamp(current_time).isoformat(),
             "similarity": 0.85,
-            "embedding": str([0.1] * 1536),
+            "embedding": str([0.1] * 512),
         },
         "raw_feedback_dict": {
             "raw_feedback_id": 1,
@@ -152,7 +152,7 @@ def feedback_data():
             "feedback_content": "The agent was very helpful and provided accurate information",
             "created_at": datetime.fromtimestamp(current_time).isoformat(),
             "similarity": 0.90,
-            "embedding": str([0.1] * 1536),
+            "embedding": str([0.1] * 512),
         },
     }
 
@@ -550,7 +550,7 @@ def test_search_feedbacks(
     mock_supabase_client.rpc.assert_called_with(
         "hybrid_match_feedbacks",
         {
-            "p_query_embedding": [0.1] * 1536,  # Mock embedding
+            "p_query_embedding": [0.1] * 512,  # Mock embedding
             "p_query_text": "agent performance feedback",
             "p_match_threshold": 0.8,
             "p_match_count": 50,  # 5 * 10 for filtering overhead
@@ -588,7 +588,7 @@ def test_search_raw_feedbacks(
     mock_supabase_client.rpc.assert_called_with(
         "hybrid_match_raw_feedbacks",
         {
-            "p_query_embedding": [0.1] * 1536,  # Mock embedding
+            "p_query_embedding": [0.1] * 512,  # Mock embedding
             "p_query_text": "helpful agent response",
             "p_match_threshold": 0.7,
             "p_match_count": 100,  # 10 * 10 for filtering overhead
@@ -616,7 +616,7 @@ def test_search_feedbacks_with_default_parameters(
     mock_supabase_client.rpc.assert_called_with(
         "hybrid_match_feedbacks",
         {
-            "p_query_embedding": [0.1] * 1536,  # Mock embedding
+            "p_query_embedding": [0.1] * 512,  # Mock embedding
             "p_query_text": "agent feedback",
             "p_match_threshold": 0.5,  # Default threshold
             "p_match_count": 100,  # Get more results for filtering
@@ -644,7 +644,7 @@ def test_search_raw_feedbacks_with_default_parameters(
     mock_supabase_client.rpc.assert_called_with(
         "hybrid_match_raw_feedbacks",
         {
-            "p_query_embedding": [0.1] * 1536,  # Mock embedding
+            "p_query_embedding": [0.1] * 512,  # Mock embedding
             "p_query_text": "helpful feedback",
             "p_match_threshold": 0.5,  # Default threshold
             "p_match_count": 100,  # Get more results for filtering
@@ -675,7 +675,7 @@ def test_search_feedbacks_empty_results(
     mock_supabase_client.rpc.assert_called_with(
         "hybrid_match_feedbacks",
         {
-            "p_query_embedding": [0.1] * 1536,  # Mock embedding
+            "p_query_embedding": [0.1] * 512,  # Mock embedding
             "p_query_text": "completely unrelated query",
             "p_match_threshold": 0.9,
             "p_match_count": 50,  # 5 * 10 for filtering overhead
@@ -706,7 +706,7 @@ def test_search_raw_feedbacks_empty_results(
     mock_supabase_client.rpc.assert_called_with(
         "hybrid_match_raw_feedbacks",
         {
-            "p_query_embedding": [0.1] * 1536,  # Mock embedding
+            "p_query_embedding": [0.1] * 512,  # Mock embedding
             "p_query_text": "completely unrelated query",
             "p_match_threshold": 0.95,
             "p_match_count": 30,  # 3 * 10 for filtering overhead
@@ -731,7 +731,7 @@ def test_search_feedbacks_multiple_results(
         "feedback_metadata": "metadata_content_2",
         "created_at": "2023-01-02T00:00:00Z",
         "similarity": 0.75,
-        "embedding": str([0.1] * 1536),
+        "embedding": str([0.1] * 512),
     }
 
     # Mock multiple results from Supabase
@@ -761,7 +761,7 @@ def test_search_feedbacks_multiple_results(
     mock_supabase_client.rpc.assert_called_with(
         "hybrid_match_feedbacks",
         {
-            "p_query_embedding": [0.1] * 1536,  # Mock embedding
+            "p_query_embedding": [0.1] * 512,  # Mock embedding
             "p_query_text": "agent feedback analysis",
             "p_match_threshold": 0.7,
             "p_match_count": 50,  # 5 * 10 for filtering overhead
@@ -785,7 +785,7 @@ def test_search_raw_feedbacks_multiple_results(
         "feedback_content": "The agent needs improvement in understanding context",
         "created_at": "2023-01-02T00:00:00Z",
         "similarity": 0.72,
-        "embedding": str([0.1] * 1536),
+        "embedding": str([0.1] * 512),
     }
 
     # Mock multiple results from Supabase
@@ -819,7 +819,7 @@ def test_search_raw_feedbacks_multiple_results(
     mock_supabase_client.rpc.assert_called_with(
         "hybrid_match_raw_feedbacks",
         {
-            "p_query_embedding": [0.1] * 1536,  # Mock embedding
+            "p_query_embedding": [0.1] * 512,  # Mock embedding
             "p_query_text": "agent performance feedback",
             "p_match_threshold": 0.6,
             "p_match_count": 100,  # 10 * 10 for filtering overhead
@@ -1004,7 +1004,7 @@ def test_get_feedbacks_default_returns_approved_only(
         "agent_version": "v1",
         "feedback_metadata": "",
         "created_at": datetime.fromtimestamp(current_time).isoformat(),
-        "embedding": str([0.1] * 1536),
+        "embedding": str([0.1] * 512),
     }
 
     # Mock the response - no .eq() because feedback_status_filter is None (returns all statuses)

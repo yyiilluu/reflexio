@@ -240,7 +240,7 @@ def test_feedback_aggregator_run_with_insufficient_feedback(
             agent_version="1.0.0",
             request_id="1",
             feedback_content="The agent was very helpful",
-            embedding=[0.1] * 1536,
+            embedding=[0.1] * 512,
             feedback_name="test_feedback",
         ),
     ]

@@ -142,7 +142,7 @@ def test_database_functions(client: Client) -> dict:
         try:
             # Try calling with minimal parameters (will likely fail but confirms function exists)
             # We use a dummy embedding to test if the function is callable
-            dummy_embedding = [0.0] * 1536  # Standard OpenAI embedding size
+            dummy_embedding = [0.0] * 512  # Reduced embedding dimensions
 
             response = client.rpc(
                 func_name,

@@ -249,13 +249,16 @@ class LiteLLMClient:
 
         return self._make_request(final_messages, **kwargs)
 
-    def get_embedding(self, text: str, model: Optional[str] = None) -> list[float]:
+    def get_embedding(
+        self, text: str, model: Optional[str] = None, dimensions: Optional[int] = None
+    ) -> list[float]:
         """
         Get embedding vector for the given text.
 
         Args:
             text: The text to get embedding for.
             model: Optional embedding model (defaults to 'text-embedding-3-small').
+            dimensions: Optional number of dimensions for the embedding vector.
 
         Returns:
             List of floats representing the embedding vector.
@@ -267,6 +270,8 @@ class LiteLLMClient:
 
         try:
             params = {"model": embedding_model, "input": [text]}
+            if dimensions:
+                params["dimensions"] = dimensions
 
             # Resolve and add API key configuration if provided (overrides env vars)
             api_key, api_base, api_version = self._resolve_api_key(embedding_model)
@@ -283,7 +288,10 @@ class LiteLLMClient:
             raise LiteLLMClientError(f"Embedding generation failed: {str(e)}")
 
     def get_embeddings(
-        self, texts: list[str], model: Optional[str] = None
+        self,
+        texts: list[str],
+        model: Optional[str] = None,
+        dimensions: Optional[int] = None,
     ) -> list[list[float]]:
         """
         Get embedding vectors for multiple texts in a single API call.
@@ -291,6 +299,7 @@ class LiteLLMClient:
         Args:
             texts: List of texts to get embeddings for.
             model: Optional embedding model (defaults to 'text-embedding-3-small').
+            dimensions: Optional number of dimensions for the embedding vectors.
 
         Returns:
             List of embedding vectors, one per input text, in the same order as input.
@@ -305,6 +314,8 @@ class LiteLLMClient:
 
         try:
             params = {"model": embedding_model, "input": texts}
+            if dimensions:
+                params["dimensions"] = dimensions
 
             # Resolve and add API key configuration if provided (overrides env vars)
             api_key, api_base, api_version = self._resolve_api_key(embedding_model)
@@ -380,6 +391,11 @@ class LiteLLMClient:
         # Add any remaining kwargs
         params.update(kwargs)
 
+        # Apply prompt caching for supported providers
+        params["messages"] = self._apply_prompt_caching(
+            params["messages"], params["model"]
+        )
+
         # Make request with retry
         last_error = None
         for attempt in range(self.config.max_retries):
@@ -387,15 +403,26 @@ class LiteLLMClient:
                 response = litellm.completion(**params)
                 content = response.choices[0].message.content
 
-                # Log token usage when IS_TEST_ENV is true
-                if os.getenv("IS_TEST_ENV", "").lower() == "true":
-                    usage = getattr(response, "usage", None)
-                    if usage:
-                        self.logger.info(
-                            f"Token usage - input: {usage.prompt_tokens}, "
-                            f"output: {usage.completion_tokens}, "
-                            f"total: {usage.total_tokens}"
-                        )
+                # Log token usage with cache statistics
+                usage = getattr(response, "usage", None)
+                if usage:
+                    cache_info = ""
+                    # OpenAI cache stats
+                    details = getattr(usage, "prompt_tokens_details", None)
+                    if details:
+                        cached = getattr(details, "cached_tokens", 0)
+                        if cached:
+                            cache_info = f", cached: {cached}"
+                    # Anthropic cache stats
+                    cache_creation = getattr(usage, "cache_creation_input_tokens", None)
+                    cache_read = getattr(usage, "cache_read_input_tokens", None)
+                    if cache_creation or cache_read:
+                        cache_info = f", cache_write: {cache_creation or 0}, cache_read: {cache_read or 0}"
+
+                    self.logger.info(
+                        f"Token usage - model: {self.config.model}, input: {usage.prompt_tokens}, "
+                        f"output: {usage.completion_tokens}, total: {usage.total_tokens}{cache_info}"
+                    )
 
                 # Handle structured output parsing
                 return self._maybe_parse_structured_output(
@@ -423,6 +450,50 @@ class LiteLLMClient:
         raise LiteLLMClientError(
             f"API call failed after {self.config.max_retries} retries: {str(last_error)}"
         )
+
+    def _apply_prompt_caching(
+        self, messages: list[dict[str, Any]], model: str
+    ) -> list[dict[str, Any]]:
+        """
+        Apply prompt caching markers for supported providers.
+
+        For Anthropic models, transforms the system message content into content-block
+        format with cache_control markers to enable prefix caching.
+        For other providers, returns messages unchanged.
+
+        Args:
+            messages: List of chat messages.
+            model: Model name to determine provider.
+
+        Returns:
+            list[dict]: Messages with cache control applied where appropriate.
+        """
+        model_lower = model.lower()
+        is_anthropic = "claude" in model_lower or "anthropic" in model_lower
+
+        if not is_anthropic:
+            return messages
+
+        result = []
+        for msg in messages:
+            if msg.get("role") == "system" and isinstance(msg.get("content"), str):
+                # Transform system message to content-block format with cache_control
+                result.append(
+                    {
+                        "role": "system",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": msg["content"],
+                                "cache_control": {"type": "ephemeral"},
+                            }
+                        ],
+                    }
+                )
+            else:
+                result.append(msg)
+
+        return result
 
     def _build_user_content(
         self,

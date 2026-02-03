@@ -148,6 +148,161 @@ def migrate_20260124120000_structured_feedback_fields(
         )
 
 
+def _reembed_table(
+    cursor: psycopg2.extensions.cursor,
+    llm_client: "LiteLLMClient",
+    table: str,
+    id_column: str,
+    text_builder: Callable,
+    dimensions: int,
+    embedding_model: str,
+    batch_size: int = 100,
+) -> int:
+    """
+    Re-generate embeddings at new dimensions for one table.
+
+    Selects rows where embedding IS NULL, builds text via text_builder,
+    generates new embeddings in batches, and updates the rows.
+
+    Args:
+        cursor: Database cursor
+        llm_client: LiteLLM client for embedding generation
+        table (str): Table name
+        id_column (str): Primary key column name
+        text_builder: Callable that takes a row tuple and returns the text to embed
+        dimensions (int): Target embedding dimensions
+        embedding_model (str): Embedding model name
+        batch_size (int): Number of rows per embedding API call
+
+    Returns:
+        int: Number of rows updated
+    """
+    cursor.execute(f"SELECT * FROM {table} WHERE embedding IS NULL")  # noqa: S608
+    columns = [desc[0] for desc in cursor.description]
+    rows = cursor.fetchall()
+
+    if not rows:
+        logger.info("Re-embed %s: no rows with NULL embedding", table)
+        return 0
+
+    # Convert to list of dicts for easier access
+    row_dicts = [dict(zip(columns, row)) for row in rows]
+
+    updated = 0
+    for i in range(0, len(row_dicts), batch_size):
+        batch = row_dicts[i : i + batch_size]
+        texts = [text_builder(r) for r in batch]
+        ids = [r[id_column] for r in batch]
+
+        # Skip rows with empty text
+        valid_indices = [j for j, t in enumerate(texts) if t.strip()]
+        if not valid_indices:
+            continue
+
+        valid_texts = [texts[j] for j in valid_indices]
+        valid_ids = [ids[j] for j in valid_indices]
+
+        embeddings = llm_client.get_embeddings(
+            valid_texts, model=embedding_model, dimensions=dimensions
+        )
+
+        for row_id, embedding in zip(valid_ids, embeddings):
+            cursor.execute(
+                f"UPDATE {table} SET embedding = %s WHERE {id_column} = %s",  # noqa: S608
+                (str(embedding), row_id),
+            )
+            updated += 1
+
+        logger.info(
+            "Re-embed %s: processed batch %d-%d (%d updated)",
+            table,
+            i,
+            i + len(batch),
+            len(valid_ids),
+        )
+
+    return updated
+
+
+def migrate_20260202000000_reembed_512(
+    conn: psycopg2.extensions.connection,
+    cursor: psycopg2.extensions.cursor,
+) -> None:
+    """
+    Re-generate embeddings at 512 dimensions for all tables.
+
+    The SQL migration (20260202000000) altered the vector columns to 512 dimensions
+    and nulled out existing embeddings. This data migration regenerates them.
+
+    Args:
+        conn: Active database connection (do not commit/rollback)
+        cursor: Cursor bound to conn
+    """
+    import os
+
+    from dotenv import load_dotenv
+
+    from reflexio_commons.config_schema import EMBEDDING_DIMENSIONS
+    from reflexio.server.llm.litellm_client import LiteLLMClient, LiteLLMConfig
+
+    load_dotenv()
+
+    embedding_model = os.getenv("EMBEDDING_MODEL_NAME", "text-embedding-3-small")
+    dimensions = EMBEDDING_DIMENSIONS
+
+    config = LiteLLMConfig(model=embedding_model, temperature=0.0)
+    llm_client = LiteLLMClient(config)
+
+    # Table definitions: (table, id_column, text_builder)
+    table_configs = [
+        (
+            "interactions",
+            "interaction_id",
+            lambda r: "\n".join(
+                [r.get("content") or "", r.get("user_action_description") or ""]
+            ),
+        ),
+        (
+            "profiles",
+            "profile_id",
+            lambda r: "\n".join(
+                [r.get("profile_content") or "", str(r.get("custom_features") or "")]
+            ),
+        ),
+        (
+            "raw_feedbacks",
+            "raw_feedback_id",
+            lambda r: r.get("indexed_content") or r.get("feedback_content") or "",
+        ),
+        (
+            "feedbacks",
+            "feedback_id",
+            lambda r: r.get("when_condition") or r.get("feedback_content") or "",
+        ),
+        (
+            "agent_success_evaluation_result",
+            "result_id",
+            lambda r: " ".join(
+                filter(
+                    None,
+                    [
+                        r.get("failure_type"),
+                        r.get("failure_reason"),
+                        r.get("agent_prompt_update"),
+                    ],
+                )
+            ),
+        ),
+    ]
+
+    for table, id_col, text_builder in table_configs:
+        updated = _reembed_table(
+            cursor, llm_client, table, id_col, text_builder, dimensions, embedding_model
+        )
+        logger.info("Migration re-embed %s: updated=%d rows", table, updated)
+
+
 DATA_MIGRATIONS: dict[str, DataMigrationFn] = {
     "20260124120000": migrate_20260124120000_structured_feedback_fields,
+    "20260202000000": migrate_20260202000000_reembed_512,
 }

@@ -15,7 +15,7 @@ Python client library for the Reflexio API. Build agents with persistent memory 
 ## Installation
 
 ```bash
-pip install reflexio
+pip install reflexio-client
 ```
 
 ## Quick Start

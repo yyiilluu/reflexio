@@ -52,6 +52,7 @@ from reflexio_commons.config_schema import (
     APIKeyConfig,
     LLMConfig,
     SearchMode,
+    EMBEDDING_DIMENSIONS,
 )
 
 from reflexio.server.site_var.site_var_manager import SiteVarManager
@@ -135,6 +136,7 @@ class SupabaseStorage(BaseStorage):
                 "embedding_model_name", "text-embedding-3-small"
             )
         )
+        self.embedding_dimensions = EMBEDDING_DIMENSIONS
 
         try:
             # Use LiteLLMClient with embedding model configuration
@@ -336,7 +338,9 @@ class SupabaseStorage(BaseStorage):
         ]
 
         # Get all embeddings in a single API call
-        embeddings = self.llm_client.get_embeddings(texts, self.embedding_model_name)
+        embeddings = self.llm_client.get_embeddings(
+            texts, self.embedding_model_name, self.embedding_dimensions
+        )
 
         # Assign embeddings to interactions
         for interaction, embedding in zip(interactions, embeddings):
@@ -997,7 +1001,9 @@ class SupabaseStorage(BaseStorage):
         Returns:
             list[float]: Embedding vector
         """
-        return self.llm_client.get_embedding(text, self.embedding_model_name)
+        return self.llm_client.get_embedding(
+            text, self.embedding_model_name, self.embedding_dimensions
+        )
 
     @handle_exceptions
     def search_raw_feedbacks(

@@ -85,7 +85,10 @@ def get_reflexio_context(reflexio_config: dict, query: str) -> str:
                         parts.append(f"  WHEN: {fb.when_condition}")
                     lines.append("\n".join(parts))
                 feedback_section = (
-                    "\n## Agent Feedback & Improvement Instructions\n"
+                    "\n## Process Improvement Instructions\n"
+                    "You previously received feedback on how to handle situations better. "
+                    "Each item below has a WHEN condition describing the situation, and DO/DON'T actions to follow. "
+                    "If the current conversation matches a WHEN condition, you MUST follow the corresponding actions.\n"
                     + "\n".join(lines)
                 )
         except Exception as e:
@@ -162,19 +165,97 @@ def check_resolution(content: str) -> bool:
     return any(phrase in lower for phrase in RESOLUTION_PHRASES)
 
 
-def get_completion(model: str, messages: list[dict]) -> str:
+def get_completion(model: str, messages: list[dict], tools: list | None = None) -> dict:
     """
-    Call the LLM and return the assistant's response text.
+    Call the LLM and return the assistant's response, handling any tool calls in a loop.
+
+    When tools are provided, the LLM may request tool calls instead of returning text.
+    This function executes the mock tool handlers and feeds results back to the LLM
+    until it produces a final text response.
 
     Args:
         model (str): The model identifier (e.g. 'gpt-4o-mini')
         messages (list[dict]): The conversation messages in OpenAI format
+        tools (list | None): Optional list of ScenarioTool objects for function calling
 
     Returns:
-        str: The assistant's response content
+        dict: {"content": str, "tool_interactions": list | None}
+              tool_interactions is a list of dicts with tool_call_id, function_name,
+              arguments, and result — or None if no tools were called.
     """
-    response = litellm.completion(model=model, messages=messages)
-    return response.choices[0].message.content.strip()
+    if not tools:
+        response = litellm.completion(model=model, messages=messages)
+        return {
+            "content": response.choices[0].message.content.strip(),
+            "tool_interactions": None,
+        }
+
+    openai_tools = [t.to_openai_tool() for t in tools]
+    handler_map = {t.name: t.handler for t in tools}
+
+    # Work on a copy so intermediate tool messages don't leak to the caller
+    local_messages = list(messages)
+    collected_interactions = []
+
+    max_rounds = 10
+    for _ in range(max_rounds):
+        response = litellm.completion(
+            model=model, messages=local_messages, tools=openai_tools, tool_choice="auto"
+        )
+        choice = response.choices[0]
+
+        if not choice.message.tool_calls:
+            content = (choice.message.content or "").strip()
+            return {
+                "content": content,
+                "tool_interactions": collected_interactions
+                if collected_interactions
+                else None,
+            }
+
+        # Append the assistant message (with tool_calls) to local history
+        local_messages.append(choice.message.model_dump())
+
+        for tool_call in choice.message.tool_calls:
+            fn_name = tool_call.function.name
+            try:
+                fn_args = json.loads(tool_call.function.arguments)
+            except json.JSONDecodeError:
+                fn_args = {}
+
+            handler = handler_map.get(fn_name)
+            if handler:
+                result = handler(fn_args)
+            else:
+                result = {"error": f"Unknown tool: {fn_name}"}
+
+            collected_interactions.append(
+                {
+                    "tool_call_id": tool_call.id,
+                    "function_name": fn_name,
+                    "arguments": fn_args,
+                    "result": result,
+                }
+            )
+
+            local_messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": json.dumps(result),
+                }
+            )
+
+    # Fallback: if we exhausted rounds, return whatever we have
+    last_content = ""
+    for msg in reversed(local_messages):
+        if msg.get("role") == "assistant" and msg.get("content"):
+            last_content = msg["content"]
+            break
+    return {
+        "content": last_content.strip(),
+        "tool_interactions": collected_interactions if collected_interactions else None,
+    }
 
 
 def simulate(
@@ -242,7 +323,9 @@ def simulate(
                 agent_messages[0]["content"] = enhanced_prompt
                 turn_system_prompt = enhanced_prompt
 
-        agent_text = get_completion(model, agent_messages)
+        result = get_completion(model, agent_messages, tools=scenario.tools or None)
+        agent_text = result["content"]
+        tool_interactions = result["tool_interactions"]
 
         # Restore original system prompt
         if reflexio_config or mem0_config:
@@ -254,11 +337,18 @@ def simulate(
             "content": agent_text,
             "labels": [],
         }
+        if tool_interactions:
+            turn_dict["tool_interactions"] = tool_interactions
         if turn_system_prompt:
             turn_dict["system_prompt"] = turn_system_prompt
             turn_dict["context_source"] = "reflexio" if reflexio_config else "mem0"
         turns.append(turn_dict)
         print(f"[Turn {turn_num}] Agent: {agent_text}")
+        if tool_interactions:
+            for ti in tool_interactions:
+                print(
+                    f"  [Tool] {ti['function_name']}({ti['arguments']}) -> {ti['result']}"
+                )
 
         # Add to histories
         agent_messages.append({"role": "assistant", "content": agent_text})
@@ -270,7 +360,8 @@ def simulate(
 
         # --- Customer responds ---
         turn_num += 1
-        customer_text = get_completion(model, customer_messages)
+        result = get_completion(model, customer_messages)
+        customer_text = result["content"]
         turns.append(
             {
                 "turn": turn_num,
@@ -409,7 +500,9 @@ def simulate_stream(
                 agent_messages[0]["content"] = enhanced_prompt
                 turn_system_prompt = enhanced_prompt
 
-        agent_text = get_completion(model, agent_messages)
+        result = get_completion(model, agent_messages, tools=scenario.tools or None)
+        agent_text = result["content"]
+        tool_interactions = result["tool_interactions"]
 
         # Restore original system prompt
         if reflexio_config or mem0_config:
@@ -421,6 +514,8 @@ def simulate_stream(
             "content": agent_text,
             "labels": [],
         }
+        if tool_interactions:
+            turn_dict["tool_interactions"] = tool_interactions
         if turn_system_prompt:
             turn_dict["system_prompt"] = turn_system_prompt
             turn_dict["context_source"] = "reflexio" if reflexio_config else "mem0"
@@ -430,6 +525,11 @@ def simulate_stream(
 
         yield {"event": "turn", **turn_dict}
         print(f"[Turn {turn_num}] Agent: {agent_text}")
+        if tool_interactions:
+            for ti in tool_interactions:
+                print(
+                    f"  [Tool] {ti['function_name']}({ti['arguments']}) -> {ti['result']}"
+                )
 
         agent_messages.append({"role": "assistant", "content": agent_text})
         customer_messages.append({"role": "user", "content": agent_text})
@@ -440,7 +540,8 @@ def simulate_stream(
 
         # --- Customer responds ---
         turn_num += 1
-        customer_text = get_completion(model, customer_messages)
+        result = get_completion(model, customer_messages)
+        customer_text = result["content"]
         turn_dict = {
             "turn": turn_num,
             "role": "customer",
@@ -486,8 +587,8 @@ def main():
     parser.add_argument(
         "--max-turns",
         type=int,
-        default=30,
-        help="Maximum number of conversation turns (default: 30)",
+        default=20,
+        help="Maximum number of conversation turns (default: 20)",
     )
     parser.add_argument(
         "--output",
