@@ -211,11 +211,34 @@
 
                     <hr class="border-gray-200">
 
+                    <!-- Mode Selection -->
+                    <div>
+                        <h3 class="text-sm font-semibold text-dark mb-2">Mode</h3>
+                        <div class="space-y-1.5">
+                            <label class="flex items-center gap-2 cursor-pointer">
+                                <input type="radio" name="sim-mode" value="simulate" checked
+                                       onchange="simMode = 'simulate'"
+                                       class="w-4 h-4 text-primary focus:ring-primary">
+                                <span class="text-sm text-dark">Auto Simulate</span>
+                                <span class="text-[10px] text-gray-400">automated customer + agent</span>
+                            </label>
+                            <label class="flex items-center gap-2 cursor-pointer">
+                                <input type="radio" name="sim-mode" value="talk"
+                                       onchange="simMode = 'talk'"
+                                       class="w-4 h-4 text-primary focus:ring-primary">
+                                <span class="text-sm text-dark">Talk to Agent</span>
+                                <span class="text-[10px] text-gray-400">you type, agent responds</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <hr class="border-gray-200">
+
                     <!-- Play / Clear -->
                     <div>
-                        <h3 class="text-sm font-semibold text-dark mb-3">Run Simulation</h3>
+                        <h3 class="text-sm font-semibold text-dark mb-3">Run</h3>
                         <div class="flex gap-2">
-                            <button onclick="runSimulation()"
+                            <button onclick="handlePlayClick()"
                                     id="play-btn"
                                     class="flex-1 bg-primary hover:bg-dark text-white text-sm font-medium py-2 rounded transition-colors flex items-center justify-center gap-2">
                                 <span id="play-icon">&#9654;</span>
@@ -298,6 +321,16 @@
                     No conversations found. Open Settings to run a simulation.
                 </div>
             </div>
+            <div id="chat-input-bar" class="border-t border-accent bg-white px-4 py-3 hidden">
+                <form id="chat-form" class="flex gap-2" onsubmit="sendChatMessage(event)">
+                    <input id="chat-input" type="text" placeholder="Type a message..."
+                           class="flex-1 border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-primary">
+                    <button type="submit" id="chat-send-btn"
+                            class="bg-primary hover:bg-dark text-white text-sm font-medium px-4 py-1.5 rounded transition-colors flex items-center gap-1.5">
+                        Send
+                    </button>
+                </form>
+            </div>
         </div>
 
         <!-- Right panel: Agent Context (30%) -->
@@ -336,6 +369,9 @@
         let reflexioConnected = false;
         let contextSource = 'none'; // 'none', 'reflexio', or 'mem0'
         let scenarios = [];
+        let simMode = 'simulate'; // 'simulate' or 'talk'
+        let chatMode = false;
+        let isChatSending = false;
 
         const selectEl = document.getElementById('conversation-select');
         const chatPanel = document.getElementById('chat-panel');
@@ -413,21 +449,30 @@
             }
         }
 
-        selectEl.addEventListener('change', () => loadConversation(selectEl.value));
+        selectEl.addEventListener('change', () => {
+            chatMode = false;
+            loadConversation(selectEl.value);
+        });
 
         // --- Render chat bubbles ---
         function renderChat() {
             if (currentTurns.length === 0) {
                 chatPanel.innerHTML = '';
+                if (chatMode) {
+                    emptyState.textContent = 'Start typing below to talk to the agent.';
+                } else {
+                    emptyState.textContent = 'No conversations found. Open Settings to run a simulation.';
+                }
                 chatPanel.appendChild(emptyState);
                 emptyState.style.display = 'flex';
+                updateChatInputBar();
                 return;
             }
             emptyState.style.display = 'none';
 
             chatPanel.innerHTML = currentTurns.map(turn => {
                 const isUser = turn.role === 'customer';
-                const label = isUser ? 'User' : 'Agent';
+                const label = isUser ? 'You' : 'Agent';
                 const isSelected = turn.turn === selectedTurn;
                 const align = isUser ? 'items-end' : 'items-start';
                 const bubbleBg = isUser ? 'bg-gray-100 text-dark' : 'bg-primary text-white';
@@ -450,6 +495,7 @@
             // Scroll selected turn into view
             const el = chatPanel.querySelector(`[data-turn="${selectedTurn}"]`);
             if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            updateChatInputBar();
         }
 
         // --- Select a turn ---
@@ -487,7 +533,7 @@
 
         // --- Render context panel ---
         function renderContext() {
-            if (!currentScenario || selectedTurn === null) {
+            if (!currentScenario || (selectedTurn === null && !chatMode)) {
                 contextContent.innerHTML = '<p class="text-primary/40 text-xs">Select a conversation to view agent context.</p>';
                 return;
             }
@@ -552,6 +598,7 @@
             currentTurns = [];
             currentScenario = null;
             selectedTurn = null;
+            chatMode = false;
             renderChat();
             renderContext();
 
@@ -631,6 +678,117 @@
                 playBtn.classList.remove('opacity-60', 'cursor-not-allowed');
                 playIcon.innerHTML = '&#9654;';
                 playText.textContent = 'Play';
+                updateChatInputBar();
+            }
+        }
+
+        // --- Chat input bar visibility ---
+        function updateChatInputBar() {
+            const bar = document.getElementById('chat-input-bar');
+            const isSimRunning = document.getElementById('play-btn').disabled;
+            const shouldShow = !isSimRunning && ((currentScenario !== null && currentTurns.length > 0) || chatMode);
+            bar.classList.toggle('hidden', !shouldShow);
+        }
+
+        // --- Send chat message ---
+        async function sendChatMessage(event) {
+            event.preventDefault();
+            const input = document.getElementById('chat-input');
+            const btn = document.getElementById('chat-send-btn');
+            const message = input.value.trim();
+            if (!message || isChatSending || !currentScenario) return;
+
+            isChatSending = true;
+            btn.disabled = true;
+            btn.innerHTML = '<svg class="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>';
+            input.value = '';
+
+            // Add user turn optimistically
+            const userTurn = {
+                turn: currentTurns.length + 1,
+                role: 'customer',
+                content: message,
+                labels: [],
+            };
+            currentTurns.push(userTurn);
+            selectedTurn = userTurn.turn;
+            renderChat();
+            chatPanel.scrollTop = chatPanel.scrollHeight;
+
+            try {
+                const scenarioKey = currentScenario.key;
+                const body = {
+                    scenario: scenarioKey,
+                    model: 'gpt-4o-mini',
+                    message: message,
+                    history: currentTurns.slice(0, -1), // history before the new user msg
+                };
+                // Add context config
+                if (contextSource === 'reflexio' && reflexioConnected) {
+                    body.reflexio_enabled = true;
+                    body.reflexio_user_id = document.getElementById('sim-user-id').value;
+                    body.reflexio_agent_version = document.getElementById('sim-agent-version').value;
+                } else if (contextSource === 'mem0') {
+                    body.mem0_enabled = true;
+                    body.mem0_user_id = document.getElementById('sim-mem0-user-id').value;
+                }
+
+                const agentTurn = await api('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body),
+                });
+                currentTurns.push(agentTurn);
+                selectedTurn = agentTurn.turn;
+                renderChat();
+                renderContext();
+                chatPanel.scrollTop = chatPanel.scrollHeight;
+            } catch (e) {
+                // Remove optimistic user turn on error
+                currentTurns.pop();
+                selectedTurn = currentTurns.length > 0 ? currentTurns[currentTurns.length - 1].turn : null;
+                renderChat();
+                alert('Chat failed: ' + e.message);
+            } finally {
+                isChatSending = false;
+                btn.disabled = false;
+                btn.innerHTML = 'Send';
+                input.focus();
+            }
+        }
+
+        // --- Handle play button click (dispatches based on mode) ---
+        function handlePlayClick() {
+            if (simMode === 'talk') {
+                startTalkToAgent();
+            } else {
+                runSimulation();
+            }
+        }
+
+        // --- Start "Talk to Agent" session ---
+        async function startTalkToAgent() {
+            const selectedScenario = document.getElementById('scenario-select').value;
+            if (!selectedScenario) {
+                alert('Please select a scenario.');
+                return;
+            }
+
+            try {
+                const data = await api(`/api/scenario/${selectedScenario}`);
+                currentScenario = data;
+                currentTurns = [];
+                selectedTurn = null;
+                chatMode = true;
+
+                renderChat();
+                renderContext();
+                updateChatInputBar();
+                closeSettings();
+                // Focus the input after a short delay to allow modal to close
+                setTimeout(() => document.getElementById('chat-input').focus(), 100);
+            } catch (e) {
+                alert('Failed to load scenario: ' + e.message);
             }
         }
 
@@ -639,8 +797,10 @@
             currentTurns = [];
             currentScenario = null;
             selectedTurn = null;
+            chatMode = false;
             renderChat();
             renderContext();
+            updateChatInputBar();
         }
 
         // --- Settings modal ---

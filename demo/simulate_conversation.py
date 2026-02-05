@@ -85,11 +85,11 @@ def get_reflexio_context(reflexio_config: dict, query: str) -> str:
                         parts.append(f"  WHEN: {fb.when_condition}")
                     lines.append("\n".join(parts))
                 feedback_section = (
-                    "\n## Process Improvement Instructions\n"
-                    "You previously received feedback on how to handle situations better. "
-                    "Each item below has a WHEN condition describing the situation, and DO/DON'T actions to follow. "
-                    "If the current conversation matches a WHEN condition, you MUST follow the corresponding actions.\n"
-                    + "\n".join(lines)
+                    "\n## MANDATORY Behavior Corrections\n"
+                    "The following rules are learned from past mistakes and OVERRIDE your standard flow above. "
+                    "Before responding, check each rule: if the WHEN condition matches the current situation, "
+                    "you MUST follow the DO/DON'T actions even if they differ from your default steps.\n\n"
+                    + "\n\n".join(lines)
                 )
         except Exception as e:
             logger.warning(f"Failed to fetch feedbacks: {e}")
@@ -149,6 +149,28 @@ def get_mem0_context(mem0_config: dict, query: str) -> str:
     except Exception as e:
         logger.warning(f"Failed to get mem0 context: {e}")
         return ""
+
+
+_BEHAVIOR_REMINDER = (
+    "**Note: You have behavior corrections from past interactions at the end of this "
+    "prompt. Before each response, check if any WHEN conditions match and follow the "
+    "required DO/DON'T actions.**\n\n"
+)
+
+
+def build_enhanced_prompt(base_system_prompt: str, context: str) -> str:
+    """
+    Build the enhanced system prompt by prepending a behavior reminder at the top
+    and appending the full context block at the end.
+
+    Args:
+        base_system_prompt (str): The original agent system prompt
+        context (str): The reflexio context block (profiles + feedback)
+
+    Returns:
+        str: The enhanced prompt with reminder at top and context at bottom
+    """
+    return _BEHAVIOR_REMINDER + base_system_prompt + context
 
 
 def check_resolution(content: str) -> bool:
@@ -312,7 +334,7 @@ def simulate(
             latest_customer_msg = customer_text
             context = get_reflexio_context(reflexio_config, latest_customer_msg)
             if context:
-                enhanced_prompt = base_system_prompt + context
+                enhanced_prompt = build_enhanced_prompt(base_system_prompt, context)
                 agent_messages[0]["content"] = enhanced_prompt
                 turn_system_prompt = enhanced_prompt
         elif mem0_config:
@@ -489,7 +511,7 @@ def simulate_stream(
             latest_customer_msg = customer_text
             context = get_reflexio_context(reflexio_config, latest_customer_msg)
             if context:
-                enhanced_prompt = base_system_prompt + context
+                enhanced_prompt = build_enhanced_prompt(base_system_prompt, context)
                 agent_messages[0]["content"] = enhanced_prompt
                 turn_system_prompt = enhanced_prompt
         elif mem0_config:
@@ -581,8 +603,8 @@ def main():
     )
     parser.add_argument(
         "--model",
-        default="gpt-4o-mini",
-        help="LLM model to use (default: gpt-4o-mini)",
+        default="gpt-5-mini",
+        help="LLM model to use (default: gpt-5-mini)",
     )
     parser.add_argument(
         "--max-turns",

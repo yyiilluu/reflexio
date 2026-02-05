@@ -8,13 +8,13 @@
 ## Install
 
 ```bash
-pip install reflexio
+pip install reflexio-client
 ```
 
 For development or if using Poetry:
 
 ```bash
-poetry add reflexio
+poetry add reflexio-client
 ```
 
 ## Verify Installation

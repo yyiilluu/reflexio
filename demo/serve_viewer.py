@@ -31,7 +31,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from reflexio.reflexio_client.reflexio import InteractionData, ReflexioClient
 from scenarios import SCENARIOS
-from simulate_conversation import simulate, simulate_stream
+from simulate_conversation import (
+    build_enhanced_prompt,
+    get_completion,
+    get_mem0_context,
+    get_reflexio_context,
+    simulate,
+    simulate_stream,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +90,25 @@ async def list_scenarios():
             {"key": key, "name": scenario.name, "description": scenario.description}
             for key, scenario in SCENARIOS.items()
         ]
+    )
+
+
+@app.get("/api/scenario/{key}")
+async def get_scenario(key: str):
+    """Return full scenario data for a single scenario by key."""
+    if key not in SCENARIOS:
+        raise HTTPException(status_code=404, detail=f"Unknown scenario: {key}")
+    scenario = SCENARIOS[key]
+    return JSONResponse(
+        {
+            "key": key,
+            "name": scenario.name,
+            "description": scenario.description,
+            "agent_system_prompt": scenario.agent_system_prompt,
+            "customer_system_prompt": scenario.customer_system_prompt,
+            "customer_opening_message": scenario.customer_opening_message,
+            "max_turns": scenario.max_turns,
+        }
     )
 
 
@@ -157,6 +183,18 @@ class SimulateRequest(BaseModel):
     scenario: str = "devops_backup_failure"
     model: str = "gpt-4o-mini"
     max_turns: int = 30
+    reflexio_enabled: bool = False
+    reflexio_user_id: str = ""
+    reflexio_agent_version: str = "demo-v1"
+    mem0_enabled: bool = False
+    mem0_user_id: str = ""
+
+
+class ChatRequest(BaseModel):
+    scenario: str
+    model: str = "gpt-4o-mini"
+    message: str
+    history: list[dict] = []
     reflexio_enabled: bool = False
     reflexio_user_id: str = ""
     reflexio_agent_version: str = "demo-v1"
@@ -263,6 +301,77 @@ async def run_simulation_stream(req: SimulateRequest):
             yield f"event: error\ndata: {error_data}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+@app.post("/api/chat")
+async def chat(req: ChatRequest):
+    """
+    Send a single user message and get the agent's response.
+    The frontend sends the full conversation history with each request (stateless).
+
+    Args:
+        req (ChatRequest): The chat request with scenario, message, history, and optional context config
+    """
+    if req.scenario not in SCENARIOS:
+        raise HTTPException(status_code=400, detail=f"Unknown scenario: {req.scenario}")
+
+    scenario = SCENARIOS[req.scenario]
+    base_system_prompt = scenario.agent_system_prompt
+
+    # Reconstruct agent_messages from history
+    agent_messages = [{"role": "system", "content": base_system_prompt}]
+    for turn in req.history:
+        if turn["role"] == "customer":
+            agent_messages.append({"role": "user", "content": turn["content"]})
+        elif turn["role"] == "agent":
+            agent_messages.append({"role": "assistant", "content": turn["content"]})
+
+    # Optionally enhance system prompt with Reflexio/mem0 context
+    turn_system_prompt = None
+    if req.reflexio_enabled and reflexio_client:
+        context = get_reflexio_context(
+            {
+                "client": reflexio_client,
+                "user_id": req.reflexio_user_id,
+                "agent_version": req.reflexio_agent_version,
+            },
+            req.message,
+        )
+        if context:
+            enhanced_prompt = build_enhanced_prompt(base_system_prompt, context)
+            agent_messages[0]["content"] = enhanced_prompt
+            turn_system_prompt = enhanced_prompt
+    elif req.mem0_enabled:
+        api_key = os.getenv("MEM0_API_KEY")
+        if api_key:
+            context = get_mem0_context(
+                {"api_key": api_key, "user_id": req.mem0_user_id}, req.message
+            )
+            if context:
+                enhanced_prompt = base_system_prompt + context
+                agent_messages[0]["content"] = enhanced_prompt
+                turn_system_prompt = enhanced_prompt
+
+    # Append the new user message
+    agent_messages.append({"role": "user", "content": req.message})
+
+    try:
+        result = get_completion(req.model, agent_messages, tools=scenario.tools or None)
+        turn_num = len(req.history) + 2  # +1 for new user msg, +1 for agent response
+        turn_dict = {
+            "turn": turn_num,
+            "role": "agent",
+            "content": result["content"],
+            "labels": [],
+        }
+        if result["tool_interactions"]:
+            turn_dict["tool_interactions"] = result["tool_interactions"]
+        if turn_system_prompt:
+            turn_dict["system_prompt"] = turn_system_prompt
+            turn_dict["context_source"] = "reflexio" if req.reflexio_enabled else "mem0"
+        return JSONResponse(turn_dict)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # --- Reflexio endpoints ---
