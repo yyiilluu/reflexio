@@ -64,16 +64,23 @@ class AnthropicConfig(BaseModel):
     api_key: str
 
 
+class OpenRouterConfig(BaseModel):
+    """OpenRouter API configuration."""
+
+    api_key: str
+
+
 class APIKeyConfig(BaseModel):
     """
     API key configuration for LLM providers.
 
-    Supports OpenAI (direct and Azure) and Anthropic API keys.
+    Supports OpenAI (direct and Azure), Anthropic, and OpenRouter API keys.
     These keys are used by the LiteLLM client for multi-provider support.
     """
 
     openai: Optional[OpenAIConfig] = None
     anthropic: Optional[AnthropicConfig] = None
+    openrouter: Optional[OpenRouterConfig] = None
 
 
 class ProfileExtractorConfig(BaseModel):

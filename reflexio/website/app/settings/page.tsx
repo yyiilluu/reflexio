@@ -105,9 +105,14 @@ interface AnthropicConfig {
   api_key: string
 }
 
+interface OpenRouterConfig {
+  api_key: string
+}
+
 interface APIKeyConfig {
   openai?: OpenAIConfig
   anthropic?: AnthropicConfig
+  openrouter?: OpenRouterConfig
 }
 
 // LLM model configuration overrides
@@ -392,6 +397,20 @@ export default function SettingsPage() {
         anthropic: {
           api_key: config.api_key_config?.anthropic?.api_key || "",
           ...config.api_key_config?.anthropic,
+          ...updates,
+        },
+      },
+    })
+  }
+
+  const updateOpenRouterConfig = (updates: Partial<OpenRouterConfig>) => {
+    setConfig({
+      ...config,
+      api_key_config: {
+        ...config.api_key_config,
+        openrouter: {
+          api_key: config.api_key_config?.openrouter?.api_key || "",
+          ...config.api_key_config?.openrouter,
           ...updates,
         },
       },
@@ -991,7 +1010,7 @@ export default function SettingsPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    {(config.api_key_config?.openai?.api_key || config.api_key_config?.openai?.azure_config?.api_key || config.api_key_config?.anthropic?.api_key || config.llm_config?.should_run_model_name || config.llm_config?.generation_model_name || config.llm_config?.embedding_model_name) && (
+                    {(config.api_key_config?.openai?.api_key || config.api_key_config?.openai?.azure_config?.api_key || config.api_key_config?.anthropic?.api_key || config.api_key_config?.openrouter?.api_key || config.llm_config?.should_run_model_name || config.llm_config?.generation_model_name || config.llm_config?.embedding_model_name) && (
                       <Badge className="text-xs bg-emerald-100 text-emerald-700 hover:bg-emerald-100">
                         Configured
                       </Badge>
@@ -1136,6 +1155,30 @@ export default function SettingsPage() {
                       />
                       <p className="text-xs text-slate-500 mt-2">
                         Your Anthropic API key for Claude models
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* OpenRouter Configuration */}
+                  <div className="p-5 border rounded-lg space-y-4 bg-muted/30">
+                    <div className="flex items-center gap-2">
+                      <div className="h-7 w-7 rounded-lg bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center">
+                        <span className="text-white text-xs font-bold">OR</span>
+                      </div>
+                      <span className="text-sm font-semibold text-slate-800">OpenRouter Configuration</span>
+                    </div>
+
+                    <div>
+                      <label className="text-sm font-medium mb-2 block text-slate-700">OpenRouter API Key</label>
+                      <Input
+                        type="password"
+                        value={config.api_key_config?.openrouter?.api_key || ""}
+                        onChange={(e) => updateOpenRouterConfig({ api_key: e.target.value })}
+                        placeholder="sk-or-..."
+                        className="h-10"
+                      />
+                      <p className="text-xs text-slate-500 mt-2">
+                        Your OpenRouter API key for accessing multiple providers
                       </p>
                     </div>
                   </div>

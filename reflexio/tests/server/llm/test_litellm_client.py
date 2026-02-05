@@ -26,6 +26,7 @@ from reflexio_commons.config_schema import (
     OpenAIConfig,
     AnthropicConfig,
     AzureOpenAIConfig,
+    OpenRouterConfig,
 )
 
 
@@ -917,3 +918,52 @@ class TestLiteLLMClientAPIKeyOverride:
 
         assert isinstance(response, str)
         assert "red" in response.lower()
+
+    def test_create_client_with_openrouter_api_key_config(self):
+        """Test creating a client with OpenRouter API key config override."""
+        api_key_config = APIKeyConfig(
+            openrouter=OpenRouterConfig(api_key="test-openrouter-key-12345")
+        )
+        config = LiteLLMConfig(
+            model="openrouter/openai/gpt-4o",
+            temperature=0.5,
+            api_key_config=api_key_config,
+        )
+        client = LiteLLMClient(config)
+
+        assert client.get_model() == "openrouter/openai/gpt-4o"
+        assert client.get_config().api_key_config == api_key_config
+        # Verify the API key was resolved correctly
+        assert client._api_key == "test-openrouter-key-12345"
+        assert client._api_base is None
+        assert client._api_version is None
+
+    def test_api_key_resolution_openrouter_model(self):
+        """Test that OpenRouter models resolve to OpenRouter API key."""
+        api_key_config = APIKeyConfig(
+            openai=OpenAIConfig(api_key="openai-key"),
+            anthropic=AnthropicConfig(api_key="anthropic-key"),
+            openrouter=OpenRouterConfig(api_key="openrouter-key"),
+        )
+        config = LiteLLMConfig(
+            model="openrouter/anthropic/claude-3.5-sonnet",
+            api_key_config=api_key_config,
+        )
+        client = LiteLLMClient(config)
+
+        # OpenRouter model should resolve to OpenRouter key, not Anthropic
+        assert client._api_key == "openrouter-key"
+
+    def test_openrouter_missing_key_returns_none(self):
+        """Test that OpenRouter model without OpenRouter config returns None."""
+        api_key_config = APIKeyConfig(
+            openai=OpenAIConfig(api_key="openai-key"),
+        )
+        config = LiteLLMConfig(
+            model="openrouter/openai/gpt-4o",
+            api_key_config=api_key_config,
+        )
+        client = LiteLLMClient(config)
+
+        # OpenRouter model but no OpenRouter key configured
+        assert client._api_key is None

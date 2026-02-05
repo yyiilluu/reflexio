@@ -130,8 +130,13 @@ class LiteLLMClient:
         model_to_check = model or self.config.model
         model_lower = model_to_check.lower()
 
+        # OpenRouter
+        if model_lower.startswith("openrouter/"):
+            if self.config.api_key_config.openrouter:
+                return self.config.api_key_config.openrouter.api_key, None, None
+
         # Azure OpenAI
-        if model_lower.startswith("azure/"):
+        elif model_lower.startswith("azure/"):
             if (
                 self.config.api_key_config.openai
                 and self.config.api_key_config.openai.azure_config
@@ -605,9 +610,11 @@ class LiteLLMClient:
             True if the model has temperature restrictions.
         """
         model_lower = model.lower()
+        # Strip provider routing prefixes (e.g., "openrouter/openai/gpt-5-nano" -> "gpt-5-nano")
+        model_name = model_lower.rsplit("/", 1)[-1]
         # Check if model starts with any of the restricted model prefixes
         return any(
-            model_lower.startswith(restricted) or model_lower == restricted
+            model_name.startswith(restricted) or model_name == restricted
             for restricted in self.TEMPERATURE_RESTRICTED_MODELS
         )
 
