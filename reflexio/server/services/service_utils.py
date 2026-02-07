@@ -18,6 +18,23 @@ from reflexio.server.prompt.prompt_manager import PromptManager
 
 logger = logging.getLogger(__name__)
 
+_CYAN = "\033[96m"
+_RESET = "\033[0m"
+
+
+def log_model_response(
+    target_logger: logging.Logger, label: str, response: Any
+) -> None:
+    """
+    Log an LLM model response in bright cyan for terminal visibility.
+
+    Args:
+        target_logger (logging.Logger): The logger instance to use
+        label (str): Descriptive label for the response (e.g. "Profile updates model response")
+        response (Any): The model response to log
+    """
+    target_logger.info("%s%s: %s%s", _CYAN, label, response, _RESET)
+
 
 @dataclass
 class PromptConfig:

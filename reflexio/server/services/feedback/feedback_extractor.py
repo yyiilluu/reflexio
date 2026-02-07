@@ -25,6 +25,7 @@ from reflexio.server.services.service_utils import (
     format_messages_for_logging,
     format_request_groups_to_history_string,
     extract_interactions_from_request_interaction_data_models,
+    log_model_response,
 )
 from reflexio.server.site_var.site_var_manager import SiteVarManager
 
@@ -303,10 +304,7 @@ class FeedbackExtractor:
                 model=self.should_run_model_name,
             )
             logger.info("should run prompt %s", should_generate_feedback_prompt)
-            logger.info(
-                "Should generate feedback response: %s",
-                content,
-            )
+            log_model_response(logger, "Should generate feedback response", content)
             if content and "true" in content.lower():
                 return True
             return False
@@ -390,7 +388,7 @@ class FeedbackExtractor:
                 response_format=StructuredFeedbackContent,
                 parse_structured_output=True,
             )
-            logger.info("Structured response: %s", response)
+            log_model_response(logger, "Feedback structured response", response)
 
             raw_feedback = self._process_structured_response(response)
             if raw_feedback is None:

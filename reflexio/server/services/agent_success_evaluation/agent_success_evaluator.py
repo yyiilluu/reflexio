@@ -27,6 +27,7 @@ from reflexio.server.services.agent_success_evaluation.agent_success_evaluation_
 )
 from reflexio.server.services.service_utils import (
     format_messages_for_logging,
+    log_model_response,
 )
 from reflexio.server.site_var.site_var_manager import SiteVarManager
 
@@ -238,7 +239,9 @@ class AgentSuccessEvaluator:
             )
             return None
 
-        logger.info("Agent success evaluation response: %s", evaluation_response)
+        log_model_response(
+            logger, "Agent success evaluation response", evaluation_response
+        )
 
         if not isinstance(evaluation_response, AgentSuccessEvaluationOutput):
             logger.warning(
@@ -351,8 +354,10 @@ class AgentSuccessEvaluator:
             )
             return None
 
-        logger.info(
-            "Agent success evaluation with comparison response: %s", evaluation_response
+        log_model_response(
+            logger,
+            "Agent success evaluation with comparison response",
+            evaluation_response,
         )
 
         if not isinstance(

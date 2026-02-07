@@ -152,16 +152,15 @@ def get_mem0_context(mem0_config: dict, query: str) -> str:
 
 
 _BEHAVIOR_REMINDER = (
-    "**Note: You have behavior corrections from past interactions at the end of this "
-    "prompt. Before each response, check if any WHEN conditions match and follow the "
-    "required DO/DON'T actions.**\n\n"
+    "**Note: You have behavior memories and corrections from past interactions in this "
+    "prompt. Before each response, check and use any memories or corrections that apply to the current situation.**\n\n"
 )
 
 
 def build_enhanced_prompt(base_system_prompt: str, context: str) -> str:
     """
-    Build the enhanced system prompt by prepending a behavior reminder at the top
-    and appending the full context block at the end.
+    Build the enhanced system prompt by prepending a behavior reminder at the top,
+    followed by the context block, then the base system prompt.
 
     Args:
         base_system_prompt (str): The original agent system prompt
@@ -170,7 +169,7 @@ def build_enhanced_prompt(base_system_prompt: str, context: str) -> str:
     Returns:
         str: The enhanced prompt with reminder at top and context at bottom
     """
-    return _BEHAVIOR_REMINDER + base_system_prompt + context
+    return _BEHAVIOR_REMINDER + context + "\n\n" + base_system_prompt
 
 
 def check_resolution(content: str) -> bool:
@@ -341,7 +340,7 @@ def simulate(
             latest_customer_msg = customer_text
             context = get_mem0_context(mem0_config, latest_customer_msg)
             if context:
-                enhanced_prompt = base_system_prompt + context
+                enhanced_prompt = build_enhanced_prompt(base_system_prompt, context)
                 agent_messages[0]["content"] = enhanced_prompt
                 turn_system_prompt = enhanced_prompt
 
@@ -518,7 +517,7 @@ def simulate_stream(
             latest_customer_msg = customer_text
             context = get_mem0_context(mem0_config, latest_customer_msg)
             if context:
-                enhanced_prompt = base_system_prompt + context
+                enhanced_prompt = build_enhanced_prompt(base_system_prompt, context)
                 agent_messages[0]["content"] = enhanced_prompt
                 turn_system_prompt = enhanced_prompt
 

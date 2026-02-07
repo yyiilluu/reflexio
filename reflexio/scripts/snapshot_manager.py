@@ -235,11 +235,28 @@ def cmd_restore(args: argparse.Namespace) -> int:
         return 1
     elif not all_empty:
         logger.warning(
-            "Tables not empty (--force): %s. Existing data may conflict.",
+            "Tables not empty (--force): %s. Truncating before restore.",
             ", ".join(non_empty),
         )
+        conn = psycopg2.connect(db_url)
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT tablename FROM pg_tables WHERE schemaname = 'public'"
+            )
+            tables = [row[0] for row in cursor.fetchall()]
+            table_list = ", ".join(f'public."{t}"' for t in tables)
+            cursor.execute(f"TRUNCATE {table_list} CASCADE")  # noqa: S608
+            conn.commit()
+            logger.info("Truncated all public tables")
+        except Exception as e:
+            conn.rollback()
+            logger.error("Failed to truncate tables: %s", e)
+            return 1
+        finally:
+            conn.close()
 
-    # 2. pg_restore
+    # 2. Restore data via plain SQL (avoids --disable-triggers permission issues)
     from urllib.parse import urlparse
 
     parsed = urlparse(db_url)
@@ -251,8 +268,38 @@ def cmd_restore(args: argparse.Namespace) -> int:
     env = os.environ.copy()
     env["PGPASSWORD"] = parsed.password or "postgres"
 
-    cmd = [
+    # 2a. Convert custom-format dump to plain SQL
+    logger.info("Converting dump to plain SQL ...")
+    convert_cmd = [
         "pg_restore",
+        "-f",
+        "-",  # output to stdout
+        str(dump_file),
+    ]
+    convert_result = subprocess.run(
+        convert_cmd, env=env, capture_output=True, text=True
+    )
+    if convert_result.returncode != 0 and not convert_result.stdout:
+        logger.error("pg_restore conversion failed:\n%s", convert_result.stderr)
+        return 1
+
+    # 2b. Filter out unsupported SET commands and wrap with session_replication_role
+    #     to bypass foreign-key checks without needing superuser trigger control.
+    lines = convert_result.stdout.splitlines(keepends=True)
+    filtered_sql = "".join(
+        line for line in lines if not line.strip().startswith("SET transaction_timeout")
+    )
+
+    restore_sql = (
+        "SET session_replication_role = 'replica';\n"
+        + filtered_sql
+        + "\nSET session_replication_role = 'origin';\n"
+    )
+
+    # 2c. Execute via psql
+    logger.info("Restoring data via psql ...")
+    psql_cmd = [
+        "psql",
         "-h",
         host,
         "-p",
@@ -261,24 +308,18 @@ def cmd_restore(args: argparse.Namespace) -> int:
         user,
         "-d",
         dbname,
-        "--data-only",
-        "--disable-triggers",
-        "--schema=public",
-        str(dump_file),
+        "-v",
+        "ON_ERROR_STOP=1",
     ]
-
-    logger.info("Running pg_restore ...")
-    result = subprocess.run(cmd, env=env, capture_output=True, text=True)
+    result = subprocess.run(
+        psql_cmd, env=env, input=restore_sql, capture_output=True, text=True
+    )
 
     if result.returncode != 0:
-        # pg_restore returns non-zero for warnings too; check stderr
         stderr = result.stderr.strip()
         if stderr:
-            logger.warning("pg_restore stderr:\n%s", stderr)
-        # Only fail on actual errors (exit code 1 = errors, not just warnings)
-        if result.returncode == 1 and "error" in stderr.lower():
-            logger.error("pg_restore failed with errors")
-            return 1
+            logger.error("psql restore failed:\n%s", stderr)
+        return 1
 
     logger.info("Data restored successfully")
 

@@ -22,6 +22,7 @@ from reflexio_commons.config_schema import (
     FeedbackAggregatorConfig,
 )
 from reflexio.server.llm.litellm_client import LiteLLMClient
+from reflexio.server.services.service_utils import log_model_response
 from reflexio.server.services.feedback.feedback_service_constants import (
     FeedbackServiceConstants,
 )
@@ -615,7 +616,7 @@ class FeedbackAggregator:
                 response_format=FeedbackAggregationOutput,
                 parse_structured_output=True,
             )
-            logger.info("Aggregation structured response: %s", response)
+            log_model_response(logger, "Aggregation structured response", response)
 
             return self._process_aggregation_response(response, cluster_feedbacks)
         except Exception as exc:

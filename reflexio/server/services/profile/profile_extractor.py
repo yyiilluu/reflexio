@@ -36,6 +36,7 @@ from reflexio.server.services.service_utils import (
     format_messages_for_logging,
     format_request_groups_to_history_string,
     extract_interactions_from_request_interaction_data_models,
+    log_model_response,
 )
 from reflexio.server.services.profile.profile_generation_service_utils import (
     ProfileTimeToLive,
@@ -268,7 +269,7 @@ class ProfileExtractor:
                 ],
                 model=self.should_run_model_name,
             )
-            logger.info("Should extract profile response: %s", content)
+            log_model_response(logger, "Should extract profile response", content)
 
             if content and "true" in content.lower():
                 return True
@@ -495,7 +496,7 @@ class ProfileExtractor:
             model=self.default_generation_model_name,
             response_format=ProfileUpdateOutput,
         )
-        logger.info("Profile updates model response: %s", update_response)
+        log_model_response(logger, "Profile updates model response", update_response)
         if not update_response or not isinstance(update_response, ProfileUpdateOutput):
             return {}
 

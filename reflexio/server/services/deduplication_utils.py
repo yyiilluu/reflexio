@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field, ConfigDict
 
 from reflexio.server.api_endpoints.request_context import RequestContext
 from reflexio.server.llm.litellm_client import LiteLLMClient
+from reflexio.server.services.service_utils import log_model_response
 from reflexio.server.site_var.site_var_manager import SiteVarManager
 
 logger = logging.getLogger(__name__)
@@ -194,7 +195,7 @@ class BaseDeduplicator(ABC):
             )
 
             logger.info("Deduplication prompt: %s", prompt)
-            logger.info("Deduplication response: %s", response)
+            log_model_response(logger, "Deduplication response", response)
 
             if isinstance(response, output_schema_class):
                 return response
