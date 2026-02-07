@@ -16,10 +16,13 @@ Key files:
   - **PublishUserInteractionRequest/Response**: Publishing new interactions
   - **DeleteUserProfileRequest/Response**: Profile deletion
   - **DeleteUserInteractionRequest/Response**: Interaction deletion
-  - **InteractionData**: Client-provided interaction data
+  - **InteractionData**: Client-provided interaction data (includes optional `tool_used`)
+  - **ToolUsed**: Tool usage tracking (tool_name, tool_input)
   - **ProfileChangeLog**: History of profile changes
-  - **RawFeedback**: Raw developer feedback from interactions
-  - **Feedback**: Aggregated feedback with status (pending/approved/rejected)
+  - **RawFeedback**: Raw developer feedback from interactions (includes optional `blocking_issue`)
+  - **Feedback**: Aggregated feedback with status (pending/approved/rejected, includes optional `blocking_issue`)
+  - **BlockingIssue**: Capability gap that blocks user request (kind, details)
+  - **BlockingIssueKind**: Enum (`MISSING_TOOL`, `PERMISSION_DENIED`, `EXTERNAL_DEPENDENCY`, `POLICY_RESTRICTION`)
   - **AgentSuccessEvaluationResult**: Agent success evaluation results
   - **RunFeedbackAggregationRequest/Response**: Run feedback aggregation
   - Enums: `UserActionType`, `ProfileTimeToLive`, `FeedbackStatus`
@@ -49,6 +52,7 @@ Key models:
 - **Config**: Root configuration object
   - `storage_config`: Storage backend configuration (Local/S3/Supabase)
   - `agent_context_prompt`: Agent environment description
+  - `tool_can_use`: List of available tools shared across evaluators and feedback extractors (`ToolUseConfig`)
   - `profile_extractor_configs`: List of profile extraction configurations
   - `agent_feedback_configs`: List of feedback extraction configurations
   - `agent_success_configs`: List of success evaluation configurations
@@ -73,6 +77,6 @@ Key models:
 - **AgentSuccessConfig**: Success evaluation configuration
   - `feedback_name`: Unique identifier
   - `success_definition_prompt`: What constitutes success
-  - `tool_can_use`: List of available tools (ToolUseConfig)
-  - `action_space`: List of possible actions
   - `metadata_definition_prompt`: Custom metadata fields
+
+**Note**: `tool_can_use` lives at root `Config` level (shared across success evaluation and feedback extraction), NOT per-`AgentSuccessConfig`.

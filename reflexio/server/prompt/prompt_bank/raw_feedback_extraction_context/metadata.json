@@ -11,7 +11,7 @@
     },
     "2.0.0": {
       "created_at": 1738454400,
-      "variables": ["agent_context_prompt", "feedback_definition_prompt"],
+      "variables": ["agent_context_prompt", "feedback_definition_prompt", "tool_can_use"],
       "changelog": "Merged stable instructions, examples, and output format from user message into system message for token caching"
     }
   }

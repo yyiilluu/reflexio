@@ -30,6 +30,9 @@ DO actions:
 DON'T actions:
 - behavior to avoid 1
 - behavior to avoid 2
+BLOCKED BY issues (optional):
+- [missing_tool] description of missing capability
+- [permission_denied] description of permission issue
 
 ━━━━━━━━━━━━━━━━━━━━━━
 ## Mandatory Deduplication Gate
@@ -53,6 +56,7 @@ To create a valid new policy, you must:
 3. Merge all DON'T actions into a consolidated behavior to avoid
 4. Remove redundant or overlapping actions
 5. Normalize into a minimal enforceable instruction
+6. If all feedbacks in the cluster share a common blocking issue kind, consolidate into one blocking_issue; if mixed or absent, omit it
 
 Note: The WHEN conditions may vary slightly because clustering is based on semantic similarity.
 Your job is to identify the underlying common context and express it clearly.
@@ -82,7 +86,8 @@ Return a JSON object with the following structure:
   "feedback": {{
     "do_action": "consolidated preferred behavior (optional, but at least one of do_action or do_not_action required)",
     "do_not_action": "consolidated mistaken behavior to avoid (optional, but at least one of do_action or do_not_action required)",
-    "when_condition": "consolidated condition when this applies (required)"
+    "when_condition": "consolidated condition when this applies (required)",
+    "blocking_issue": {{ "kind": "missing_tool|permission_denied|external_dependency|policy_restriction", "details": "what capability is missing" }}
   }}
 }}
 
@@ -91,6 +96,7 @@ Rules for the fields:
 - At least one of "do_action" or "do_not_action" is REQUIRED
 - "do_action" describes what the agent SHOULD do (consolidated from all DO actions)
 - "do_not_action" describes what the agent should AVOID (consolidated from all DON'T actions)
+- "blocking_issue" is OPTIONAL — include only when the cluster's feedbacks share a common capability gap. "kind" must be one of: missing_tool, permission_denied, external_dependency, policy_restriction
 
 If NO feedback should be generated (duplicates existing approved feedback), return:
 {{"feedback": null}}
@@ -102,6 +108,8 @@ Examples:
 {{"feedback": {{"do_action": "provide high-level strategy before implementation steps", "do_not_action": null, "when_condition": "users are exploring architecture decisions"}}}}
 
 {{"feedback": null}}
+
+{{"feedback": {{"do_action": "inform the user that file deletion requires admin approval and offer to draft the request", "do_not_action": "attempt to delete files without permission", "when_condition": "user asks to delete shared files", "blocking_issue": {{"kind": "permission_denied", "details": "Agent lacks admin-level file deletion permissions on shared drives"}}}}}}
 
 ━━━━━━━━━━━━━━━━━━━━━━
 ## Existing Approved Feedbacks

@@ -23,6 +23,7 @@ import {
   CheckCircle2,
   GitBranch,
   Trash2,
+  Wrench,
 } from "lucide-react"
 import {
   type UserActionType,
@@ -111,6 +112,12 @@ function InteractionItem({ interaction, onDelete }: InteractionItemProps) {
                   <ActionIcon className="h-3 w-3" />
                   {interaction.user_action}
                 </Badge>
+                {interaction.tool_used && (
+                  <Badge className="text-xs flex items-center gap-1 bg-emerald-100 text-emerald-700 hover:bg-emerald-100">
+                    <Wrench className="h-3 w-3" />
+                    {interaction.tool_used.tool_name}
+                  </Badge>
+                )}
                 {interaction.interacted_image_url && (
                   <Badge variant="outline" className="text-xs flex items-center gap-1 border-slate-200 text-slate-600">
                     <ImageIcon className="h-3 w-3" />
@@ -171,6 +178,20 @@ function InteractionItem({ interaction, onDelete }: InteractionItemProps) {
                   <p className="text-sm text-amber-600 leading-relaxed bg-amber-50 p-2 rounded-lg border border-amber-200">
                     {interaction.shadow_content}
                   </p>
+                </div>
+              )}
+
+              {interaction.tool_used && (
+                <div>
+                  <h4 className="text-xs font-semibold mb-1 text-emerald-700">Tool Used</h4>
+                  <div className="text-sm text-emerald-600 bg-emerald-50 p-2 rounded-lg border border-emerald-200">
+                    <span className="font-medium">{interaction.tool_used.tool_name}</span>
+                    {interaction.tool_used.tool_input && Object.keys(interaction.tool_used.tool_input).length > 0 && (
+                      <pre className="mt-1 text-xs text-emerald-500 overflow-x-auto">
+                        {JSON.stringify(interaction.tool_used.tool_input, null, 2)}
+                      </pre>
+                    )}
+                  </div>
                 </div>
               )}
 

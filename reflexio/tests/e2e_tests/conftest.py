@@ -98,13 +98,12 @@ if user mentions "I don't like the way you talked to me", summarize conversation
             AgentSuccessConfig(
                 evaluation_name="test_agent_success",
                 success_definition_prompt="sales agent is responding to user apporperately",
-                tool_can_use=[
-                    ToolUseConfig(
-                        tool_name="search",
-                        tool_description="Search for information",
-                    )
-                ],
-                action_space=["search", "respond"],
+            )
+        ],
+        tool_can_use=[
+            ToolUseConfig(
+                tool_name="search",
+                tool_description="Search for information",
             )
         ],
     )
@@ -179,13 +178,12 @@ def reflexio_instance_agent_success_only(
             AgentSuccessConfig(
                 evaluation_name="test_agent_success",
                 success_definition_prompt="sales agent is responding to user apporperately",
-                tool_can_use=[
-                    ToolUseConfig(
-                        tool_name="search",
-                        tool_description="Search for information",
-                    )
-                ],
-                action_space=["search", "respond"],
+            )
+        ],
+        tool_can_use=[
+            ToolUseConfig(
+                tool_name="search",
+                tool_description="Search for information",
             )
         ],
     )

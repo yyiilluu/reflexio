@@ -33,7 +33,6 @@ def construct_agent_success_evaluation_messages_from_request_groups(
     agent_context_prompt: str,
     success_definition_prompt: str,
     tool_can_use: str,
-    action_space: str,
     metadata_definition_prompt: Optional[str] = None,
 ) -> list[dict]:
     """
@@ -48,7 +47,6 @@ def construct_agent_success_evaluation_messages_from_request_groups(
         agent_context_prompt: Context about the agent
         success_definition_prompt: Definition of what constitutes agent success
         tool_can_use: Description of tools available to the agent
-        action_space: Description of actions the agent can take
         metadata_definition_prompt: Optional additional metadata definition
 
     Returns:
@@ -62,7 +60,6 @@ def construct_agent_success_evaluation_messages_from_request_groups(
             "agent_context_prompt": agent_context_prompt,
             "success_definition_prompt": success_definition_prompt,
             "tool_can_use": tool_can_use,
-            "action_space": action_space,
             "metadata_definition_prompt": metadata_definition_prompt or "",
             "interactions": format_request_groups_to_history_string(
                 request_interaction_data_models
@@ -143,7 +140,6 @@ def construct_agent_success_evaluation_with_comparison_messages(
     agent_context_prompt: str,
     success_definition_prompt: str,
     tool_can_use: str,
-    action_space: str,
     metadata_definition_prompt: Optional[str] = None,
     interactions_for_images: Optional[list[Interaction]] = None,
 ) -> list[dict]:
@@ -161,7 +157,6 @@ def construct_agent_success_evaluation_with_comparison_messages(
         agent_context_prompt: Context about the agent
         success_definition_prompt: Definition of what constitutes agent success
         tool_can_use: Description of tools available to the agent
-        action_space: Description of actions the agent can take
         metadata_definition_prompt: Optional additional metadata definition
         interactions_for_images: Optional list of interactions for image attachment
 
@@ -176,7 +171,6 @@ def construct_agent_success_evaluation_with_comparison_messages(
             "request_1_interactions": request_1_interactions,
             "request_2_interactions": request_2_interactions,
             "tool_can_use": tool_can_use,
-            "action_space": action_space,
             "metadata_definition_prompt": metadata_definition_prompt or "",
         },
     )

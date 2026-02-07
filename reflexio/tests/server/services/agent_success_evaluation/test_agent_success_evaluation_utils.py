@@ -76,7 +76,6 @@ def test_construct_agent_success_evaluation_messages_with_request_groups():
         agent_context_prompt="Test agent context",
         success_definition_prompt="Evaluate if the agent successfully completed the task",
         tool_can_use="search, calculator",
-        action_space="search, calculate, respond",
         metadata_definition_prompt="Include tool usage statistics",
     )
 
@@ -122,14 +121,11 @@ def test_construct_agent_success_evaluation_messages_with_request_groups():
                     "user: ```click search button```" in content
                 ), f"Expected 'user: ```click search button```' in prompt"
 
-                # Also verify success definition, tools, and action space are in the content
+                # Also verify success definition and tools are in the content
                 assert (
                     "Evaluate if the agent successfully completed the task" in content
                 ), f"Expected success definition in prompt"
                 assert "search, calculator" in content, f"Expected tools in prompt"
-                assert (
-                    "search, calculate, respond" in content
-                ), f"Expected action space in prompt"
 
                 found_interactions = True
                 break
@@ -152,7 +148,6 @@ def test_construct_agent_success_evaluation_messages_with_empty_request_groups()
         agent_context_prompt="Test agent context",
         success_definition_prompt="Evaluate if the agent successfully completed the task",
         tool_can_use="search, calculator",
-        action_space="search, calculate, respond",
         metadata_definition_prompt="Include tool usage statistics",
     )
 

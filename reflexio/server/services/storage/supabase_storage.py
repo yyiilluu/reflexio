@@ -35,6 +35,7 @@ from reflexio_commons.api_schema.service_schemas import (
     Request,
     ProfileChangeLog,
     RawFeedback,
+    BlockingIssue,
     AgentSuccessEvaluationResult,
     FeedbackStatus,
     Status,
@@ -58,6 +59,25 @@ from reflexio_commons.config_schema import (
 from reflexio.server.site_var.site_var_manager import SiteVarManager
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_blocking_issue(data: dict) -> Optional[BlockingIssue]:
+    """Safely parse a blocking_issue JSONB value from the database.
+
+    Args:
+        data: A database row dict that may contain a 'blocking_issue' key
+
+    Returns:
+        BlockingIssue if valid data present, None otherwise
+    """
+    raw = data.get("blocking_issue")
+    if not raw:
+        return None
+    try:
+        return BlockingIssue(**raw)
+    except Exception:
+        logger.warning("Failed to parse blocking_issue from DB row: %s", raw)
+        return None
 
 
 class SupabaseStorage(BaseStorage):
@@ -1094,6 +1114,7 @@ class SupabaseStorage(BaseStorage):
                     do_action=item.get("do_action"),
                     do_not_action=item.get("do_not_action"),
                     when_condition=item.get("when_condition"),
+                    blocking_issue=_parse_blocking_issue(item),
                     source=item.get("source"),
                     status=Status(item["status"]) if item.get("status") else None,
                     embedding=(
@@ -1177,6 +1198,7 @@ class SupabaseStorage(BaseStorage):
                 do_action=item.get("do_action"),
                 do_not_action=item.get("do_not_action"),
                 when_condition=item.get("when_condition"),
+                blocking_issue=_parse_blocking_issue(item),
                 status=Status(item["status"]) if item.get("status") else None,
                 source=item.get("source"),
                 embedding=(
@@ -1261,6 +1283,7 @@ class SupabaseStorage(BaseStorage):
                     do_action=item.get("do_action"),
                     do_not_action=item.get("do_not_action"),
                     when_condition=item.get("when_condition"),
+                    blocking_issue=_parse_blocking_issue(item),
                     feedback_status=item["feedback_status"],
                     agent_version=item["agent_version"],
                     feedback_metadata=item.get("feedback_metadata") or "",
@@ -1344,6 +1367,7 @@ class SupabaseStorage(BaseStorage):
                 do_action=item.get("do_action"),
                 do_not_action=item.get("do_not_action"),
                 when_condition=item.get("when_condition"),
+                blocking_issue=_parse_blocking_issue(item),
                 feedback_status=item["feedback_status"],
                 feedback_metadata=item.get("feedback_metadata") or "",
                 embedding=(
@@ -1487,6 +1511,7 @@ class SupabaseStorage(BaseStorage):
                 do_action=item.get("do_action"),
                 do_not_action=item.get("do_not_action"),
                 when_condition=item.get("when_condition"),
+                blocking_issue=_parse_blocking_issue(item),
                 status=Status(item["status"]) if item.get("status") else None,
                 source=item.get("source"),
                 embedding=(
@@ -1638,6 +1663,7 @@ class SupabaseStorage(BaseStorage):
                 do_action=item.get("do_action"),
                 do_not_action=item.get("do_not_action"),
                 when_condition=item.get("when_condition"),
+                blocking_issue=_parse_blocking_issue(item),
                 feedback_status=item["feedback_status"],
                 feedback_metadata=item["feedback_metadata"] or "",
                 embedding=(

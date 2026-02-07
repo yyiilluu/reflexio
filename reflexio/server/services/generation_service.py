@@ -288,6 +288,7 @@ class GenerationService:
                 interacted_image_url=interaction_data.interacted_image_url,
                 image_encoding=interaction_data.image_encoding,
                 shadow_content=interaction_data.shadow_content,
+                tool_used=interaction_data.tool_used,
             )
             for interaction_data in interaction_data_list
         ]

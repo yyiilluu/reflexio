@@ -1,7 +1,7 @@
 from typing import Any, Optional
 
 from reflexio_commons.api_schema.internal_schema import RequestInteractionDataModel
-from reflexio_commons.api_schema.service_schemas import RawFeedback
+from reflexio_commons.api_schema.service_schemas import RawFeedback, BlockingIssue
 from pydantic import BaseModel, Field, ConfigDict, model_validator
 
 from reflexio.server.services.feedback.feedback_service_constants import (
@@ -45,6 +45,10 @@ class StructuredFeedbackContent(BaseModel):
     when_condition: Optional[str] = Field(
         default=None,
         description="The condition or context when this rule applies",
+    )
+    blocking_issue: Optional[BlockingIssue] = Field(
+        default=None,
+        description="Present only when the agent could not complete the user's request due to a capability limitation",
     )
 
     model_config = ConfigDict(
@@ -133,6 +137,7 @@ def construct_feedback_extraction_messages_from_request_groups(
     agent_context_prompt: str,
     feedback_definition_prompt: str,
     existing_raw_feedbacks: Optional[list[RawFeedback]] = None,
+    tool_can_use: Optional[str] = None,
 ) -> list[dict]:
     """
     Construct LLM messages for feedback extraction from request interaction groups.
@@ -146,6 +151,7 @@ def construct_feedback_extraction_messages_from_request_groups(
         agent_context_prompt: Context about the agent for system message
         feedback_definition_prompt: Definition of what feedback should contain
         existing_raw_feedbacks: Optional list of existing raw feedbacks from past 7 days
+        tool_can_use: Optional formatted string of tools available to the agent
 
     Returns:
         list[dict]: List of messages ready for feedback extraction
@@ -157,6 +163,7 @@ def construct_feedback_extraction_messages_from_request_groups(
         variables={
             "agent_context_prompt": agent_context_prompt,
             "feedback_definition_prompt": feedback_definition_prompt,
+            "tool_can_use": tool_can_use or "",
         },
     )
 

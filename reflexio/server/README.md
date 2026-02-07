@@ -187,7 +187,7 @@ Called by API endpoints via `Reflexio`
 - `extractor_interaction_utils.py`: Per-extractor utilities for stride checking and source filtering
 - `operation_state_utils.py`: Centralized `OperationStateManager` for all `_operation_state` table interactions (progress tracking, concurrency locks, extractor/aggregator bookmarks, simple locks)
 - `deduplication_utils.py`: Base deduplicator class for LLM-based semantic matching (used by ProfileDeduplicator and FeedbackDeduplicator)
-- `service_utils.py`: Utilities (`construct_messages_from_interactions()`, `format_interactions_to_history_string()`, `extract_json_from_string()`)
+- `service_utils.py`: Utilities (`construct_messages_from_interactions()`, `format_interactions_to_history_string()` (prepends tool usage info when `tool_used` is present), `extract_json_from_string()`)
 
 **Operation State Management** (via `OperationStateManager` in `operation_state_utils.py`):
 - Centralized manager for all `_operation_state` table interactions with 6 use cases:
@@ -267,8 +267,10 @@ Key files:
 - `feedback_deduplicator.py`: Merges duplicate feedbacks from multiple extractors using LLM
 
 **Flow**:
-- Interactions → FeedbackExtractor → FeedbackDeduplicator (optional) → RawFeedback → Storage
-- RawFeedback (manual trigger) → FeedbackAggregator → Feedback → Storage
+- Interactions → FeedbackExtractor → FeedbackDeduplicator (optional) → RawFeedback (with optional `blocking_issue`) → Storage
+- RawFeedback (manual trigger) → FeedbackAggregator → Feedback (with optional `blocking_issue`) → Storage
+
+**Tool Analysis**: FeedbackExtractor reads `tool_can_use` from root `Config` and passes it to prompts for tool usage analysis and blocking issue detection.
 
 **Rerun Behavior**: Groups interactions by `user_id` for per-user feedback extraction (fetches all users, then processes each user's interactions together)
 
@@ -311,6 +313,8 @@ Key files:
 
 **Flow**: Interactions → AgentSuccessEvaluator → AgentSuccessEvaluationResult → Storage
 
+**Tool Context**: Reads `tool_can_use` from root `Config` level (shared with feedback extraction).
+
 **Shadow Comparison Mode**: When interactions contain `shadow_content`, evaluator automatically:
 1. Randomly assigns regular/shadow to Request 1/2 (avoids position bias)
 2. Evaluates regular version for success
@@ -324,8 +328,8 @@ Key files:
 | File | Purpose |
 |------|---------|
 | `storage_base.py` | BaseStorage abstract class |
-| `supabase_storage.py` | Production storage with vector embeddings |
-| `supabase_storage_utils.py` | Helpers: data conversion, SQL migration runner |
+| `supabase_storage.py` | Production storage with vector embeddings (parses `blocking_issue` JSONB for feedbacks) |
+| `supabase_storage_utils.py` | Helpers: data conversion (handles `tool_used`/`blocking_issue` JSONB serialization), SQL migration runner |
 | `supabase_migrations.py` | Data migrations that run alongside SQL schema migrations |
 | `local_json_storage.py` | Local file-based for testing |
 

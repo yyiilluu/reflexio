@@ -90,12 +90,13 @@ const formatFeedbackName = (name: string): string => {
   return name.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
-const formatFeedbackContent = (feedback: { feedback_content: string; when_condition?: string | null; do_action?: string | null; do_not_action?: string | null }): string => {
+const formatFeedbackContent = (feedback: { feedback_content: string; when_condition?: string | null; do_action?: string | null; do_not_action?: string | null; blocking_issue?: { kind: string; details: string } | null }): string => {
   if (feedback.when_condition || feedback.do_action || feedback.do_not_action) {
     const lines: string[] = []
     if (feedback.when_condition) lines.push(`When: ${feedback.when_condition}`)
     if (feedback.do_action) lines.push(`Do: ${feedback.do_action}`)
     if (feedback.do_not_action) lines.push(`Don't: ${feedback.do_not_action}`)
+    if (feedback.blocking_issue) lines.push(`Blocked by: [${feedback.blocking_issue.kind}] ${feedback.blocking_issue.details}`)
     return lines.join("\n")
   }
   return feedback.feedback_content

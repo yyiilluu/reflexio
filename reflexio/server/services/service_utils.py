@@ -74,11 +74,20 @@ def format_interactions_to_history_string(interactions: list[Interaction]) -> st
     """
     formatted_interactions = []
     for interaction in interactions:
-        # Add text content
+        # Add text content with tool_used prefix if present
         if interaction.content:
-            formatted_interactions.append(
-                f"{interaction.role}: ```{interaction.content}```"
-            )
+            if interaction.tool_used:
+                tool_input_str = json.dumps(interaction.tool_used.tool_input)
+                tool_prefix = (
+                    f"[used tool: {interaction.tool_used.tool_name}({tool_input_str})] "
+                )
+                formatted_interactions.append(
+                    f"{interaction.role}: ```{tool_prefix}{interaction.content}```"
+                )
+            else:
+                formatted_interactions.append(
+                    f"{interaction.role}: ```{interaction.content}```"
+                )
 
         # Add user action
         if interaction.user_action != UserActionType.NONE:

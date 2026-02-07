@@ -23,6 +23,8 @@ from reflexio_commons.api_schema.service_schemas import (
     DeleteUserInteractionRequest,
     DeleteUserInteractionResponse,
     RawFeedback,
+    BlockingIssue,
+    BlockingIssueKind,
     AddRawFeedbackRequest,
     AddRawFeedbackResponse,
     RerunProfileGenerationRequest,
@@ -31,6 +33,7 @@ from reflexio_commons.api_schema.service_schemas import (
     RerunFeedbackGenerationResponse,
     Status,
     FeedbackStatus,
+    ToolUsed,
 )
 from reflexio_commons.api_schema.retriever_schema import (
     SearchInteractionRequest,
@@ -69,6 +72,8 @@ __all__ = [
     "DeleteUserInteractionRequest",
     "DeleteUserInteractionResponse",
     "RawFeedback",
+    "BlockingIssue",
+    "BlockingIssueKind",
     "AddRawFeedbackRequest",
     "AddRawFeedbackResponse",
     "RerunProfileGenerationRequest",
@@ -91,4 +96,5 @@ __all__ = [
     "Config",
     "Status",
     "FeedbackStatus",
+    "ToolUsed",
 ]

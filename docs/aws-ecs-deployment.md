@@ -827,7 +827,7 @@ curl -I https://$DOMAIN_NAME/docs
 ## Updating the Application
 
 ```bash
-cd /Users/yilu/repos/user_profiler
+cd /Users/yilu/repos/reflexio
 
 # Build and push
 aws ecr get-login-password --region $AWS_REGION | \

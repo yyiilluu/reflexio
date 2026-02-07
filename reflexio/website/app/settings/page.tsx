@@ -80,8 +80,6 @@ interface AgentSuccessConfig {
   id: string
   evaluation_name: string
   success_definition_prompt: string
-  tool_can_use?: ToolUseConfig[]
-  action_space?: string[]
   metadata_definition_prompt?: string
   sampling_rate?: number
   extraction_window_size_override?: number
@@ -125,6 +123,7 @@ interface LLMConfig {
 interface Config {
   storage_config: StorageConfig
   agent_context_prompt?: string
+  tool_can_use?: ToolUseConfig[]
   profile_extractor_configs: ProfileExtractorConfig[]
   agent_feedback_configs: AgentFeedbackConfig[]
   agent_success_configs: AgentSuccessConfig[]
@@ -160,8 +159,6 @@ interface BackendAgentFeedbackConfig {
 interface BackendAgentSuccessConfig {
   evaluation_name: string
   success_definition_prompt: string
-  tool_can_use?: ToolUseConfig[]
-  action_space?: string[]
   metadata_definition_prompt?: string
   sampling_rate?: number
   extraction_window_size_override?: number
@@ -171,6 +168,7 @@ interface BackendAgentSuccessConfig {
 interface BackendConfig {
   storage_config: StorageConfig
   agent_context_prompt?: string
+  tool_can_use?: ToolUseConfig[]
   profile_extractor_configs?: BackendProfileExtractorConfig[]
   agent_feedback_configs?: BackendAgentFeedbackConfig[]
   agent_success_configs?: BackendAgentSuccessConfig[]
@@ -224,6 +222,11 @@ const configsAreEqual = (config1: Config, config2: Config): boolean => {
     return false
   }
 
+  // Compare tool_can_use
+  if (JSON.stringify(config1.tool_can_use || []) !== JSON.stringify(config2.tool_can_use || [])) {
+    return false
+  }
+
   // Compare extraction window settings
   if (config1.extraction_window_size !== config2.extraction_window_size ||
       config1.extraction_window_stride !== config2.extraction_window_stride) {
@@ -269,6 +272,7 @@ const backendToFrontendConfig = (backendConfig: BackendConfig): Config => {
   return {
     storage_config: inferStorageConfig(backendConfig.storage_config),
     agent_context_prompt: backendConfig.agent_context_prompt,
+    tool_can_use: backendConfig.tool_can_use,
     profile_extractor_configs: (backendConfig.profile_extractor_configs || []).map(config => ({
       id: generateId(),
       ...config,
@@ -295,6 +299,7 @@ const frontendToBackendConfig = (config: Config): BackendConfig => {
   return {
     storage_config: storageConfigWithoutType as any,
     agent_context_prompt: config.agent_context_prompt,
+    tool_can_use: config.tool_can_use,
     profile_extractor_configs: config.profile_extractor_configs.map(({ id, ...rest }) => rest),
     agent_feedback_configs: config.agent_feedback_configs.map(({ id, ...rest }) => rest),
     agent_success_configs: config.agent_success_configs.map(({ id, ...rest }) => rest),
@@ -626,8 +631,6 @@ export default function SettingsPage() {
           id: generateId(),
           evaluation_name: "",
           success_definition_prompt: "",
-          tool_can_use: [],
-          action_space: [],
         },
       ],
     })
@@ -649,48 +652,28 @@ export default function SettingsPage() {
     })
   }
 
-  const addToolToSuccess = (successId: string) => {
-    const successConfig = config.agent_success_configs.find(asc => asc.id === successId)
-    if (successConfig) {
-      updateAgentSuccess(successId, {
-        tool_can_use: [...(successConfig.tool_can_use || []), { tool_name: "", tool_description: "" }],
-      })
-    }
+  // Root-level tool management (shared across success evaluation and feedback extraction)
+  const addTool = () => {
+    setConfig({
+      ...config,
+      tool_can_use: [...(config.tool_can_use || []), { tool_name: "", tool_description: "" }],
+    })
   }
 
-  const updateToolInSuccess = (successId: string, toolIndex: number, updates: Partial<ToolUseConfig>) => {
-    const successConfig = config.agent_success_configs.find(asc => asc.id === successId)
-    if (successConfig && successConfig.tool_can_use) {
-      const updatedTools = successConfig.tool_can_use.map((tool, idx) =>
+  const updateTool = (toolIndex: number, updates: Partial<ToolUseConfig>) => {
+    if (config.tool_can_use) {
+      const updatedTools = config.tool_can_use.map((tool, idx) =>
         idx === toolIndex ? { ...tool, ...updates } : tool
       )
-      updateAgentSuccess(successId, { tool_can_use: updatedTools })
+      setConfig({ ...config, tool_can_use: updatedTools })
     }
   }
 
-  const removeToolFromSuccess = (successId: string, toolIndex: number) => {
-    const successConfig = config.agent_success_configs.find(asc => asc.id === successId)
-    if (successConfig && successConfig.tool_can_use) {
-      updateAgentSuccess(successId, {
-        tool_can_use: successConfig.tool_can_use.filter((_, idx) => idx !== toolIndex),
-      })
-    }
-  }
-
-  const addActionToSuccess = (successId: string, action: string) => {
-    const successConfig = config.agent_success_configs.find(asc => asc.id === successId)
-    if (successConfig) {
-      updateAgentSuccess(successId, {
-        action_space: [...(successConfig.action_space || []), action],
-      })
-    }
-  }
-
-  const removeActionFromSuccess = (successId: string, actionIndex: number) => {
-    const successConfig = config.agent_success_configs.find(asc => asc.id === successId)
-    if (successConfig && successConfig.action_space) {
-      updateAgentSuccess(successId, {
-        action_space: successConfig.action_space.filter((_, idx) => idx !== actionIndex),
+  const removeTool = (toolIndex: number) => {
+    if (config.tool_can_use) {
+      setConfig({
+        ...config,
+        tool_can_use: config.tool_can_use.filter((_, idx) => idx !== toolIndex),
       })
     }
   }
@@ -935,8 +918,55 @@ export default function SettingsPage() {
                     rows={8}
                   />
                   <p className="text-xs text-slate-500 mt-2">
-                    Define the agent's working environment, available tools, and action space
+                    Define the agent's working environment and context
                   </p>
+                </div>
+
+                {/* Available Tools */}
+                <div className="mt-6">
+                  <div className="flex items-center justify-between mb-3">
+                    <label className="text-sm font-medium text-slate-700">Available Tools</label>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => addTool()}
+                      className="h-8 text-sm"
+                    >
+                      <Plus className="h-4 w-4 mr-1" />
+                      Add Tool
+                    </Button>
+                  </div>
+                  <p className="text-xs text-slate-500 mb-3">
+                    Define tools the agent can use. These are shared across success evaluation and feedback extraction.
+                  </p>
+                  <div className="space-y-3">
+                    {config.tool_can_use?.map((tool, toolIndex) => (
+                      <div key={toolIndex} className="flex gap-3 items-center p-3 border border-slate-200 rounded-lg bg-slate-50">
+                        <div className="flex-1 grid grid-cols-2 gap-3">
+                          <Input
+                            value={tool.tool_name}
+                            onChange={(e) => updateTool(toolIndex, { tool_name: e.target.value })}
+                            placeholder="Tool name"
+                            className="h-10 text-sm"
+                          />
+                          <Input
+                            value={tool.tool_description}
+                            onChange={(e) => updateTool(toolIndex, { tool_description: e.target.value })}
+                            placeholder="Description"
+                            className="h-10 text-sm"
+                          />
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => removeTool(toolIndex)}
+                          className="h-8 w-8 p-0"
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -1756,94 +1786,6 @@ export default function SettingsPage() {
                         placeholder="Metadata structure..."
                         rows={5}
                       />
-                    </div>
-
-                    {/* Tools */}
-                    <div>
-                      <div className="flex items-center justify-between mb-3">
-                        <label className="text-sm font-medium">Available Tools</label>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => addToolToSuccess(success.id)}
-                          className="h-8 text-sm"
-                        >
-                          <Plus className="h-4 w-4 mr-1" />
-                          Add
-                        </Button>
-                      </div>
-                      <div className="space-y-3">
-                        {success.tool_can_use?.map((tool, toolIndex) => (
-                          <div key={toolIndex} className="flex gap-3 items-center p-3 border rounded bg-background/50">
-                            <div className="flex-1 grid grid-cols-2 gap-3">
-                              <Input
-                                value={tool.tool_name}
-                                onChange={(e) => updateToolInSuccess(success.id, toolIndex, { tool_name: e.target.value })}
-                                placeholder="Tool name"
-                                className="h-10 text-sm"
-                              />
-                              <Input
-                                value={tool.tool_description}
-                                onChange={(e) => updateToolInSuccess(success.id, toolIndex, { tool_description: e.target.value })}
-                                placeholder="Description"
-                                className="h-10 text-sm"
-                              />
-                            </div>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => removeToolFromSuccess(success.id, toolIndex)}
-                              className="h-8 w-8 p-0"
-                            >
-                              <Trash2 className="h-4 w-4 text-destructive" />
-                            </Button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Action Space */}
-                    <div>
-                      <label className="text-sm font-medium mb-3 block">Action Space</label>
-                      <div className="flex gap-3 mb-3">
-                        <Input
-                          placeholder="Add action"
-                          className="h-10 text-sm"
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" && e.currentTarget.value.trim()) {
-                              addActionToSuccess(success.id, e.currentTarget.value.trim())
-                              e.currentTarget.value = ""
-                            }
-                          }}
-                        />
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={(e) => {
-                            const input = e.currentTarget.previousElementSibling as HTMLInputElement
-                            if (input && input.value.trim()) {
-                              addActionToSuccess(success.id, input.value.trim())
-                              input.value = ""
-                            }
-                          }}
-                          className="h-10 w-10 p-0"
-                        >
-                          <Plus className="h-4 w-4" />
-                        </Button>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        {success.action_space?.map((action, actionIndex) => (
-                          <Badge key={actionIndex} variant="secondary" className="text-sm h-7 px-3">
-                            {action}
-                            <button
-                              onClick={() => removeActionFromSuccess(success.id, actionIndex)}
-                              className="ml-2 hover:text-destructive"
-                            >
-                              ×
-                            </button>
-                          </Badge>
-                        ))}
-                      </div>
                     </div>
 
                     {/* Extraction Window Overrides */}

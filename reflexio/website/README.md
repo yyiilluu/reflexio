@@ -17,10 +17,10 @@ Description: Next.js frontend for viewing user profiles and interactions
 
 1. **Authentication** - User login and registration (skipped in self-host mode)
 2. **Profile viewing** - Display extracted user profiles with search
-3. **Interaction browsing** - View conversation history and context
-4. **Feedback management** - View and manage user feedback
+3. **Interaction browsing** - View conversation history, tool usage (tool name + inputs), and context
+4. **Feedback management** - View and manage user feedback (displays blocking issues when present)
 5. **Evaluation monitoring** - Track agent success metrics and analyze failures
-6. **Settings configuration** - Manage application settings and configurations
+6. **Settings configuration** - Manage application settings including root-level tool configuration (`tool_can_use`)
 7. **API integration** - Sync client communicates with FastAPI backend
 
 ## Components

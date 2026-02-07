@@ -182,6 +182,42 @@ publish_interaction_sync(request_id="req_1", user_id="user_1", content="Hello")
 # Continue with other work without waiting
 ```
 
+### snapshot_manager.py
+
+Local Supabase snapshot manager — save and restore database data across `supabase db reset` cycles.
+
+**Purpose**: Snapshots all public-schema table data so you can restore it after a `supabase db reset`, even if new migrations have been added since the snapshot. Automatically runs any new data migrations on restore.
+
+**Subcommands**:
+- `create`: Dump table data via `pg_dump` + record applied migration versions
+- `restore`: Load data via `pg_restore` + run data migrations added since the snapshot
+- `list`: Show available snapshots with metadata
+
+**Usage**:
+
+```bash
+# Create a snapshot before resetting
+python -m reflexio.scripts.snapshot_manager create --name before_reset
+
+# Reset the DB (re-applies all schema migrations, empties tables)
+supabase db reset
+
+# Restore the snapshot
+python -m reflexio.scripts.snapshot_manager restore reflexio/data/snapshots/before_reset_20260207_120000
+
+# List available snapshots
+python -m reflexio.scripts.snapshot_manager list
+```
+
+**Options**:
+- `create --name NAME`: Name prefix for the snapshot directory (default: `snapshot`)
+- `restore --force`: Skip the empty-tables safety check
+- `--db-url URL`: Override the default local PostgreSQL URL
+
+**Snapshot contents** (saved to `reflexio/data/snapshots/{name}_{timestamp}/`):
+- `data.dump` — pg_dump custom-format file (public schema data only)
+- `metadata.json` — snapshot name, timestamp, and list of applied migrations at snapshot time
+
 ### play.py
 
 Playground script for testing and experimentation with Reflexio features.
@@ -199,6 +235,7 @@ scripts/
 ├── add_user_profiles_script.py        # Profile management
 ├── async_publish_interaction_script.py # Async publishing example
 ├── simple_sync_publish.py             # Sync-to-async publishing example
+├── snapshot_manager.py                 # Local Supabase snapshot & restore
 ├── play.py                            # Testing playground
 ├── db_operations/                     # Database operation scripts
 └── super_admin/                       # Super admin utilities

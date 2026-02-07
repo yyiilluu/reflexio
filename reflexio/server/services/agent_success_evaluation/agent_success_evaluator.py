@@ -166,39 +166,34 @@ class AgentSuccessEvaluator:
         """
         interactions = request_interaction.interactions
 
-        # Format tool_can_use and action_space as strings
+        # Read tool_can_use from root config
+        root_config = self.request_context.configurator.get_config()
         tool_can_use_str = ""
-        if self.config.tool_can_use:
+        if root_config and root_config.tool_can_use:
             tool_can_use_str = "\n".join(
                 [
                     f"{tool.tool_name}: {tool.tool_description}"
-                    for tool in self.config.tool_can_use
+                    for tool in root_config.tool_can_use
                 ]
             )
-        action_space_str = (
-            ", ".join(self.config.action_space) if self.config.action_space else ""
-        )
 
         # Check if any interaction has shadow content
         if has_shadow_content(interactions):
             return self._evaluate_with_shadow_comparison(
                 request_interaction,
                 tool_can_use_str,
-                action_space_str,
             )
 
         # No shadow content - use existing evaluation prompt
         return self._evaluate_regular(
             request_interaction,
             tool_can_use_str,
-            action_space_str,
         )
 
     def _evaluate_regular(
         self,
         request_interaction: RequestInteractionDataModel,
         tool_can_use_str: str,
-        action_space_str: str,
     ) -> Optional[AgentSuccessEvaluationResult]:
         """
         Evaluate agent success without shadow comparison (original logic).
@@ -206,7 +201,6 @@ class AgentSuccessEvaluator:
         Args:
             request_interaction: RequestInteractionDataModel containing the request and its interactions
             tool_can_use_str: Formatted string of available tools
-            action_space_str: Formatted string of action space
 
         Returns:
             Optional[AgentSuccessEvaluationResult]: Evaluation result or None if evaluation fails
@@ -222,7 +216,6 @@ class AgentSuccessEvaluator:
                 else ""
             ),
             tool_can_use=tool_can_use_str,
-            action_space=action_space_str,
             metadata_definition_prompt=(
                 self.config.metadata_definition_prompt.strip()
                 if self.config.metadata_definition_prompt
@@ -272,7 +265,6 @@ class AgentSuccessEvaluator:
         self,
         request_interaction: RequestInteractionDataModel,
         tool_can_use_str: str,
-        action_space_str: str,
     ) -> Optional[AgentSuccessEvaluationResult]:
         """
         Evaluate agent success with shadow content comparison.
@@ -287,7 +279,6 @@ class AgentSuccessEvaluator:
         Args:
             request_interaction: RequestInteractionDataModel containing the request and its interactions
             tool_can_use_str: Formatted string of available tools
-            action_space_str: Formatted string of action space
 
         Returns:
             Optional[AgentSuccessEvaluationResult]: Evaluation result with regular_vs_shadow comparison
@@ -330,7 +321,6 @@ class AgentSuccessEvaluator:
                 else ""
             ),
             tool_can_use=tool_can_use_str,
-            action_space=action_space_str,
             metadata_definition_prompt=(
                 self.config.metadata_definition_prompt.strip()
                 if self.config.metadata_definition_prompt

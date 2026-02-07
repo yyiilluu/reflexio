@@ -7,7 +7,7 @@
   "versions": {
     "1.0.0": {
       "created_at": 1757895599,
-      "variables": ["agent_context_prompt", "success_definition_prompt", "tool_can_use", "action_space", "metadata_definition_prompt", "interactions"]
+      "variables": ["agent_context_prompt", "success_definition_prompt", "tool_can_use", "metadata_definition_prompt", "interactions"]
     }
   }
 }

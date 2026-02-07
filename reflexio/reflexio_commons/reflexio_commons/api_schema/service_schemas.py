@@ -61,9 +61,30 @@ class RegularVsShadow(str, enum.Enum):
     TIED = "tied"
 
 
+class BlockingIssueKind(str, enum.Enum):
+    MISSING_TOOL = "missing_tool"
+    PERMISSION_DENIED = "permission_denied"
+    EXTERNAL_DEPENDENCY = "external_dependency"
+    POLICY_RESTRICTION = "policy_restriction"
+
+
 # ===============================
 # Data Models
 # ===============================
+
+
+class BlockingIssue(BaseModel):
+    kind: BlockingIssueKind
+    details: str = Field(
+        description="What capability is missing and why it blocks the request"
+    )
+
+
+class ToolUsed(BaseModel):
+    tool_name: str
+    tool_input: dict = Field(default_factory=dict)  # dict of param name -> value
+
+
 # information about the user interaction sent by the client
 class Interaction(BaseModel):
     interaction_id: int = 0  # 0 = placeholder for DB auto-increment
@@ -79,6 +100,7 @@ class Interaction(BaseModel):
     interacted_image_url: str = ""
     image_encoding: str = ""  # base64 encoded image
     shadow_content: str = ""
+    tool_used: Optional[ToolUsed] = None
     embedding: list[float] = []
 
 
@@ -136,6 +158,9 @@ class RawFeedback(BaseModel):
     source: Optional[
         str
     ] = None  # source of the interaction that generated this feedback
+    blocking_issue: Optional[
+        BlockingIssue
+    ] = None  # Root cause when agent couldn't complete action
     indexed_content: Optional[
         str
     ] = None  # Content used for embedding/indexing (extracted from feedback_content)
@@ -170,6 +195,9 @@ class Feedback(BaseModel):
     ] = None  # What the agent should avoid (mistaken behavior)
     when_condition: Optional[str] = None  # The condition/context when this applies
 
+    blocking_issue: Optional[
+        BlockingIssue
+    ] = None  # Root cause when agent couldn't complete action
     feedback_status: FeedbackStatus = FeedbackStatus.PENDING
     feedback_metadata: str = ""
     embedding: list[float] = []
@@ -281,6 +309,7 @@ class InteractionData(BaseModel):
     user_action_description: str = ""
     interacted_image_url: str = ""
     image_encoding: str = ""  # base64 encoded image
+    tool_used: Optional[ToolUsed] = None
 
 
 # publish user interaction request

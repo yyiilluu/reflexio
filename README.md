@@ -117,3 +117,6 @@ cd reflexio/reflexio_client && poetry build && poetry publish
 **Prompts**:
 - **NEVER hardcode prompts**
 - **ALWAYS use** `request_context.prompt_manager.render_prompt(prompt_id, variables)`
+
+**Config**:
+- **`tool_can_use` lives at root `Config` level** - Shared across success evaluation and feedback extraction (NOT per-`AgentSuccessConfig`)

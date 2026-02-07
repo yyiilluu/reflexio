@@ -207,6 +207,18 @@ class FeedbackAggregator:
             for action in do_not_actions:
                 lines.append(f"- {action}")
 
+        # Collect blocking issues from cluster feedbacks
+        blocking_issues = []
+        for fb in cluster_feedbacks:
+            if fb.blocking_issue:
+                blocking_issues.append(
+                    f"[{fb.blocking_issue.kind.value}] {fb.blocking_issue.details}"
+                )
+        if blocking_issues:
+            lines.append("BLOCKED BY issues:")
+            for issue in blocking_issues:
+                lines.append(f"- {issue}")
+
         return "\n".join(lines)
 
     # ===============================
@@ -644,6 +656,7 @@ class FeedbackAggregator:
             do_action=structured.do_action,
             do_not_action=structured.do_not_action,
             when_condition=structured.when_condition,
+            blocking_issue=structured.blocking_issue,
             feedback_status=FeedbackStatus.PENDING,
             feedback_metadata="",
         )
@@ -677,6 +690,12 @@ class FeedbackAggregator:
         # Add Don't if present
         if structured.do_not_action:
             lines.append(f'Don\'t: "{structured.do_not_action}"')
+
+        # Add Blocked by if present
+        if structured.blocking_issue:
+            lines.append(
+                f"Blocked by: [{structured.blocking_issue.kind.value}] {structured.blocking_issue.details}"
+            )
 
         return "\n".join(lines)
 

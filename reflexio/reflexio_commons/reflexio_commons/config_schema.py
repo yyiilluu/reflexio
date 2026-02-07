@@ -132,9 +132,6 @@ class ToolUseConfig(BaseModel):
 class AgentSuccessConfig(BaseModel):
     evaluation_name: str
     success_definition_prompt: str
-    tool_can_use: Optional[list[ToolUseConfig]] = None
-    # action agent can take
-    action_space: Optional[list[str]] = None
     metadata_definition_prompt: Optional[str] = None
     sampling_rate: float = 1.0  # percentage of batch of interactions (defined by extraction_window_size and extraction_window_stride) to be sampled for success evaluation
     extraction_window_size_override: Optional[
@@ -168,6 +165,8 @@ class Config(BaseModel):
     storage_config_test: Optional[StorageConfigTest] = StorageConfigTest.UNKNOWN
     # define agent working environment, tool can use and action space
     agent_context_prompt: Optional[str] = None
+    # tools agent can use (shared across success evaluation and feedback extraction)
+    tool_can_use: Optional[list[ToolUseConfig]] = None
     # user level memory
     profile_extractor_configs: Optional[list[ProfileExtractorConfig]] = None
     # agent level feedback

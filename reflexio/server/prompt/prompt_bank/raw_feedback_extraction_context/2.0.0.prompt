@@ -12,6 +12,19 @@ You are NOT extracting:
 You ARE extracting:
 * **Behavioral Policies:** "When user intent is X, always do Y."
 * **Correction Rules:** "When user encounters problem Z, avoid approach A."
+* **Tool Usage Policies:**
+  - Tool selection: "When user intent is X, use tool Y instead of tool Z."
+  - Tool input optimization: "When using tool Y for intent X, set parameter P to value V."
+
+[Available Tools]
+{tool_can_use}
+
+[Tool Usage Analysis]
+Tool calls in the conversation appear as `[used tool: tool_name({{"param": "value"}})]` prefixes on agent messages. Analyze them for these patterns:
+
+1. **Wrong tool selected** — The agent used tool X when tool Y from the available tools list was more appropriate for the user's intent.
+2. **Suboptimal tool inputs** — The agent used the correct tool but with wrong, vague, or incomplete parameters, leading to poor or irrelevant results.
+3. **Tool retry patterns** — The agent retried the same tool with different inputs, or switched to a different tool after getting inadequate results. The final successful call reveals what should have been done first — extract this as feedback.
 
 ━━━━━━━━━━━━━━━━━━━━━━
 ## What Counts as Feedback (Strict)
@@ -36,6 +49,8 @@ Valid signals include:
 * User redirecting the agent to a different mode or level of detail
 * User expressing dissatisfaction with how the agent behaved
 * User clarifying expectations that contradict the agent's behavior
+* Agent retrying a tool call with different inputs after getting poor or irrelevant results (self-correction)
+* Agent switching from one tool to another within the same task after inadequate results
 
 You MUST identify the triggering agent behavior
 (assumption made, default chosen, constraint ignored, or question not asked).
@@ -59,13 +74,38 @@ A valid `when_condition` must act as a **Skill Trigger**.
 5. Define the "SOP Action" (`do/do_not`): What is the new policy?
 
 ━━━━━━━━━━━━━━━━━━━━━━
+## Blocking Issue Detection
+
+When the agent could not complete the user's request because a capability was missing, populate `blocking_issue` to capture the root cause separately from the corrective action.
+
+Populate `blocking_issue` when:
+- The agent tried to use a tool that does not exist in its toolset
+- The agent was denied permission to perform an action
+- An external service or dependency was unavailable
+- A policy or configuration prevented the agent from acting
+
+Key principle: **Separate diagnosis from prescription.** The `blocking_issue` captures WHY the agent was blocked. The `do_action` must still be an executable workaround the agent CAN do (e.g., inform the user, suggest alternatives), NOT the missing capability itself.
+
+The 4 `kind` values:
+- `missing_tool` — A tool the agent needs does not exist in its current toolset
+- `permission_denied` — The agent lacks authorization to perform the required action
+- `external_dependency` — An external service, API, or resource is unavailable
+- `policy_restriction` — A policy or configuration rule prevents the action
+
+━━━━━━━━━━━━━━━━━━━━━━
 ## Output Format (Strict JSON)
 
 {{
     "do_action": "The new Standard Operating Procedure (SOP) to follow in less than 20 words",
     "do_not_action": "The specific behavior or assumption to avoid",
-    "when_condition": "The User Intent or Problem Context that triggers this SOP."
+    "when_condition": "The User Intent or Problem Context that triggers this SOP.",
+    "blocking_issue": {{
+        "kind": "missing_tool | permission_denied | external_dependency | policy_restriction",
+        "details": "What capability is missing and why it blocks the request"
+    }}
 }}
+
+Note: `"blocking_issue"` is OPTIONAL — include ONLY when the agent could not complete the user's request due to a missing capability or external constraint. When present, `"do_action"` must still be an executable workaround (e.g., inform the user, suggest alternatives), NOT the missing capability itself.
 
 If no valid feedback exists, return:
 {{"feedback": null}}
@@ -89,6 +129,30 @@ If no valid feedback exists, return:
   "do_action": "Detect or ask for the project's package manager preference.",
   "do_not_action": "Assume `pip` is the default package manager.",
   "when_condition": "User asks for package installation commands."
+}}
+
+**Example 3 (Tool Input Optimization via Retry Pattern):**
+* **Agent:** `[used tool: search_docs({{"query": "error"}})]` → Returns irrelevant results
+* **Agent:** `[used tool: search_docs({{"query": "TypeError in async handler", "filter": "error_logs"}})]` → Returns relevant results
+* **Output:**
+{{
+  "do_action": "Use specific error messages and relevant filters as search parameters.",
+  "do_not_action": "Use generic single-word queries when searching documentation.",
+  "when_condition": "User asks agent to find information about a specific error or issue."
+}}
+
+**Example 4 (Blocking Issue — Missing Tool):**
+* **User:** "Upload this CSV file to the database."
+* **Agent:** Attempts to find a file upload tool but none exists. Says "I've uploaded the file" or tries to fabricate functionality.
+* **Output:**
+{{
+  "do_action": "Inform the user that file upload is not available and suggest copy-pasting the content instead.",
+  "do_not_action": "Claim to have uploaded a file or attempt actions with non-existent tools.",
+  "when_condition": "User requests file upload but no file upload tool is available.",
+  "blocking_issue": {{
+    "kind": "missing_tool",
+    "details": "No file upload tool available in the current toolset"
+  }}
 }}
 
 ━━━━━━━━━━━━━━━━━━━━━━

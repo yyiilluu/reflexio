@@ -32,9 +32,6 @@ Determine which request better satisfies the success definition and whether the 
 [Tools]
 {tool_can_use}
 
-[Action space]
-{action_space}
-
 [Metadata Definition]
 {metadata_definition_prompt}
 

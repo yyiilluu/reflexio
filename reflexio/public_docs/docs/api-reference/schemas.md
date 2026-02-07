@@ -45,6 +45,15 @@ Represents the approval status of feedback.
 - `APPROVED`: Feedback has been approved
 - `REJECTED`: Feedback has been rejected
 
+### BlockingIssueKind
+
+Represents the type of capability gap that prevented the agent from completing a request.
+
+- `MISSING_TOOL`: Tool doesn't exist in the agent's toolset
+- `PERMISSION_DENIED`: Agent lacks authorization to perform the action
+- `EXTERNAL_DEPENDENCY`: External service is unavailable
+- `POLICY_RESTRICTION`: Policy prevents the action
+
 ### Status
 
 Represents the processing status for profiles and feedbacks.
@@ -64,6 +73,24 @@ Represents the status of long-running operations.
 
 ## Models
 
+### BlockingIssue
+
+Represents a capability gap that blocked the agent from completing a user request.
+
+| Field | Type | Description | Default |
+|-------|------|-------------|---------|
+| `kind` | BlockingIssueKind | Type of blocking issue | Required |
+| `details` | string | What capability is missing and why it blocks the request | Required |
+
+### ToolUsed
+
+Tracks which tool the agent used during an interaction.
+
+| Field | Type | Description | Default |
+|-------|------|-------------|---------|
+| `tool_name` | string | Name of the tool used | Required |
+| `tool_input` | object | Parameter name to value mapping | Empty object |
+
 ### Interaction
 
 Represents information about a user interaction stored in the system.
@@ -81,6 +108,7 @@ Represents information about a user interaction stored in the system.
 | `user_action_description` | string | Description of the user action | Empty string |
 | `interacted_image_url` | string | URL of any associated image | Empty string |
 | `image_encoding` | string | Base64 encoded image data | Empty string |
+| `tool_used` | ToolUsed | Tool used during this interaction | None |
 | `embedding` | array[float] | Vector embedding of the interaction | Empty array |
 
 ### Request
@@ -146,6 +174,7 @@ Model for user-provided interaction information (also called InteractionRequest)
 | `user_action_description` | string | Description of the user action | Empty string |
 | `interacted_image_url` | string | URL of any associated image | Empty string |
 | `image_encoding` | string | Base64 encoded image data | Empty string |
+| `tool_used` | ToolUsed | Tool used during this interaction | None |
 
 ### PublishUserInteractionRequest
 
@@ -376,6 +405,7 @@ Represents raw feedback generated from user interactions.
 | `do_not_action` | string | The mistaken behavior the agent should avoid (structured feedback v1.2.0+) | None |
 | `when_condition` | string | The condition/context when this rule applies (structured feedback v1.2.0+) | None |
 | `source` | string | Source of the interaction that generated this feedback | None |
+| `blocking_issue` | BlockingIssue | Root cause when agent couldn't complete action | None |
 | `indexed_content` | string | Content used for embedding/indexing (extracted from feedback_content) | None |
 | `status` | Status | Processing status (None=current, PENDING=from rerun, ARCHIVED=old) | None |
 | `embedding` | array[float] | Vector embedding of the feedback | Empty array |
@@ -394,6 +424,7 @@ Represents aggregated feedback consolidated from multiple raw feedbacks.
 | `do_action` | string | The preferred behavior the agent should adopt (structured feedback v1.2.0+) | None |
 | `do_not_action` | string | The mistaken behavior the agent should avoid (structured feedback v1.2.0+) | None |
 | `when_condition` | string | The condition/context when this rule applies (structured feedback v1.2.0+) | None |
+| `blocking_issue` | BlockingIssue | Root cause when agent couldn't complete action | None |
 | `feedback_status` | FeedbackStatus | Approval status (PENDING, APPROVED, REJECTED) | Required |
 | `feedback_metadata` | string | Additional metadata about the feedback | Required |
 | `status` | Status | Processing status for aggregation tracking | None |

@@ -14,6 +14,7 @@ from reflexio_commons.api_schema.service_schemas import (
     RawFeedback,
     Feedback,
     AgentSuccessEvaluationResult,
+    ToolUsed,
 )
 import psycopg2
 
@@ -55,6 +56,13 @@ def response_to_interaction(item: dict[str, Any]) -> Interaction:
     Returns:
         Interaction object
     """
+    # Deserialize tool_used from JSONB
+    tool_used = None
+    if item.get("tool_used"):
+        tool_used_data = item["tool_used"]
+        if isinstance(tool_used_data, dict):
+            tool_used = ToolUsed(**tool_used_data)
+
     return Interaction(
         interaction_id=item["interaction_id"],
         user_id=item["user_id"],
@@ -70,6 +78,7 @@ def response_to_interaction(item: dict[str, Any]) -> Interaction:
         user_action_description=item["user_action_description"],
         interacted_image_url=item["interacted_image_url"],
         shadow_content=item.get("shadow_content") or "",
+        tool_used=tool_used,
     )
 
 
@@ -123,6 +132,9 @@ def interaction_to_data(interaction: Interaction) -> dict[str, Any]:
         "user_action_description": interaction.user_action_description,
         "interacted_image_url": interaction.interacted_image_url,
         "shadow_content": interaction.shadow_content,
+        "tool_used": interaction.tool_used.model_dump()
+        if interaction.tool_used
+        else None,
         "embedding": interaction.embedding,
     }
     # Only include interaction_id if it's set (non-zero), otherwise let DB auto-generate
@@ -311,6 +323,9 @@ def raw_feedback_to_data(raw_feedback: RawFeedback) -> dict[str, Any]:
         "do_action": raw_feedback.do_action,
         "do_not_action": raw_feedback.do_not_action,
         "when_condition": raw_feedback.when_condition,
+        "blocking_issue": raw_feedback.blocking_issue.model_dump()
+        if raw_feedback.blocking_issue
+        else None,
         "indexed_content": raw_feedback.indexed_content,
         "status": raw_feedback.status,
         "source": raw_feedback.source,
@@ -335,6 +350,9 @@ def feedback_to_data(feedback: Feedback) -> dict[str, Any]:
         "do_action": feedback.do_action,
         "do_not_action": feedback.do_not_action,
         "when_condition": feedback.when_condition,
+        "blocking_issue": feedback.blocking_issue.model_dump()
+        if feedback.blocking_issue
+        else None,
         "feedback_status": feedback.feedback_status,
         "agent_version": feedback.agent_version,
         "feedback_metadata": feedback.feedback_metadata,

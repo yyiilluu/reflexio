@@ -350,9 +350,21 @@ class FeedbackExtractor:
                     do_action=structured.do_action,
                     do_not_action=structured.do_not_action,
                     when_condition=structured.when_condition,
+                    blocking_issue=structured.blocking_issue,
                     indexed_content=structured.when_condition,
                 )
             ]
+
+        # Get tool_can_use from root config
+        root_config = self.request_context.configurator.get_config()
+        tool_can_use_str = ""
+        if root_config and root_config.tool_can_use:
+            tool_can_use_str = "\n".join(
+                [
+                    f"{tool.tool_name}: {tool.tool_description}"
+                    for tool in root_config.tool_can_use
+                ]
+            )
 
         messages = construct_feedback_extraction_messages_from_request_groups(
             prompt_manager=self.request_context.prompt_manager,
@@ -364,6 +376,7 @@ class FeedbackExtractor:
                 else ""
             ),
             existing_raw_feedbacks=existing_feedbacks,
+            tool_can_use=tool_can_use_str,
         )
         logger.info(
             "Feedback extraction messages: %s",
@@ -459,6 +472,12 @@ class FeedbackExtractor:
         if structured.do_not_action:
             lines.append(f'Don\'t: "{structured.do_not_action}"')
 
+        # Add blocking issue if present
+        if structured.blocking_issue:
+            lines.append(
+                f"Blocked by: [{structured.blocking_issue.kind.value}] {structured.blocking_issue.details}"
+            )
+
         return "\n".join(lines)
 
     def _process_structured_response(
@@ -488,5 +507,6 @@ class FeedbackExtractor:
             do_action=response.do_action,
             do_not_action=response.do_not_action,
             when_condition=response.when_condition,
+            blocking_issue=response.blocking_issue,
             indexed_content=response.when_condition,  # Use when_condition for indexing
         )

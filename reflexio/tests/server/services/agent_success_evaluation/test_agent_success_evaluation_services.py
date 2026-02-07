@@ -90,20 +90,22 @@ def test_evaluate_agent_success(mock_chat_completion):
             request_context=RequestContext(org_id=org_id, storage_base_dir=temp_dir),
         )
 
-        # Set up agent success config
+        # Set up agent success config (tool_can_use now at root config level)
         success_config = AgentSuccessConfig(
             evaluation_name="test_agent_success",
             success_definition_prompt="Evaluate if the agent successfully completed the task",
-            tool_can_use=[
+        )
+        agent_success_service.configurator.set_config_by_name(
+            "agent_success_configs", [success_config]
+        )
+        agent_success_service.configurator.set_config_by_name(
+            "tool_can_use",
+            [
                 ToolUseConfig(
                     tool_name="search",
                     tool_description="Search for information",
                 )
             ],
-            action_space=["search", "respond"],
-        )
-        agent_success_service.configurator.set_config_by_name(
-            "agent_success_configs", [success_config]
         )
 
         # Create request interaction data model
@@ -335,11 +337,18 @@ def test_with_tool_configs(mock_chat_completion):
             request_context=RequestContext(org_id=org_id, storage_base_dir=temp_dir),
         )
 
-        # Set up agent success config with tools and action space
+        # Set up agent success config with tools at root level
         success_config = AgentSuccessConfig(
             evaluation_name="tool_usage_evaluation",
             success_definition_prompt="Evaluate if the agent used tools effectively",
-            tool_can_use=[
+            metadata_definition_prompt="Include tool usage statistics",
+        )
+        agent_success_service.configurator.set_config_by_name(
+            "agent_success_configs", [success_config]
+        )
+        agent_success_service.configurator.set_config_by_name(
+            "tool_can_use",
+            [
                 ToolUseConfig(
                     tool_name="search",
                     tool_description="Search for information",
@@ -349,11 +358,6 @@ def test_with_tool_configs(mock_chat_completion):
                     tool_description="Perform calculations",
                 ),
             ],
-            action_space=["search", "calculate", "respond", "clarify"],
-            metadata_definition_prompt="Include tool usage statistics",
-        )
-        agent_success_service.configurator.set_config_by_name(
-            "agent_success_configs", [success_config]
         )
 
         # Create request interaction data model
@@ -440,20 +444,22 @@ def test_agent_success_message_construction_with_interactions():
             request_context=RequestContext(org_id=org_id, storage_base_dir=temp_dir),
         )
 
-        # Set up agent success config
+        # Set up agent success config (tool_can_use at root level)
         success_config = AgentSuccessConfig(
             evaluation_name="test_agent_success",
             success_definition_prompt="Evaluate if the agent successfully completed the task",
-            tool_can_use=[
+        )
+        agent_success_service.configurator.set_config_by_name(
+            "agent_success_configs", [success_config]
+        )
+        agent_success_service.configurator.set_config_by_name(
+            "tool_can_use",
+            [
                 ToolUseConfig(
                     tool_name="search",
                     tool_description="Search for information",
                 )
             ],
-            action_space=["search", "respond"],
-        )
-        agent_success_service.configurator.set_config_by_name(
-            "agent_success_configs", [success_config]
         )
 
         # Capture the messages sent to generate_chat_response

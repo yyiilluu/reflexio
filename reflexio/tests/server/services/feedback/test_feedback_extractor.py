@@ -18,6 +18,8 @@ from reflexio_commons.api_schema.service_schemas import (
     Interaction,
     Request,
     RawFeedback,
+    BlockingIssue,
+    BlockingIssueKind,
 )
 from reflexio_commons.api_schema.internal_schema import RequestInteractionDataModel
 from reflexio_commons.config_schema import AgentFeedbackConfig
@@ -816,3 +818,117 @@ class TestProcessStructuredResponse:
         result = extractor._process_structured_response(None)
 
         assert result is None
+
+
+# ===============================
+# Test: Blocking Issue Round-Trip
+# ===============================
+
+
+class TestBlockingIssueRoundTrip:
+    """Tests for blocking_issue field in structured feedback extraction."""
+
+    def test_process_structured_response_with_blocking_issue(
+        self,
+        request_context,
+        mock_llm_client,
+        extractor_config,
+        service_config,
+    ):
+        """Test that _process_structured_response correctly populates blocking_issue on RawFeedback."""
+        extractor = FeedbackExtractor(
+            request_context=request_context,
+            llm_client=mock_llm_client,
+            extractor_config=extractor_config,
+            service_config=service_config,
+            agent_context="Test agent",
+        )
+
+        pydantic_response = StructuredFeedbackContent(
+            do_action="inform user that file deletion requires admin approval",
+            do_not_action="attempt to delete files without permission",
+            when_condition="user asks to delete shared files",
+            blocking_issue=BlockingIssue(
+                kind=BlockingIssueKind.PERMISSION_DENIED,
+                details="Agent lacks admin-level file deletion permissions on shared drives",
+            ),
+        )
+
+        result = extractor._process_structured_response(pydantic_response)
+
+        assert result is not None
+        assert result.blocking_issue is not None
+        assert result.blocking_issue.kind == BlockingIssueKind.PERMISSION_DENIED
+        assert "admin-level file deletion" in result.blocking_issue.details
+        assert "Blocked by:" in result.feedback_content
+        assert "[permission_denied]" in result.feedback_content
+
+    def test_process_structured_response_without_blocking_issue(
+        self,
+        request_context,
+        mock_llm_client,
+        extractor_config,
+        service_config,
+    ):
+        """Test that _process_structured_response works correctly when blocking_issue is None."""
+        extractor = FeedbackExtractor(
+            request_context=request_context,
+            llm_client=mock_llm_client,
+            extractor_config=extractor_config,
+            service_config=service_config,
+            agent_context="Test agent",
+        )
+
+        pydantic_response = StructuredFeedbackContent(
+            do_action="validate inputs",
+            when_condition="processing external data",
+        )
+
+        result = extractor._process_structured_response(pydantic_response)
+
+        assert result is not None
+        assert result.blocking_issue is None
+        assert "Blocked by:" not in result.feedback_content
+
+    def test_extracts_feedback_with_blocking_issue_end_to_end(
+        self,
+        request_context,
+        mock_llm_client,
+        extractor_config,
+        service_config,
+        sample_request_interaction_models,
+    ):
+        """Test end-to-end extraction with blocking_issue included in LLM response."""
+        extractor = FeedbackExtractor(
+            request_context=request_context,
+            llm_client=mock_llm_client,
+            extractor_config=extractor_config,
+            service_config=service_config,
+            agent_context="Test agent",
+        )
+
+        mock_llm_client.generate_chat_response.return_value = StructuredFeedbackContent(
+            do_action="suggest using the API endpoint instead",
+            do_not_action="attempt to access the database directly",
+            when_condition="user requests direct database access",
+            blocking_issue=BlockingIssue(
+                kind=BlockingIssueKind.MISSING_TOOL,
+                details="No direct database query tool available",
+            ),
+        )
+
+        request_context.prompt_manager = MagicMock()
+        request_context.prompt_manager.render_prompt.return_value = "mock prompt"
+        request_context.prompt_manager.get_active_version.return_value = "2.0.0"
+
+        with patch.dict(os.environ, {"MOCK_LLM_RESPONSE": "false"}):
+            result = extractor.extract_feedbacks(sample_request_interaction_models)
+
+        assert len(result) == 1
+        assert result[0].blocking_issue is not None
+        assert result[0].blocking_issue.kind == BlockingIssueKind.MISSING_TOOL
+        assert (
+            result[0].blocking_issue.details
+            == "No direct database query tool available"
+        )
+        assert "Blocked by: [missing_tool]" in result[0].feedback_content

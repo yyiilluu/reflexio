@@ -32,10 +32,10 @@ Description: Shared schemas and configuration models used across client and serv
 
 #### Purpose
 Provides type-safe data contracts between client and server:
-1. **Service Schemas** - User interactions, profiles, feedback, evaluation results
+1. **Service Schemas** - User interactions (with `ToolUsed`), profiles, feedback (with `BlockingIssue`), evaluation results
 2. **Retriever Schemas** - Search/get/set requests and responses
 3. **Login Schemas** - Authentication tokens and credentials
-4. **Config Schema** - YAML configuration structure
+4. **Config Schema** - YAML configuration structure (`tool_can_use` at root `Config` level, shared across services)
 
 ### reflexio_client
 **Path**: `reflexio/reflexio_client/`
