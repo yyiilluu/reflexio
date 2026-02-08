@@ -41,6 +41,7 @@ from reflexio_commons.api_schema.service_schemas import (
     Status,
     UserActionType,
     RegularVsShadow,
+    ToolUsed,
 )
 from reflexio_commons.api_schema.retriever_schema import (
     SearchInteractionRequest,
@@ -2621,6 +2622,13 @@ class SupabaseStorage(BaseStorage):
                 )
                 interactions_by_request[req_id] = []
 
+            # Deserialize tool_used from JSONB
+            tool_used = None
+            if row.get("interaction_tool_used"):
+                tool_used_data = row["interaction_tool_used"]
+                if isinstance(tool_used_data, dict):
+                    tool_used = ToolUsed(**tool_used_data)
+
             # Build Interaction object
             interaction = Interaction(
                 interaction_id=row["interaction_id"],
@@ -2637,6 +2645,7 @@ class SupabaseStorage(BaseStorage):
                 user_action_description=row["interaction_user_action_description"],
                 interacted_image_url=row["interaction_interacted_image_url"],
                 shadow_content=row.get("interaction_shadow_content") or "",
+                tool_used=tool_used,
             )
             interactions_by_request[req_id].append(interaction)
 
@@ -2733,6 +2742,13 @@ class SupabaseStorage(BaseStorage):
                 )
                 interactions_by_request[req_id] = []
 
+            # Deserialize tool_used from JSONB
+            tool_used = None
+            if row.get("interaction_tool_used"):
+                tool_used_data = row["interaction_tool_used"]
+                if isinstance(tool_used_data, dict):
+                    tool_used = ToolUsed(**tool_used_data)
+
             # Build Interaction object
             interaction = Interaction(
                 interaction_id=row["interaction_id"],
@@ -2749,6 +2765,7 @@ class SupabaseStorage(BaseStorage):
                 user_action_description=row["interaction_user_action_description"],
                 interacted_image_url=row["interaction_interacted_image_url"],
                 shadow_content=row.get("interaction_shadow_content") or "",
+                tool_used=tool_used,
             )
             flat_interactions.append(interaction)
             interactions_by_request[req_id].append(interaction)

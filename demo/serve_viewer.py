@@ -29,7 +29,7 @@ load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env")
 # Add demo/ to path so we can import sibling modules
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from reflexio.reflexio_client.reflexio import InteractionData, ReflexioClient
+from reflexio.reflexio_client.reflexio import InteractionData, ReflexioClient, ToolUsed
 from scenarios import SCENARIOS
 from simulate_conversation import (
     build_enhanced_prompt,
@@ -181,7 +181,7 @@ async def get_conversation(filename: str):
 
 class SimulateRequest(BaseModel):
     scenario: str = "devops_backup_failure"
-    model: str = "gpt-4o-mini"
+    model: str = "gpt-5-mini"
     max_turns: int = 30
     reflexio_enabled: bool = False
     reflexio_user_id: str = ""
@@ -192,7 +192,7 @@ class SimulateRequest(BaseModel):
 
 class ChatRequest(BaseModel):
     scenario: str
-    model: str = "gpt-4o-mini"
+    model: str = "gpt-5-mini"
     message: str
     history: list[dict] = []
     reflexio_enabled: bool = False
@@ -435,7 +435,23 @@ async def reflexio_publish(req: ReflexioPublishRequest):
                     continue
                 turn = json.loads(line)
                 role = "User" if turn["role"] == "customer" else "Assistant"
-                interactions.append(InteractionData(role=role, content=turn["content"]))
+                tool_interactions = turn.get("tool_interactions")
+                if tool_interactions:
+                    first_tool = tool_interactions[0]
+                    interactions.append(
+                        InteractionData(
+                            role=role,
+                            content=turn["content"],
+                            tool_used=ToolUsed(
+                                tool_name=first_tool["function_name"],
+                                tool_input=first_tool.get("arguments", {}),
+                            ),
+                        )
+                    )
+                else:
+                    interactions.append(
+                        InteractionData(role=role, content=turn["content"])
+                    )
 
         reflexio_client.publish_interaction(
             user_id=req.user_id,

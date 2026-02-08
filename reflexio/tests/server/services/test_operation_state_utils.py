@@ -6,6 +6,7 @@ extractor bookmark, aggregator bookmark, and simple lock.
 """
 
 import time
+from datetime import datetime, timezone
 from unittest.mock import MagicMock
 
 import pytest
@@ -103,7 +104,10 @@ class TestCheckInProgress:
 
     def test_existing_in_progress_state(self, manager, mock_storage):
         mock_storage.get_operation_state.return_value = {
-            "operation_state": {"status": OperationStatus.IN_PROGRESS.value}
+            "operation_state": {
+                "status": OperationStatus.IN_PROGRESS.value,
+                "started_at": int(datetime.now(timezone.utc).timestamp()),
+            }
         }
         result = manager.check_in_progress()
         assert result is not None
@@ -118,7 +122,8 @@ class TestCheckInProgress:
     def test_flat_state_structure(self, manager, mock_storage):
         """State without nested operation_state wrapper."""
         mock_storage.get_operation_state.return_value = {
-            "status": OperationStatus.IN_PROGRESS.value
+            "status": OperationStatus.IN_PROGRESS.value,
+            "started_at": int(datetime.now(timezone.utc).timestamp()),
         }
         result = manager.check_in_progress()
         assert result is not None

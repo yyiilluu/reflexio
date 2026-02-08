@@ -283,6 +283,17 @@ class FeedbackExtractor:
             request_interaction_data_models
         )
 
+        # Get tool_can_use from root config (same pattern as extract_feedbacks)
+        root_config = self.request_context.configurator.get_config()
+        tool_can_use_str = ""
+        if root_config and root_config.tool_can_use:
+            tool_can_use_str = "\n".join(
+                [
+                    f"{tool.tool_name}: {tool.tool_description}"
+                    for tool in root_config.tool_can_use
+                ]
+            )
+
         prompt_manager = self.request_context.prompt_manager
         should_generate_feedback_prompt = prompt_manager.render_prompt(
             FeedbackServiceConstants.RAW_FEEDBACK_SHOULD_GENERATE_PROMPT_ID,
@@ -290,6 +301,7 @@ class FeedbackExtractor:
                 "agent_context_prompt": self.agent_context,
                 "feedback_definition_prompt": self.config.feedback_definition_prompt.strip(),
                 "new_interactions": new_interactions,
+                "tool_can_use": tool_can_use_str,
             },
         )
 

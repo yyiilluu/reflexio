@@ -16,7 +16,8 @@
       "created_at": 1767762518,
       "variables": [
         "agent_context_prompt",
-        "new_interactions"
+        "new_interactions",
+        "tool_can_use"
       ]
     }
   }

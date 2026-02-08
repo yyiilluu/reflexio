@@ -499,6 +499,12 @@ export default function FeedbacksPage() {
     action: "upgrade" | "downgrade"
   } | null>(null)
 
+  // Adopt modal state
+  const [showAdoptModal, setShowAdoptModal] = useState<boolean>(false)
+  const [adoptArchiveCurrent, setAdoptArchiveCurrent] = useState<boolean>(true)
+  const [adoptFeedbackName, setAdoptFeedbackName] = useState<string>("all")
+  const [adoptAgentVersion, setAdoptAgentVersion] = useState<string>("all")
+
   // Fetch data from API
   useEffect(() => {
     const fetchData = async () => {
@@ -647,6 +653,21 @@ export default function FeedbacksPage() {
       : feedbacks.map((f) => f.feedback_name)
     return Array.from(new Set(names)).sort()
   }, [isRawTab, rawFeedbacks, feedbacks])
+
+  // Unique values from pending raw feedbacks only (for adopt modal filters)
+  const pendingFeedbackNames = useMemo(() => {
+    const names = rawFeedbacks
+      .filter((f) => f.status === "pending")
+      .map((f) => f.feedback_name)
+    return Array.from(new Set(names)).sort()
+  }, [rawFeedbacks])
+
+  const pendingAgentVersions = useMemo(() => {
+    const versions = rawFeedbacks
+      .filter((f) => f.status === "pending")
+      .map((f) => f.agent_version)
+    return Array.from(new Set(versions)).sort()
+  }, [rawFeedbacks])
 
   // Filter raw feedbacks
   const filteredRawFeedbacks = useMemo(() => {
@@ -990,24 +1011,33 @@ export default function FeedbacksPage() {
   }
 
   const confirmUpgradeAllRawFeedbacks = () => {
-    setConfirmModalConfig({
-      title: "Adopt All Pending Raw Feedbacks?",
-      description: `This will promote ${rawFeedbackCounts.pending} pending raw feedbacks to current status, archive ${rawFeedbackCounts.current} current raw feedbacks, and delete any previously archived raw feedbacks. This action cannot be undone.`,
-      action: "upgrade",
-    })
-    setShowConfirmModal(true)
+    // Reset modal state to defaults
+    setAdoptArchiveCurrent(true)
+    setAdoptFeedbackName("all")
+    setAdoptAgentVersion("all")
+    setShowAdoptModal(true)
   }
 
   const handleUpgradeAllRawFeedbacks = async () => {
-    setShowConfirmModal(false)
+    setShowAdoptModal(false)
     setUpgrading(true)
     try {
-      const response = await upgradeAllRawFeedbacks({})
+      const request: import("@/lib/api").UpgradeRawFeedbacksRequest = {
+        archive_current: adoptArchiveCurrent,
+        ...(adoptFeedbackName !== "all" && { feedback_name: adoptFeedbackName }),
+        ...(adoptAgentVersion !== "all" && { agent_version: adoptAgentVersion }),
+      }
+      const response = await upgradeAllRawFeedbacks(request)
 
       if (response.success) {
+        const lines = [`${response.raw_feedbacks_promoted} raw feedbacks promoted to current`]
+        if (adoptArchiveCurrent) {
+          lines.push(`${response.raw_feedbacks_archived} raw feedbacks archived`)
+          lines.push(`${response.raw_feedbacks_deleted} old archived raw feedbacks deleted`)
+        }
         setMessageModalConfig({
           title: "Raw Feedbacks Upgraded Successfully",
-          message: `${response.raw_feedbacks_promoted} raw feedbacks promoted to current\n${response.raw_feedbacks_archived} raw feedbacks archived\n${response.raw_feedbacks_deleted} old archived raw feedbacks deleted`,
+          message: lines.join("\n"),
           type: "success",
         })
         setShowMessageModal(true)
@@ -1405,9 +1435,9 @@ export default function FeedbacksPage() {
                       <CheckCircle className="h-5 w-5 text-white" />
                     </div>
                     <div>
-                      <h3 className="font-semibold text-slate-800">Adopt All Pending Raw Feedbacks as Current</h3>
+                      <h3 className="font-semibold text-slate-800">Adopt Pending Raw Feedbacks</h3>
                       <p className="text-sm text-slate-500">
-                        Promote {rawFeedbackCounts.pending} pending raw feedbacks to current status, archiving existing current raw feedbacks.
+                        Promote {rawFeedbackCounts.pending} pending raw feedbacks to current status with optional filtering and archive control.
                       </p>
                     </div>
                   </div>
@@ -1929,20 +1959,14 @@ export default function FeedbacksPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Confirmation Modal for Upgrade/Downgrade */}
+      {/* Confirmation Modal for Downgrade */}
       <Dialog open={showConfirmModal} onOpenChange={setShowConfirmModal}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
             <div className="flex items-center gap-3 mb-2">
-              {confirmModalConfig?.action === "upgrade" ? (
-                <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-emerald-50 to-teal-50 flex items-center justify-center flex-shrink-0 border border-emerald-200">
-                  <CheckCircle className="h-5 w-5 text-emerald-600" />
-                </div>
-              ) : (
-                <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-blue-50 to-cyan-50 flex items-center justify-center flex-shrink-0 border border-blue-200">
-                  <RotateCcw className="h-5 w-5 text-blue-600" />
-                </div>
-              )}
+              <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-blue-50 to-cyan-50 flex items-center justify-center flex-shrink-0 border border-blue-200">
+                <RotateCcw className="h-5 w-5 text-blue-600" />
+              </div>
               <DialogTitle className="text-xl font-semibold text-slate-800">
                 {confirmModalConfig?.title}
               </DialogTitle>
@@ -1960,24 +1984,146 @@ export default function FeedbacksPage() {
               Cancel
             </Button>
             <Button
-              onClick={confirmModalConfig?.action === "upgrade" ? handleUpgradeAllRawFeedbacks : handleDowngradeAllRawFeedbacks}
-              className={
-                confirmModalConfig?.action === "upgrade"
-                  ? "bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white border-0 shadow-md shadow-emerald-500/25"
-                  : "bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 text-white border-0 shadow-md shadow-blue-500/25"
-              }
+              onClick={handleDowngradeAllRawFeedbacks}
+              className="bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 text-white border-0 shadow-md shadow-blue-500/25"
             >
-              {confirmModalConfig?.action === "upgrade" ? (
-                <>
-                  <CheckCircle className="h-4 w-4 mr-2" />
-                  Adopt Pending
-                </>
-              ) : (
-                <>
-                  <RotateCcw className="h-4 w-4 mr-2" />
-                  Restore Archived
-                </>
-              )}
+              <RotateCcw className="h-4 w-4 mr-2" />
+              Restore Archived
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Adopt Pending Raw Feedbacks Modal */}
+      <Dialog open={showAdoptModal} onOpenChange={setShowAdoptModal}>
+        <DialogContent className="sm:max-w-[540px]">
+          <DialogHeader>
+            <div className="flex items-center gap-3 mb-2">
+              <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-emerald-50 to-teal-50 flex items-center justify-center flex-shrink-0 border border-emerald-200">
+                <CheckCircle className="h-5 w-5 text-emerald-600" />
+              </div>
+              <DialogTitle className="text-xl font-semibold text-slate-800">
+                Adopt Pending Raw Feedbacks
+              </DialogTitle>
+            </div>
+            <DialogDescription className="pt-2 text-slate-600">
+              Promote pending raw feedbacks to current status. Choose how to handle existing current feedbacks and optionally filter which pending feedbacks to adopt.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-5 py-2">
+            {/* Adoption Mode */}
+            <div>
+              <label className="text-sm font-medium mb-3 block text-slate-700">Adoption Mode</label>
+              <div className="space-y-2">
+                <label className="flex items-start gap-3 p-3 rounded-lg border border-slate-200 cursor-pointer hover:bg-slate-50 transition-colors has-[:checked]:border-emerald-300 has-[:checked]:bg-emerald-50/50">
+                  <input
+                    type="radio"
+                    name="adoptMode"
+                    checked={adoptArchiveCurrent}
+                    onChange={() => setAdoptArchiveCurrent(true)}
+                    className="mt-0.5 accent-emerald-600"
+                  />
+                  <div>
+                    <div className="font-medium text-sm text-slate-800">Adopt & Archive Current</div>
+                    <div className="text-xs text-slate-500 mt-0.5">Archive all current raw feedbacks and replace them with pending ones. Previously archived feedbacks will be deleted.</div>
+                  </div>
+                </label>
+                <label className="flex items-start gap-3 p-3 rounded-lg border border-slate-200 cursor-pointer hover:bg-slate-50 transition-colors has-[:checked]:border-emerald-300 has-[:checked]:bg-emerald-50/50">
+                  <input
+                    type="radio"
+                    name="adoptMode"
+                    checked={!adoptArchiveCurrent}
+                    onChange={() => setAdoptArchiveCurrent(false)}
+                    className="mt-0.5 accent-emerald-600"
+                  />
+                  <div>
+                    <div className="font-medium text-sm text-slate-800">Adopt Only</div>
+                    <div className="text-xs text-slate-500 mt-0.5">Promote pending feedbacks to current without archiving existing ones. Current feedbacks remain unchanged.</div>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            {/* Filters */}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-sm font-medium mb-2 block text-slate-700">Feedback Name</label>
+                <select
+                  value={adoptFeedbackName}
+                  onChange={(e) => setAdoptFeedbackName(e.target.value)}
+                  className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-200 focus:border-emerald-300"
+                >
+                  <option value="all">All Types</option>
+                  {pendingFeedbackNames.map((name) => (
+                    <option key={name} value={name}>
+                      {formatFeedbackName(name)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-sm font-medium mb-2 block text-slate-700">Agent Version</label>
+                <select
+                  value={adoptAgentVersion}
+                  onChange={(e) => setAdoptAgentVersion(e.target.value)}
+                  className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-200 focus:border-emerald-300"
+                >
+                  <option value="all">All Versions</option>
+                  {pendingAgentVersions.map((version) => (
+                    <option key={version} value={version}>
+                      {version}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Summary */}
+            <div className="rounded-lg bg-slate-50 border border-slate-200 p-3">
+              <div className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">Summary</div>
+              <ul className="space-y-1 text-sm text-slate-700">
+                <li className="flex items-center gap-2">
+                  <CheckCircle className="h-3.5 w-3.5 text-emerald-500 flex-shrink-0" />
+                  Promote {adoptFeedbackName === "all" && adoptAgentVersion === "all"
+                    ? `${rawFeedbackCounts.pending} pending`
+                    : "matching pending"} feedbacks to current
+                </li>
+                {adoptArchiveCurrent ? (
+                  <>
+                    <li className="flex items-center gap-2">
+                      <Archive className="h-3.5 w-3.5 text-amber-500 flex-shrink-0" />
+                      Archive {rawFeedbackCounts.current} current feedbacks
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <Trash2 className="h-3.5 w-3.5 text-red-400 flex-shrink-0" />
+                      Delete {rawFeedbackCounts.archived} previously archived feedbacks
+                    </li>
+                  </>
+                ) : (
+                  <li className="flex items-center gap-2">
+                    <CheckCircle2 className="h-3.5 w-3.5 text-slate-400 flex-shrink-0" />
+                    Keep {rawFeedbackCounts.current} current feedbacks unchanged
+                  </li>
+                )}
+              </ul>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => setShowAdoptModal(false)}
+              className="border-slate-300 text-slate-700 hover:bg-slate-50"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleUpgradeAllRawFeedbacks}
+              className="bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white border-0 shadow-md shadow-emerald-500/25"
+            >
+              <CheckCircle className="h-4 w-4 mr-2" />
+              Adopt Pending
             </Button>
           </DialogFooter>
         </DialogContent>

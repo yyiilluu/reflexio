@@ -1,6 +1,6 @@
 import logging
 import uuid
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from datetime import datetime, timezone
 
 from reflexio_commons.api_schema.service_schemas import (
@@ -36,6 +36,8 @@ from reflexio.server.services.operation_state_utils import OperationStateManager
 logger = logging.getLogger(__name__)
 # Stale lock timeout - if cleanup started > 10 min ago and still "in_progress", assume it crashed
 CLEANUP_STALE_LOCK_SECONDS = 600
+# Timeout for the outer generation service parallel execution
+GENERATION_SERVICE_TIMEOUT_SECONDS = 600
 
 
 class GenerationService:
@@ -169,7 +171,10 @@ class GenerationService:
             # Run all generation services in parallel
             # Each service creates its own internal ThreadPoolExecutor for extractors
             # This is safe because we create separate, independent pool instances
-            with ThreadPoolExecutor(max_workers=3) as executor:
+            # Uses manual executor management to avoid blocking on shutdown(wait=True)
+            # when threads are hung on LLM calls
+            executor = ThreadPoolExecutor(max_workers=3)
+            try:
                 futures = [
                     executor.submit(
                         profile_generation_service.run, profile_generation_request
@@ -187,7 +192,13 @@ class GenerationService:
                 # Each service failure is logged but doesn't block others
                 for future in futures:
                     try:
-                        future.result()
+                        future.result(timeout=GENERATION_SERVICE_TIMEOUT_SECONDS)
+                    except FuturesTimeoutError:
+                        logger.error(
+                            "Generation service timed out after %d seconds for request %s",
+                            GENERATION_SERVICE_TIMEOUT_SECONDS,
+                            request_id,
+                        )
                     except Exception as e:
                         logger.error(
                             "Generation service failed for request %s: %s, exception type: %s",
@@ -195,6 +206,8 @@ class GenerationService:
                             str(e),
                             type(e).__name__,
                         )
+            finally:
+                executor.shutdown(wait=False, cancel_futures=True)
 
         except Exception as e:
             # log exception

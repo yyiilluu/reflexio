@@ -159,17 +159,29 @@ def test_data():
     }
 
 
+TEST_FEEDBACK_NAMES = [
+    "test_raw_feedback_integration",
+    "test_feedback_1",
+    "test_feedback_2",
+    "test_status_feedback_1",
+    "test_status_feedback_2",
+    "test_raw_fb_status",
+    "test_count_feedback",
+    "test_multi_status_filter",
+]
+
+
 @pytest.fixture
 def cleanup_after_test(supabase_storage):
     """Fixture to clean up test data after each test."""
     yield  # This allows the test to run
     try:
-        # Delete all test data - clean up both feedbacks and raw_feedbacks
-        supabase_storage.client.table("feedbacks").delete().gte(
-            "feedback_id", 0
+        # Only delete feedbacks and raw_feedbacks created by this test file
+        supabase_storage.client.table("feedbacks").delete().in_(
+            "feedback_name", TEST_FEEDBACK_NAMES
         ).execute()
-        supabase_storage.client.table("raw_feedbacks").delete().gte(
-            "raw_feedback_id", 0
+        supabase_storage.client.table("raw_feedbacks").delete().in_(
+            "feedback_name", TEST_FEEDBACK_NAMES
         ).execute()
         print("Test data cleaned up successfully")
     except Exception as e:

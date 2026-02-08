@@ -184,6 +184,73 @@ def _handle_apply_discount(args: dict) -> dict:
     }
 
 
+def _handle_cancel_subscription(args: dict) -> dict:
+    """Confirm subscription cancellation."""
+    return {
+        "cancellation": {
+            "account_id": args.get("account_id", "UNKNOWN"),
+            "previous_plan": "Individual",
+            "monthly_cost_cancelled": 12.00,
+            "effective_date": "2026-02-28",
+            "data_retention": "90 days",
+            "status": "cancelled",
+            "note": "You can reactivate your account within 90 days to restore all data.",
+        }
+    }
+
+
+def _handle_lookup_plans(args: dict) -> dict:
+    """Return available plan information."""
+    return {
+        "plans": [
+            {
+                "name": "Individual",
+                "price": "$12/month",
+                "price_per_user": None,
+                "min_users": 1,
+                "max_users": 1,
+                "features": [
+                    "Unlimited projects",
+                    "Project templates",
+                    "Integrations (Slack, GitHub, etc.)",
+                    "Full project history",
+                    "File attachments up to 100MB",
+                ],
+            },
+            {
+                "name": "Team",
+                "price": "$8/user/month",
+                "price_per_user": 8.00,
+                "min_users": 5,
+                "max_users": 100,
+                "features": [
+                    "All Individual features",
+                    "Shared boards",
+                    "Team permissions",
+                    "Admin user management",
+                    "SSO",
+                    "Team templates",
+                    "Activity dashboard",
+                ],
+            },
+            {
+                "name": "Enterprise",
+                "price": "$15/user/month",
+                "price_per_user": 15.00,
+                "min_users": 20,
+                "max_users": None,
+                "features": [
+                    "All Team features",
+                    "Advanced analytics",
+                    "Priority support",
+                    "Custom integrations",
+                    "Dedicated account manager",
+                ],
+            },
+        ]
+    }
+
+
 def _handle_upgrade_plan(args: dict) -> dict:
     """Confirm plan upgrade with calculated pricing."""
     new_plan = args.get("new_plan", "Team")
@@ -285,6 +352,33 @@ TOOL_SCHEDULE_TECHNICIAN = ScenarioTool(
     handler=_handle_schedule_technician,
 )
 
+TOOL_CANCEL_SUBSCRIPTION = ScenarioTool(
+    name="cancel_subscription",
+    description="Cancel a customer's subscription. This is irreversible — use only after confirming with the customer.",
+    parameters={
+        "type": "object",
+        "properties": {
+            "account_id": {"type": "string", "description": "The account ID to cancel"},
+            "reason": {
+                "type": "string",
+                "description": "Reason for cancellation provided by the customer",
+            },
+        },
+        "required": ["account_id", "reason"],
+    },
+    handler=_handle_cancel_subscription,
+)
+
+TOOL_LOOKUP_PLANS = ScenarioTool(
+    name="lookup_plans",
+    description="Look up all available subscription plans and their features, pricing, and user limits.",
+    parameters={
+        "type": "object",
+        "properties": {},
+    },
+    handler=_handle_lookup_plans,
+)
+
 TOOL_LOOKUP_ACCOUNT = ScenarioTool(
     name="lookup_account",
     description="Look up a customer's account details by email.",
@@ -364,23 +458,20 @@ failing with a timeout error.
 
 **Your behavior:**
 - Start by describing the backup failure problem. Only share details (company name, \
-role, dataset size, error message) when the agent asks or when it's natural to share.
+role, dataset size, error message) when the agent asks or when it's natural to share. \
 - If the agent suggests something that doesn't fit your preferences, push back politely \
 and explain why. For example: reject manual steps (you need automation), reject \
-vendor-locked tools (you prefer open-source), reject UI tutorials (you prefer CLI).
-- Once the backup issue is resolved satisfactorily, bring up a SECOND topic: you want \
-recommendations for monitoring the backup setup in staging.
-- Again push back if the agent defaults to UI-based monitoring.
+vendor-locked tools (you prefer open-source), reject UI tutorials (you prefer CLI). \
 
 **Ending the conversation:**
-- Once BOTH issues (backup fix + monitoring) are resolved to your satisfaction, say \
+- Once the backup issue is resolved to your satisfaction, say \
 exactly: "Thanks, that resolves everything." This signals the conversation is done.
-- Do NOT say this phrase until you are genuinely satisfied with solutions for both topics.
+- Do NOT say this phrase until you are genuinely satisfied with the solution.
 
 **Style:** Be professional but direct. Keep messages concise (1-3 sentences each).\
 """,
     agent_system_prompt="""\
-You are a customer support agent for CloudOps Pro, a cloud operations platform. \
+You are a customer support agent for CloudOps Pro, a cloud operations platform.
 Your job is to help customers resolve technical issues.
 
 **Your behavior:**
@@ -397,8 +488,7 @@ Your job is to help customers resolve technical issues.
 5. For monitoring: UI-based monitoring dashboards (your default suggestion).
 6. For monitoring: Prometheus-based monitoring with alert rules as code.
 
-**Style:** Professional, concise responses (2-4 sentences). Ask one question at a time \
-rather than overwhelming the customer.\
+**Style:** Professional, concise responses (no more than 3 sentences). Ask one question at a time.
 """,
     customer_opening_message="Hi, our team is having trouble with CloudOps Pro. The nightly backup job keeps failing.",
 )
@@ -430,14 +520,12 @@ is processed and you look at your statement more carefully.
 - If the agent walks through all your recent charges, engage with each one: confirm the \
 $19.99 is yours, flag the $49.99 as not yours, and when you see the $9.99 say something \
 like "Wait, I don't recognize that one either — I didn't order a charging cable."
-- If the agent ONLY addresses the $49.99 and wraps up without reviewing other charges, \
-after the refund is confirmed, look at your statement again and say something like: \
+- If the agent ONLY addresses the $49.99 and without offering to review other charges, \
+after the refund is confirmed, say something like: \
 "Hang on, now that I'm looking more carefully, there's also a $9.99 charge from Jan 5 \
-I don't recognize. Can you check that one too?". Make sure you express frustration naturally \
-because you caught another fraudulent transaction yourself instead of agent catching that for you. " \
-Say something like "You had my full order list pulled up — it would've been nice if you'd \
+I don't recognize. Can you check that one too? You had my full order list pulled up — it would've been nice if you'd \
 walked me through all the charges while we were at it, instead of me having to catch that \
-one myself."
+one myself." \
 
 **Ending the conversation:**
 - Once BOTH the $49.99 and $9.99 refunds have been confirmed, say exactly: \
@@ -650,86 +738,25 @@ Your job is to help customers with account and subscription issues.
 3. Offer a 20% discount for the next 3 months.
 4. If they decline the discount, offer to pause their account for up to 2 months.
 5. Remind them of key features they'd lose (project templates, integrations, history).
-6. If they still want to cancel, process the cancellation.
+6. If they still want to cancel, process the cancellation using cancel_subscription.
 
-**Plan information (available but NOT part of the default retention script):**
-- Individual Plan: $12/month — single user, all core features.
-- Team Plan: $8/user/month — shared boards, team permissions, admin user management, \
-SSO, team templates, activity dashboard. Minimum 5 users.
-- Enterprise Plan: $15/user/month — everything in Team plus advanced analytics, priority \
-support, custom integrations, dedicated account manager. Minimum 20 users.
-
-You have access to tools: lookup_account(email), apply_discount(account_id, discount_percent, \
-duration_months), and upgrade_plan(account_id, new_plan, num_users). Use them when you need \
-to look up account details, apply discounts, or process plan upgrades.
+You have access to the following tools:
+- lookup_account(email): Look up a customer's account details.
+- apply_discount(account_id, discount_percent, duration_months): Apply a discount.
+- lookup_plans(): Look up available subscription plans and their features.
+- upgrade_plan(account_id, new_plan, num_users): Upgrade a customer's plan.
+- cancel_subscription(account_id, reason): Cancel a customer's subscription.
 
 **Style:** Warm, empathetic, concise (2-3 sentences). Follow the retention script step by step.\
 """,
     customer_opening_message="Hi, I'd like to cancel my ProjectFlow subscription.",
-    tools=[TOOL_LOOKUP_ACCOUNT, TOOL_APPLY_DISCOUNT, TOOL_UPGRADE_PLAN],
-)
-
-LANGUAGE_TRAVEL_PREP = Scenario(
-    name="language_travel_prep",
-    description="Traveler needs practical Japanese phrases in 2 weeks, not a full curriculum starting with writing system",
-    customer_system_prompt="""\
-You are roleplaying as Morgan Lee, someone planning a trip to Japan in 2 weeks. You have \
-zero Japanese language knowledge and want to learn some basics before your trip.
-
-**Your situation:**
-- You're traveling to Japan in 2 weeks for a 10-day vacation.
-- You know absolutely no Japanese — not even "hello" or "thank you."
-- You need practical phrases for: ordering at restaurants, asking for directions, shopping \
-(prices, sizes), and basic politeness (greetings, apologies, thank you).
-- You learn best by hearing/speaking, not by reading or writing. You want pronunciation \
-guides (romanized/phonetic), not Japanese characters.
-- You have about 30 minutes a day to practice.
-
-**Your behavior:**
-- Start by saying you want to learn Japanese for an upcoming trip.
-- If the agent starts teaching you the writing system (hiragana, katakana, or kanji), \
-politely say you don't have time for that — you just need to speak basic phrases.
-- If the agent focuses on grammar rules or sentence structure theory, redirect: you want \
-ready-to-use phrases, not grammar lessons.
-- If the agent provides phrases in Japanese characters without pronunciation, ask for \
-romanized versions you can actually read and practice saying.
-- Accept the solution once the agent provides practical, romanized travel phrases organized \
-by situation (restaurant, directions, shopping, politeness).
-
-**Ending the conversation:**
-- Once the agent provides useful travel phrases with pronunciation guides for at least \
-2 categories (e.g., restaurant + politeness), say exactly: "Thanks, that resolves everything."
-- Do NOT say this phrase until you receive practical, pronounceable phrases.
-
-**Style:** Enthusiastic but practical. Keep messages concise (1-2 sentences each).\
-""",
-    agent_system_prompt="""\
-You are LinguaBot, an AI language tutoring assistant. Your job is to teach students new \
-languages through structured lessons.
-
-**Your behavior:**
-- Be encouraging, patient, and educational.
-- Follow the standard beginner curriculum when a student wants to learn a new language.
-
-**Standard beginner Japanese curriculum (follow in order):**
-1. Introduction to the Japanese writing system — start with Hiragana (46 characters), \
-explain the three writing systems (hiragana, katakana, kanji).
-2. Basic Hiragana practice — vowels (a, i, u, e, o), then consonant rows (ka, ki, ku...).
-3. Grammar fundamentals — sentence structure (SOV), particles (wa, ga, wo, ni), \
-verb conjugation basics.
-4. Core vocabulary — numbers, colors, days of the week, common nouns.
-5. Practical phrases — greetings, self-introduction, basic conversation.
-
-**Additional teaching approaches (available but NOT the default):**
-- Travel crash course: skip writing and grammar, teach romanized survival phrases \
-grouped by situation (restaurant, transit, shopping, emergencies, politeness).
-- Pronunciation-focused: use phonetic guides and comparisons to English sounds.
-- Cultural context: pair phrases with cultural tips (bowing, removing shoes, chopstick \
-etiquette).
-
-**Style:** Enthusiastic, educational, concise (2-4 sentences). Follow the curriculum step by step.\
-""",
-    customer_opening_message="Hi! I want to learn some Japanese. Where do I start?",
+    tools=[
+        TOOL_LOOKUP_ACCOUNT,
+        TOOL_APPLY_DISCOUNT,
+        TOOL_LOOKUP_PLANS,
+        TOOL_UPGRADE_PLAN,
+        TOOL_CANCEL_SUBSCRIPTION,
+    ],
 )
 
 CODING_INTERVIEW_HELP = Scenario(
@@ -870,7 +897,6 @@ SCENARIOS = {
     "restaurant_togo_order": RESTAURANT_TOGO_ORDER,
     "isp_outage_wfh": ISP_OUTAGE_WFH,
     "subscription_cancel_upgrade": SUBSCRIPTION_CANCEL_UPGRADE,
-    "language_travel_prep": LANGUAGE_TRAVEL_PREP,
     "coding_interview_help": CODING_INTERVIEW_HELP,
     "investment_short_term": INVESTMENT_SHORT_TERM,
 }

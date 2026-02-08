@@ -85,7 +85,7 @@ def get_reflexio_context(reflexio_config: dict, query: str) -> str:
                         parts.append(f"  WHEN: {fb.when_condition}")
                     lines.append("\n".join(parts))
                 feedback_section = (
-                    "\n## MANDATORY Behavior Corrections\n"
+                    "\n## Behavior Corrections\n"
                     "The following rules are learned from past mistakes and OVERRIDE your standard flow above. "
                     "Before responding, check each rule: if the WHEN condition matches the current situation, "
                     "you MUST follow the DO/DON'T actions even if they differ from your default steps.\n\n"
@@ -152,8 +152,8 @@ def get_mem0_context(mem0_config: dict, query: str) -> str:
 
 
 _BEHAVIOR_REMINDER = (
-    "**Note: You have behavior memories and corrections from past interactions in this "
-    "prompt. Before each response, check and use any memories or corrections that apply to the current situation.**\n\n"
+    "**Note: You have information about the user from context and behavior corrections from past interactions in this "
+    "prompt. Before each response, check and use any user information or corrections and apply them to the current situation if applicable.**\n\n"
 )
 
 
@@ -364,7 +364,7 @@ def simulate(
             turn_dict["system_prompt"] = turn_system_prompt
             turn_dict["context_source"] = "reflexio" if reflexio_config else "mem0"
         turns.append(turn_dict)
-        print(f"[Turn {turn_num}] Agent: {agent_text}")
+        print(f"[Turn {turn_num}] Agent ({model}): {agent_text}")
         if tool_interactions:
             for ti in tool_interactions:
                 print(
@@ -391,7 +391,7 @@ def simulate(
                 "labels": [],
             }
         )
-        print(f"[Turn {turn_num}] Customer: {customer_text}")
+        print(f"[Turn {turn_num}] Customer ({model}): {customer_text}")
 
         # Add to histories
         customer_messages.append({"role": "assistant", "content": customer_text})
@@ -545,7 +545,7 @@ def simulate_stream(
             f.write(json.dumps(turn_dict) + "\n")
 
         yield {"event": "turn", **turn_dict}
-        print(f"[Turn {turn_num}] Agent: {agent_text}")
+        print(f"[Turn {turn_num}] Agent ({model}): {agent_text}")
         if tool_interactions:
             for ti in tool_interactions:
                 print(
@@ -574,7 +574,7 @@ def simulate_stream(
             f.write(json.dumps(turn_dict) + "\n")
 
         yield {"event": "turn", **turn_dict}
-        print(f"[Turn {turn_num}] Customer: {customer_text}")
+        print(f"[Turn {turn_num}] Customer ({model}): {customer_text}")
 
         customer_messages.append({"role": "assistant", "content": customer_text})
         agent_messages.append({"role": "user", "content": customer_text})

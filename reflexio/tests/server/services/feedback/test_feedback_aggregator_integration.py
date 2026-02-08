@@ -50,17 +50,20 @@ def supabase_storage():
     return storage
 
 
+TEST_FEEDBACK_NAME = "test_feedback"
+
+
 @pytest.fixture
 def cleanup_after_test(supabase_storage):
     """Fixture to clean up test data after each test."""
     yield  # This allows the test to run
     try:
-        # Delete all test data - clean up both feedbacks and raw_feedbacks
-        supabase_storage.client.table("feedbacks").delete().gte(
-            "feedback_id", 0
+        # Only delete feedbacks and raw_feedbacks created by this test file
+        supabase_storage.client.table("feedbacks").delete().eq(
+            "feedback_name", TEST_FEEDBACK_NAME
         ).execute()
-        supabase_storage.client.table("raw_feedbacks").delete().gte(
-            "raw_feedback_id", 0
+        supabase_storage.client.table("raw_feedbacks").delete().eq(
+            "feedback_name", TEST_FEEDBACK_NAME
         ).execute()
         print("Test data cleaned up successfully")
     except Exception as e:
@@ -96,10 +99,10 @@ def load_mock_feedbacks():
 @pytest.fixture
 def setup_mock_feedbacks(supabase_storage, cleanup_after_test):
     """Fixture to load and save mock feedbacks before each test."""
-    # Clean up any existing raw_feedbacks first to ensure a clean state
+    # Clean up any existing test raw_feedbacks first to ensure a clean state
     try:
-        supabase_storage.client.table("raw_feedbacks").delete().gte(
-            "raw_feedback_id", 0
+        supabase_storage.client.table("raw_feedbacks").delete().eq(
+            "feedback_name", TEST_FEEDBACK_NAME
         ).execute()
     except Exception:
         pass

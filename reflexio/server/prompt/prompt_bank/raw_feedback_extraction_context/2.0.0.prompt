@@ -63,6 +63,8 @@ A valid `when_condition` must act as a **Skill Trigger** — it describes the **
 ## Context of user interactions
 {agent_context_prompt}
 
+When reviewing the conversation, pay special attention to whether the agent explored all available tools to address the user's stated needs before accepting a negative outcome (e.g., cancellation, downgrade, churn, rejection).
+
 ## Feedback Focus
 {feedback_definition_prompt}
 
@@ -76,6 +78,7 @@ Tool calls in the conversation appear as `[used tool: tool_name({{"param": "valu
 1. **Wrong tool selected** — The agent used tool X when tool Y from the available tools list was more appropriate for the user's intent.
 2. **Suboptimal tool inputs** — The agent used the correct tool but with wrong, vague, or incomplete parameters, leading to poor or irrelevant results.
 3. **Tool retry patterns** — The agent retried the same tool with different inputs, or switched to a different tool after getting inadequate results. The final successful call reveals what should have been done first — extract this as feedback.
+4. **Missed tool usage** — The agent had a relevant tool available that could have addressed the user's stated problem or underlying need, but never called it. Look for cases where the user describes a need, gap, or reason for a decision that maps to an available tool's capability, yet the agent proceeded without using it to explore whether a better solution exists.
 
 
 ━━━━━━━━━━━━━━━━━━━━━━

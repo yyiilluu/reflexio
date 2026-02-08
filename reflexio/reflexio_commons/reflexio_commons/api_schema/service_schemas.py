@@ -470,6 +470,7 @@ class DowngradeProfilesResponse(BaseModel):
 class UpgradeRawFeedbacksRequest(BaseModel):
     agent_version: Optional[str] = None
     feedback_name: Optional[str] = None
+    archive_current: bool = True
 
 
 class UpgradeRawFeedbacksResponse(BaseModel):

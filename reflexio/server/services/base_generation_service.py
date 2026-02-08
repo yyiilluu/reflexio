@@ -6,7 +6,7 @@ import enum
 import logging
 import uuid
 from abc import ABC, abstractmethod
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from typing import Any, Generic, Optional, TypeVar
 
 from reflexio_commons.api_schema.service_schemas import Status
@@ -25,6 +25,9 @@ class StatusChangeOperation(str, enum.Enum):
 
 
 logger = logging.getLogger(__name__)
+
+# Timeout for individual extractor execution (safety net if LLM provider ignores its own timeout)
+EXTRACTOR_TIMEOUT_SECONDS = 300
 
 # Type variables for generic base service
 TExtractorConfig = TypeVar(
@@ -215,7 +218,10 @@ class BaseGenerationService(
         error_context: str = "unknown",
     ) -> list:
         """
-        Run extractors in parallel with error handling.
+        Run extractors in parallel with error handling and timeout protection.
+
+        Uses manual executor management instead of context manager to avoid blocking
+        on shutdown(wait=True) when threads are hung on LLM calls.
 
         Args:
             extractors: List of extractor instances (each with parameterless run() method)
@@ -225,15 +231,24 @@ class BaseGenerationService(
             List of results from all successful extractor executions
         """
         results = []
+        executor = ThreadPoolExecutor(max_workers=5)
 
-        with ThreadPoolExecutor() as executor:
+        try:
             futures = [executor.submit(extractor.run) for extractor in extractors]
 
             for future in futures:
                 try:
-                    result = future.result()
+                    result = future.result(timeout=EXTRACTOR_TIMEOUT_SECONDS)
                     if result:
                         results.append(result)
+                except FuturesTimeoutError:
+                    logger.error(
+                        "Extractor timed out after %d seconds for %s context %s",
+                        EXTRACTOR_TIMEOUT_SECONDS,
+                        self._get_service_name(),
+                        error_context,
+                    )
+                    continue
                 except Exception as e:
                     logger.error(
                         "Failed to run %s for context %s due to %s, exception type: %s",
@@ -243,6 +258,8 @@ class BaseGenerationService(
                         type(e).__name__,
                     )
                     continue
+        finally:
+            executor.shutdown(wait=False, cancel_futures=True)
 
         return results
 
@@ -783,13 +800,16 @@ class BaseGenerationService(
             # Get affected user IDs once (child class determines the logic)
             affected_user_ids = self._get_affected_user_ids_for_upgrade(request)
 
-            # 2. Delete old archived items
-            deleted = self._delete_items_by_status(Status.ARCHIVED, request)
+            # 2. Delete old archived items (skip if archive_current=False)
+            deleted = 0
+            archived = 0
+            if getattr(request, "archive_current", True):
+                deleted = self._delete_items_by_status(Status.ARCHIVED, request)
 
-            # 3. Archive current items (None → ARCHIVED)
-            archived = self._update_items_status(
-                None, Status.ARCHIVED, request, user_ids=affected_user_ids
-            )
+                # 3. Archive current items (None → ARCHIVED)
+                archived = self._update_items_status(
+                    None, Status.ARCHIVED, request, user_ids=affected_user_ids
+                )
 
             # 4. Promote pending items (PENDING → None)
             promoted = self._update_items_status(

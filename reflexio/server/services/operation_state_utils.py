@@ -23,6 +23,9 @@ logger = logging.getLogger(__name__)
 # Stale lock timeout - if generation started > 5 min ago and still "in_progress", assume it crashed
 GENERATION_STALE_LOCK_SECONDS = 300
 
+# Stale batch progress timeout - if batch operation started > 10 min ago and still IN_PROGRESS, auto-recover
+BATCH_STALE_PROGRESS_SECONDS = 600
+
 
 class OperationStateManager:
     """Centralized manager for all _operation_state table interactions.
@@ -94,6 +97,9 @@ class OperationStateManager:
     def check_in_progress(self) -> Optional[str]:
         """Check if there's an existing in-progress operation.
 
+        If the operation has been in progress for longer than BATCH_STALE_PROGRESS_SECONDS,
+        auto-marks it as FAILED and returns None to allow new operations to proceed.
+
         Returns:
             Error message if operation is in progress, None otherwise
         """
@@ -104,6 +110,33 @@ class OperationStateManager:
                 "operation_state", existing_state_entry
             )
             if existing_state.get("status") == OperationStatus.IN_PROGRESS.value:
+                # Check if the operation is stale
+                started_at = existing_state.get("started_at")
+                if started_at is None:
+                    # Legacy state without started_at — treat as legitimately in-progress
+                    return (
+                        f"A {self.service_name} operation is already in progress. "
+                        "Please wait for it to complete."
+                    )
+                current_time = int(datetime.now(timezone.utc).timestamp())
+                elapsed = current_time - started_at
+
+                if elapsed > BATCH_STALE_PROGRESS_SECONDS:
+                    logger.warning(
+                        "Stale %s batch operation detected (started %d seconds ago), "
+                        "auto-marking as FAILED to allow recovery",
+                        self.service_name,
+                        elapsed,
+                    )
+                    existing_state["status"] = OperationStatus.FAILED.value
+                    existing_state["completed_at"] = current_time
+                    existing_state["error_message"] = (
+                        f"Auto-recovered: operation was stuck IN_PROGRESS for {elapsed}s "
+                        f"(threshold: {BATCH_STALE_PROGRESS_SECONDS}s)"
+                    )
+                    self.storage.update_operation_state(key, existing_state)
+                    return None
+
                 return (
                     f"A {self.service_name} operation is already in progress. "
                     "Please wait for it to complete."

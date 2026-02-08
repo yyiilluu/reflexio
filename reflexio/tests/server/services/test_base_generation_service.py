@@ -618,9 +618,16 @@ class TestRunRerun:
             extractor_configs=[MockExtractorConfig(extractor_name="extractor1")],
         )
 
-        # Mock operation state to show in-progress
+        # Mock operation state to show in-progress (with recent started_at so stale detection doesn't trigger)
+        from datetime import datetime, timezone
+
         service.storage.get_operation_state = MagicMock(
-            return_value={"operation_state": {"status": "in_progress"}}
+            return_value={
+                "operation_state": {
+                    "status": "in_progress",
+                    "started_at": int(datetime.now(timezone.utc).timestamp()),
+                }
+            }
         )
 
         request = MagicMock()
@@ -764,6 +771,60 @@ class TestRunUpgrade:
 
         assert response["success"] is True
         assert response["counts"]["deleted"] == 2
+
+    def test_upgrade_with_archive_current_false_skips_archive(
+        self, llm_client, request_context
+    ):
+        """Test that upgrade with archive_current=False only promotes pending items."""
+        service = ConcreteGenerationService(
+            llm_client,
+            request_context,
+            extractor_configs=[MockExtractorConfig(extractor_name="extractor1")],
+        )
+
+        service._items_by_status = {
+            Status.PENDING: ["new1", "new2"],
+            None: ["current1", "current2", "current3"],
+            Status.ARCHIVED: ["archived1"],
+        }
+
+        request = MagicMock()
+        request.archive_current = False
+        response = service.run_upgrade(request)
+
+        assert response["success"] is True
+        assert response["counts"]["promoted"] == 2
+        assert response["counts"]["archived"] == 0
+        assert response["counts"]["deleted"] == 0
+        # Current items (3 original + 2 promoted) should all have None status
+        assert len(service._items_by_status.get(None, [])) == 5
+        # Archived items should still exist (not deleted)
+        assert len(service._items_by_status.get(Status.ARCHIVED, [])) == 1
+
+    def test_upgrade_default_behavior_archives_current(
+        self, llm_client, request_context
+    ):
+        """Test that upgrade without archive_current attribute archives as before."""
+        service = ConcreteGenerationService(
+            llm_client,
+            request_context,
+            extractor_configs=[MockExtractorConfig(extractor_name="extractor1")],
+        )
+
+        service._items_by_status = {
+            Status.PENDING: ["new1"],
+            None: ["current1", "current2"],
+            Status.ARCHIVED: ["archived1"],
+        }
+
+        # Request without archive_current attribute (simulates old callers)
+        request = MagicMock(spec=[])
+        response = service.run_upgrade(request)
+
+        assert response["success"] is True
+        assert response["counts"]["promoted"] == 1
+        assert response["counts"]["archived"] == 2
+        assert response["counts"]["deleted"] == 1
 
 
 # ===============================
