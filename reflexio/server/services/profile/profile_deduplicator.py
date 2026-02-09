@@ -296,9 +296,9 @@ class ProfileDeduplicator(BaseDeduplicator):
 
         for result in results:
             if result:
-                for profile in result.delete_profiles:
+                for profile in result.delete_profiles or []:
                     delete_profiles_by_id[profile.profile_id] = profile
-                for profile in result.mention_profiles:
+                for profile in result.mention_profiles or []:
                     mention_profiles_by_id[profile.profile_id] = profile
 
         # Return single consolidated ProfileUpdates

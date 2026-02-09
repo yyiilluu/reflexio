@@ -187,7 +187,7 @@ class ProfileGenerationService(
             profile_updates (ProfileUpdates): _description_
         """
         # delete profiles based on profile_updates
-        for tobe_removed_profile in profile_updates.delete_profiles:
+        for tobe_removed_profile in profile_updates.delete_profiles or []:
             delete_user_profile_request = DeleteUserProfileRequest(
                 user_id=user_id,
                 profile_id=tobe_removed_profile.profile_id,
@@ -196,7 +196,7 @@ class ProfileGenerationService(
         # add profiles based on profile_updates
         self.storage.add_user_profile(user_id, profile_updates.add_profiles)
         # mention profiles based on profile_updates
-        for mentioned_profile in profile_updates.mention_profiles:
+        for mentioned_profile in profile_updates.mention_profiles or []:
             self.storage.update_user_profile_by_id(
                 user_id, mentioned_profile.profile_id, mentioned_profile
             )

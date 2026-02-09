@@ -99,6 +99,16 @@ check_prerequisites() {
         exit 1
     fi
 
+    # Check Poetry and export plugin
+    if ! command -v poetry &> /dev/null; then
+        log_error "Poetry not found. Please install it first."
+        exit 1
+    fi
+    if ! poetry export --help &> /dev/null; then
+        log_error "poetry-plugin-export not installed. Run: poetry self add poetry-plugin-export"
+        exit 1
+    fi
+
     # Check AWS credentials
     if [ -z "$AWS_ACCOUNT_ID" ]; then
         log_error "Could not determine AWS Account ID. Please configure AWS CLI."
@@ -116,6 +126,19 @@ login_ecr() {
     aws ecr get-login-password --region "$AWS_REGION" | \
         docker login --username AWS --password-stdin "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
     log_success "ECR login successful"
+}
+
+generate_requirements() {
+    log_info "Generating requirements.txt from Poetry (runtime deps only)..."
+    cd "$PROJECT_ROOT"
+
+    poetry export -f requirements.txt --without dev,docs --without-hashes -o requirements.txt
+
+    # Replace local path dependency with PyPI package
+    sed -i '' '/-e file:\/\/.*reflexio_commons/d' requirements.txt
+    echo "reflexio-commons" >> requirements.txt
+
+    log_success "requirements.txt generated"
 }
 
 build_image() {
@@ -180,6 +203,7 @@ main() {
     check_prerequisites
 
     if [ "$skip_build" = false ]; then
+        generate_requirements
         login_ecr
         build_image
         push_image

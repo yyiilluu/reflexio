@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "reflexio-commons"
-version = "0.1.0.0"
+version = "0.1.0.1"
 description = ""
 authors = ["Yi Lu <yilu331@gmail.com>"]
 readme = "README.md"

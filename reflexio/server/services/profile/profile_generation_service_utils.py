@@ -8,7 +8,7 @@ from reflexio_commons.api_schema.service_schemas import (
     UserProfile,
 )
 from reflexio_commons.api_schema.internal_schema import RequestInteractionDataModel
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, field_validator
 from reflexio.server.prompt.prompt_manager import PromptManager
 from reflexio.server.services.service_utils import (
     PromptConfig,
@@ -23,6 +23,13 @@ class ProfileUpdates(BaseModel):
     add_profiles: list[UserProfile] = []
     delete_profiles: list[UserProfile] = []
     mention_profiles: list[UserProfile] = []
+
+    @field_validator(
+        "add_profiles", "delete_profiles", "mention_profiles", mode="before"
+    )
+    @classmethod
+    def coerce_none_to_list(cls, v):
+        return v if v is not None else []
 
 
 class ProfileGenerationRequest(BaseModel):
