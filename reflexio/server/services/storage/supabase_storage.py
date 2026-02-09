@@ -2622,12 +2622,13 @@ class SupabaseStorage(BaseStorage):
                 )
                 interactions_by_request[req_id] = []
 
-            # Deserialize tool_used from JSONB
-            tool_used = None
-            if row.get("interaction_tool_used"):
-                tool_used_data = row["interaction_tool_used"]
-                if isinstance(tool_used_data, dict):
-                    tool_used = ToolUsed(**tool_used_data)
+            # Deserialize tools_used from JSONB array
+            tools_used = []
+            tools_used_data = row.get("interaction_tools_used")
+            if tools_used_data and isinstance(tools_used_data, list):
+                tools_used = [
+                    ToolUsed(**t) for t in tools_used_data if isinstance(t, dict)
+                ]
 
             # Build Interaction object
             interaction = Interaction(
@@ -2645,7 +2646,7 @@ class SupabaseStorage(BaseStorage):
                 user_action_description=row["interaction_user_action_description"],
                 interacted_image_url=row["interaction_interacted_image_url"],
                 shadow_content=row.get("interaction_shadow_content") or "",
-                tool_used=tool_used,
+                tools_used=tools_used,
             )
             interactions_by_request[req_id].append(interaction)
 
@@ -2742,12 +2743,13 @@ class SupabaseStorage(BaseStorage):
                 )
                 interactions_by_request[req_id] = []
 
-            # Deserialize tool_used from JSONB
-            tool_used = None
-            if row.get("interaction_tool_used"):
-                tool_used_data = row["interaction_tool_used"]
-                if isinstance(tool_used_data, dict):
-                    tool_used = ToolUsed(**tool_used_data)
+            # Deserialize tools_used from JSONB array
+            tools_used = []
+            tools_used_data = row.get("interaction_tools_used")
+            if tools_used_data and isinstance(tools_used_data, list):
+                tools_used = [
+                    ToolUsed(**t) for t in tools_used_data if isinstance(t, dict)
+                ]
 
             # Build Interaction object
             interaction = Interaction(
@@ -2765,7 +2767,7 @@ class SupabaseStorage(BaseStorage):
                 user_action_description=row["interaction_user_action_description"],
                 interacted_image_url=row["interaction_interacted_image_url"],
                 shadow_content=row.get("interaction_shadow_content") or "",
-                tool_used=tool_used,
+                tools_used=tools_used,
             )
             flat_interactions.append(interaction)
             interactions_by_request[req_id].append(interaction)

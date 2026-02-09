@@ -100,7 +100,7 @@ class Interaction(BaseModel):
     interacted_image_url: str = ""
     image_encoding: str = ""  # base64 encoded image
     shadow_content: str = ""
-    tool_used: Optional[ToolUsed] = None
+    tools_used: list[ToolUsed] = Field(default_factory=list)
     embedding: list[float] = []
 
 
@@ -309,7 +309,7 @@ class InteractionData(BaseModel):
     user_action_description: str = ""
     interacted_image_url: str = ""
     image_encoding: str = ""  # base64 encoded image
-    tool_used: Optional[ToolUsed] = None
+    tools_used: list[ToolUsed] = Field(default_factory=list)
 
 
 # publish user interaction request

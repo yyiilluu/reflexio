@@ -84,7 +84,7 @@ Represents a capability gap that blocked the agent from completing a user reques
 
 ### ToolUsed
 
-Tracks which tool the agent used during an interaction.
+Tracks a tool the agent used during an interaction. Multiple tools can be used per interaction.
 
 | Field | Type | Description | Default |
 |-------|------|-------------|---------|
@@ -108,7 +108,7 @@ Represents information about a user interaction stored in the system.
 | `user_action_description` | string | Description of the user action | Empty string |
 | `interacted_image_url` | string | URL of any associated image | Empty string |
 | `image_encoding` | string | Base64 encoded image data | Empty string |
-| `tool_used` | ToolUsed | Tool used during this interaction | None |
+| `tools_used` | list[ToolUsed] | Tools used during this interaction | Empty list |
 | `embedding` | array[float] | Vector embedding of the interaction | Empty array |
 
 ### Request
@@ -174,7 +174,7 @@ Model for user-provided interaction information (also called InteractionRequest)
 | `user_action_description` | string | Description of the user action | Empty string |
 | `interacted_image_url` | string | URL of any associated image | Empty string |
 | `image_encoding` | string | Base64 encoded image data | Empty string |
-| `tool_used` | ToolUsed | Tool used during this interaction | None |
+| `tools_used` | list[ToolUsed] | Tools used during this interaction | Empty list |
 
 ### PublishUserInteractionRequest
 

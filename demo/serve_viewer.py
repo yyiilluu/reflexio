@@ -437,15 +437,18 @@ async def reflexio_publish(req: ReflexioPublishRequest):
                 role = "User" if turn["role"] == "customer" else "Assistant"
                 tool_interactions = turn.get("tool_interactions")
                 if tool_interactions:
-                    first_tool = tool_interactions[0]
+                    tools_used = [
+                        ToolUsed(
+                            tool_name=ti["function_name"],
+                            tool_input=ti.get("arguments", {}),
+                        )
+                        for ti in tool_interactions
+                    ]
                     interactions.append(
                         InteractionData(
                             role=role,
                             content=turn["content"],
-                            tool_used=ToolUsed(
-                                tool_name=first_tool["function_name"],
-                                tool_input=first_tool.get("arguments", {}),
-                            ),
+                            tools_used=tools_used,
                         )
                     )
                 else:

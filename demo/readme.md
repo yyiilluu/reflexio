@@ -1,6 +1,6 @@
 # Demo: Conversation Simulator & Viewer
 
-Simulates multi-turn conversations between two LLM agents (customer and support agent), with optional Reflexio or mem0 context injection. Includes a web viewer for live streaming and replaying conversations.
+Simulates multi-turn conversations between two LLM agents (customer and support agent), with optional Reflexio or mem0 context injection. Includes a web viewer for live streaming, replaying conversations, and interactive chat mode.
 
 ## Files
 
@@ -9,7 +9,7 @@ Simulates multi-turn conversations between two LLM agents (customer and support 
 | `scenarios.py` | Scenario definitions — system prompts, opening messages, and parameters for each simulation |
 | `simulate_conversation.py` | Conversation engine — runs customer/agent LLM loop, writes JSONL output |
 | `serve_viewer.py` | FastAPI server — serves viewer UI, REST + SSE endpoints for simulation and playback |
-| `viewer.html` | Browser UI — live-stream simulations, replay past conversations, publish to Reflexio/mem0 |
+| `viewer.html` | Browser UI — live-stream simulations, interactive chat mode, replay past conversations, publish to Reflexio/mem0 |
 | `output/` | Generated JSONL conversation files (gitignored) |
 
 ## Quick Start
@@ -46,6 +46,11 @@ The simulator can inject context from external memory systems into the agent's s
 - **Reflexio** — fetches user profiles and agent feedback via `ReflexioClient`
 - **mem0** — fetches memories via `MemoryClient` (requires `MEM0_API_KEY` in `.env`)
 
+## Simulation Modes
+
+- **Auto Simulate** — Two LLM agents (customer + support agent) converse automatically with configurable max turns
+- **Talk to Agent** — Interactive chat mode where you type messages as the customer and the agent responds. Stateless architecture: frontend sends full conversation history with each request
+
 ## API Endpoints (serve_viewer.py)
 
 | Method | Path | Description |
@@ -56,6 +61,7 @@ The simulator can inject context from external memory systems into the agent's s
 | GET | `/api/conversation/{filename}` | Get turns + scenario for a conversation |
 | POST | `/api/simulate` | Run simulation, return filename |
 | POST | `/api/simulate/stream` | Run simulation with SSE streaming |
+| POST | `/api/chat` | Interactive chat — single turn with full history (Talk to Agent mode) |
 | POST | `/api/reflexio/login` | Login to Reflexio server |
 | GET | `/api/reflexio/status` | Check Reflexio login status |
 | POST | `/api/reflexio/publish` | Publish conversation to Reflexio |

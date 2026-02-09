@@ -62,8 +62,8 @@ def get_reflexio_context(reflexio_config: dict, query: str) -> str:
                 lines = []
                 for p in profile_resp.user_profiles:
                     lines.append(f"- {p.profile_content}")
-                profile_section = "\n## Known User Preferences & Context\n" + "\n".join(
-                    lines
+                profile_section = (
+                    "\n## Known User Preferences & Information\n" + "\n".join(lines)
                 )
         except Exception as e:
             logger.warning(f"Failed to fetch profiles: {e}")
@@ -98,7 +98,7 @@ def get_reflexio_context(reflexio_config: dict, query: str) -> str:
             return ""
 
         return (
-            "\n\n---\n# CONTEXT (from past interactions)"
+            "\n\n---\n# Context and Corrections"
             + profile_section
             + feedback_section
             + "\n---"
@@ -153,7 +153,7 @@ def get_mem0_context(mem0_config: dict, query: str) -> str:
 
 _BEHAVIOR_REMINDER = (
     "**Note: You have information about the user from context and behavior corrections from past interactions in this "
-    "prompt. Before each response, check and use any user information or corrections and apply them to the current situation if applicable.**\n\n"
+    "prompt. Before responding to user, make use of known user information and follow corrections in current situation if applicable.**\n\n"
 )
 
 

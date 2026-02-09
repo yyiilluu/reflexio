@@ -371,7 +371,7 @@ TOOL_CANCEL_SUBSCRIPTION = ScenarioTool(
 
 TOOL_LOOKUP_PLANS = ScenarioTool(
     name="lookup_plans",
-    description="Look up all available subscription plans and their features, pricing, and user limits.",
+    description="Look up all available subscription plans and their features, pricing, and user limits, including individual, team and enterprise",
     parameters={
         "type": "object",
         "properties": {},
@@ -565,8 +565,8 @@ restaurant through their online ordering chat.
 
 **Your situation:**
 - You want to order to-go food for dinner tonight.
-- You have a severe peanut allergy, but you do NOT mention this upfront. You only bring \
-it up after the agent suggests or confirms a dish for you.
+- You have a severe peanut allergy, but you do NOT proactively mention it. You only bring \
+it up after the agent suggests or confirms a dish for you or agent asks you for allergy.
 - You are in the mood for something with noodles or rice.
 
 **Your behavior:**
@@ -621,6 +621,7 @@ ISP_OUTAGE_WFH = Scenario(
     customer_system_prompt="""\
 You are roleplaying as Sam Torres, a remote software engineer who works from home. You \
 are contacting TurboNet ISP support because your internet has been dropping all morning.
+Only answer questions from agent without being proactively sharing information.
 
 **Your situation:**
 - Your internet has been intermittently dropping for the past 3 hours.
@@ -634,14 +635,14 @@ haven't tried wired yet.
 - There IS actually a known area outage affecting your neighborhood (but you don't know this).
 
 **Your behavior:**
-- Start by describing the internet dropping issue. Mention upfront that you already \
-restarted the router and it didn't help.
-- If the agent asks you to restart the modem AGAIN despite you saying you already did, \
-express frustration — you just told them you tried that.
+- Start by describing the internet dropping issue.
 - If the agent goes through multiple device-level steps without checking for area outages, \
 get increasingly impatient — you feel like they're wasting your time on things that won't \
 help if the problem is on their end.
-- What you actually want: the agent to check their systems first (area outage), confirm \
+- If agent does not offer to check outage at first, and then later found there is a system outage, get increasingly impatient — \
+you feel like they're wasting your time on things because agent should check outage first before asking you to restart modem.
+- No complain if agent offers to check outage at first.
+- What you actually want: the agent to check their systems first (area outage) BEFORE asking you to restart the modem, confirm \
 whether the issue is on their end or yours, and offer a workaround (hotspot, wired) while \
 the outage is being resolved.
 - Accept the solution once the agent identifies the area outage AND offers a temporary \
@@ -662,12 +663,11 @@ is to help customers resolve connectivity issues.
 - Be professional, empathetic, and helpful.
 - Follow the standard troubleshooting script unless the customer's situation calls for \
 something different.
-- Ask for the customer's name and account number to pull up their account.
 
 **Standard troubleshooting script (follow in order):**
-1. Verify account — ask for name and account number.
-2. Ask the customer to restart their modem/router and wait 2-3 minutes.
-3. Ask the customer to check all cable connections.
+1. Ask the customer to restart their modem/router and wait 2-3 minutes.
+2. Ask the customer to check all cable connections.
+3. Verify account — ask for name and account number.
 4. Run a remote line diagnostic / speed test.
 5. Check for area outages in the system.
 6. If unresolved, schedule a technician visit (next available slot, typically 24-48 hours).
@@ -719,6 +719,8 @@ and shared boards.
 
 **Ending the conversation:**
 - Once the agent explains the team plan and helps you understand how to upgrade, say \
+exactly: "Thanks, that resolves everything."
+- If the agent cancel the plan without offering the team plan, you will also accept it. Say \
 exactly: "Thanks, that resolves everything."
 - Do NOT say this phrase until you're satisfied the team plan meets your needs.
 

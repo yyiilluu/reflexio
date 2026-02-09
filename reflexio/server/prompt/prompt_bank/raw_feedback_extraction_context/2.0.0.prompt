@@ -70,7 +70,7 @@ When reviewing the conversation, pay special attention to whether the agent expl
 
 ━━━━━━━━━━━━━━━━━━━━━━
 ## Tool Usage Analysis
-Tool calls in the conversation appear as `[used tool: tool_name({{"param": "value"}})]` prefixes on agent messages. Analyze them for these patterns:
+Tool calls in the conversation appear as `[used tool: tool_name({{"param": "value"}})]` prefixes on agent messages. A single message may have multiple `[used tool: ...]` prefixes when the agent called several tools in one turn. Analyze them for these patterns:
 
 [Available Tools]
 {tool_can_use}

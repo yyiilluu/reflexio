@@ -238,11 +238,23 @@ def save_raw_feedbacks(reflexio_instance: Reflexio):
     reflexio_instance.request_context.storage.save_raw_feedbacks(raw_feedbacks)
 
 
+def _get_feedback_names(instance: Reflexio) -> list[str]:
+    """Extract feedback names from the Reflexio instance's config."""
+    config = instance.request_context.configurator.get_config()
+    if config and config.agent_feedback_configs:
+        return [fc.feedback_name for fc in config.agent_feedback_configs]
+    return []
+
+
 def _cleanup_storage(instance: Reflexio):
     """Helper function to cleanup storage for an Reflexio instance."""
     try:
-        instance.request_context.storage.delete_all_raw_feedbacks()
-        instance.request_context.storage.delete_all_feedbacks()
+        # Only delete raw_feedbacks and feedbacks created by this instance's config
+        for name in _get_feedback_names(instance):
+            instance.request_context.storage.delete_all_raw_feedbacks_by_feedback_name(
+                name
+            )
+            instance.request_context.storage.delete_all_feedbacks_by_feedback_name(name)
         instance.request_context.storage.delete_all_interactions()
         instance.request_context.storage.delete_all_profiles()
         instance.request_context.storage.delete_all_profile_change_logs()

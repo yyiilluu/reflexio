@@ -6,7 +6,7 @@ Reflexio is a user profiling and agent feedback system with three main access pa
 
 1. **Remote API Access** (`reflexio_client`) - Applications use Python SDK to call REST API
 2. **Local Library Access** (`reflexio_lib`) - Direct synchronous access without HTTP layer
-3. **Web UI** (`admin_portal`) - Streamlit dashboard for visualization and management
+3. **Web UI** (`website`) - Next.js dashboard for viewing profiles, interactions, feedbacks, evaluations, and settings
 
 **Core Flow**: User Interactions → Server Processing → Profile/Feedback/Evaluation → Storage
 

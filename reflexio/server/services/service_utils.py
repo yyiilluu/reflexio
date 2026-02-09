@@ -18,22 +18,24 @@ from reflexio.server.prompt.prompt_manager import PromptManager
 
 logger = logging.getLogger(__name__)
 
-_CYAN = "\033[96m"
-_RESET = "\033[0m"
+# Custom log level for model responses (between INFO=20 and WARNING=30)
+MODEL_RESPONSE_LEVEL = 25
+logging.addLevelName(MODEL_RESPONSE_LEVEL, "MODEL_RESPONSE")
 
 
 def log_model_response(
     target_logger: logging.Logger, label: str, response: Any
 ) -> None:
     """
-    Log an LLM model response in bright cyan for terminal visibility.
+    Log an LLM model response at the MODEL_RESPONSE level (25) so it renders
+    in cyan, distinct from regular INFO messages.
 
     Args:
         target_logger (logging.Logger): The logger instance to use
         label (str): Descriptive label for the response (e.g. "Profile updates model response")
         response (Any): The model response to log
     """
-    target_logger.info("%s%s: %s%s", _CYAN, label, response, _RESET)
+    target_logger.log(MODEL_RESPONSE_LEVEL, "%s: %s", label, response)
 
 
 @dataclass
@@ -91,15 +93,15 @@ def format_interactions_to_history_string(interactions: list[Interaction]) -> st
     """
     formatted_interactions = []
     for interaction in interactions:
-        # Add text content with tool_used prefix if present
+        # Add text content with tools_used prefix if present
         if interaction.content:
-            if interaction.tool_used:
-                tool_input_str = json.dumps(interaction.tool_used.tool_input)
-                tool_prefix = (
-                    f"[used tool: {interaction.tool_used.tool_name}({tool_input_str})] "
+            if interaction.tools_used:
+                tool_prefix = " ".join(
+                    f"[used tool: {t.tool_name}({json.dumps(t.tool_input)})]"
+                    for t in interaction.tools_used
                 )
                 formatted_interactions.append(
-                    f"{interaction.role}: ```{tool_prefix}{interaction.content}```"
+                    f"{interaction.role}: ```{tool_prefix} {interaction.content}```"
                 )
             else:
                 formatted_interactions.append(

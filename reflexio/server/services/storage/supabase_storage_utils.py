@@ -56,12 +56,11 @@ def response_to_interaction(item: dict[str, Any]) -> Interaction:
     Returns:
         Interaction object
     """
-    # Deserialize tool_used from JSONB
-    tool_used = None
-    if item.get("tool_used"):
-        tool_used_data = item["tool_used"]
-        if isinstance(tool_used_data, dict):
-            tool_used = ToolUsed(**tool_used_data)
+    # Deserialize tools_used from JSONB array
+    tools_used = []
+    tools_used_data = item.get("tools_used")
+    if tools_used_data and isinstance(tools_used_data, list):
+        tools_used = [ToolUsed(**t) for t in tools_used_data if isinstance(t, dict)]
 
     return Interaction(
         interaction_id=item["interaction_id"],
@@ -78,7 +77,7 @@ def response_to_interaction(item: dict[str, Any]) -> Interaction:
         user_action_description=item["user_action_description"],
         interacted_image_url=item["interacted_image_url"],
         shadow_content=item.get("shadow_content") or "",
-        tool_used=tool_used,
+        tools_used=tools_used,
     )
 
 
@@ -132,9 +131,7 @@ def interaction_to_data(interaction: Interaction) -> dict[str, Any]:
         "user_action_description": interaction.user_action_description,
         "interacted_image_url": interaction.interacted_image_url,
         "shadow_content": interaction.shadow_content,
-        "tool_used": interaction.tool_used.model_dump()
-        if interaction.tool_used
-        else None,
+        "tools_used": [t.model_dump() for t in interaction.tools_used],
         "embedding": interaction.embedding,
     }
     # Only include interaction_id if it's set (non-zero), otherwise let DB auto-generate

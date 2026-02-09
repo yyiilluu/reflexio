@@ -16,7 +16,7 @@ Key files:
   - **PublishUserInteractionRequest/Response**: Publishing new interactions
   - **DeleteUserProfileRequest/Response**: Profile deletion
   - **DeleteUserInteractionRequest/Response**: Interaction deletion
-  - **InteractionData**: Client-provided interaction data (includes optional `tool_used`)
+  - **InteractionData**: Client-provided interaction data (includes optional `tools_used` list)
   - **ToolUsed**: Tool usage tracking (tool_name, tool_input)
   - **ProfileChangeLog**: History of profile changes
   - **RawFeedback**: Raw developer feedback from interactions (includes optional `blocking_issue`)

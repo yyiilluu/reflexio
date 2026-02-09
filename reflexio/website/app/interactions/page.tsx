@@ -112,12 +112,12 @@ function InteractionItem({ interaction, onDelete }: InteractionItemProps) {
                   <ActionIcon className="h-3 w-3" />
                   {interaction.user_action}
                 </Badge>
-                {interaction.tool_used && (
-                  <Badge className="text-xs flex items-center gap-1 bg-emerald-100 text-emerald-700 hover:bg-emerald-100">
+                {interaction.tools_used && interaction.tools_used.length > 0 && interaction.tools_used.map((tool, idx) => (
+                  <Badge key={idx} className="text-xs flex items-center gap-1 bg-emerald-100 text-emerald-700 hover:bg-emerald-100">
                     <Wrench className="h-3 w-3" />
-                    {interaction.tool_used.tool_name}
+                    {tool.tool_name}
                   </Badge>
-                )}
+                ))}
                 {interaction.interacted_image_url && (
                   <Badge variant="outline" className="text-xs flex items-center gap-1 border-slate-200 text-slate-600">
                     <ImageIcon className="h-3 w-3" />
@@ -181,16 +181,20 @@ function InteractionItem({ interaction, onDelete }: InteractionItemProps) {
                 </div>
               )}
 
-              {interaction.tool_used && (
+              {interaction.tools_used && interaction.tools_used.length > 0 && (
                 <div>
-                  <h4 className="text-xs font-semibold mb-1 text-emerald-700">Tool Used</h4>
-                  <div className="text-sm text-emerald-600 bg-emerald-50 p-2 rounded-lg border border-emerald-200">
-                    <span className="font-medium">{interaction.tool_used.tool_name}</span>
-                    {interaction.tool_used.tool_input && Object.keys(interaction.tool_used.tool_input).length > 0 && (
-                      <pre className="mt-1 text-xs text-emerald-500 overflow-x-auto">
-                        {JSON.stringify(interaction.tool_used.tool_input, null, 2)}
-                      </pre>
-                    )}
+                  <h4 className="text-xs font-semibold mb-1 text-emerald-700">Tools Used ({interaction.tools_used.length})</h4>
+                  <div className="space-y-2">
+                    {interaction.tools_used.map((tool, idx) => (
+                      <div key={idx} className="text-sm text-emerald-600 bg-emerald-50 p-2 rounded-lg border border-emerald-200">
+                        <span className="font-medium">{tool.tool_name}</span>
+                        {tool.tool_input && Object.keys(tool.tool_input).length > 0 && (
+                          <pre className="mt-1 text-xs text-emerald-500 overflow-x-auto">
+                            {JSON.stringify(tool.tool_input, null, 2)}
+                          </pre>
+                        )}
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}

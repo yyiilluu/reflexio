@@ -25,6 +25,9 @@ The `reflexio_commons` and `reflexio_client` packages are in the main repository
 
 **When modifying schemas**: Edit files in `reflexio/reflexio_commons/reflexio_commons/api_schema/`
 
+# Supabase migration
+use supabase cli `supabase migration up` to apply migrations locally instead of using the migration script which will migrate non-local storage as well.
+
 # Use/Update README.md
 - `README.md` is code navigation hint (code map) for you at project root level and maybe component levels (e.g., `reflexio/server/README.md`).
 - Read only related `README.md` for the change during planning for the change

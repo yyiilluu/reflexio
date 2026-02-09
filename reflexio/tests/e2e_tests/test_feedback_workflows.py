@@ -1114,11 +1114,9 @@ def test_manual_feedback_generation_end_to_end(
         assert publish_response.success is True
 
         # Step 2: Call manual_feedback_generation
-        manual_response = (
-            reflexio_instance_manual_feedback.manual_feedback_generation(
-                ManualFeedbackGenerationRequest(
-                    agent_version=agent_version,
-                )
+        manual_response = reflexio_instance_manual_feedback.manual_feedback_generation(
+            ManualFeedbackGenerationRequest(
+                agent_version=agent_version,
             )
         )
         assert (
@@ -1126,17 +1124,21 @@ def test_manual_feedback_generation_end_to_end(
         ), f"Manual generation failed: {manual_response.msg}"
 
         # Step 3: Verify feedbacks were generated with CURRENT status (None)
-        current_feedbacks = reflexio_instance_manual_feedback.request_context.storage.get_raw_feedbacks(
-            feedback_name=feedback_name,
-            status_filter=[None],
+        current_feedbacks = (
+            reflexio_instance_manual_feedback.request_context.storage.get_raw_feedbacks(
+                feedback_name=feedback_name,
+                status_filter=[None],
+            )
         )
         # Just verify no errors - content may vary based on LLM
         assert isinstance(current_feedbacks, list)
 
         # Step 4: Verify NO PENDING feedbacks were created (that's rerun behavior)
-        pending_feedbacks = reflexio_instance_manual_feedback.request_context.storage.get_raw_feedbacks(
-            feedback_name=feedback_name,
-            status_filter=[Status.PENDING],
+        pending_feedbacks = (
+            reflexio_instance_manual_feedback.request_context.storage.get_raw_feedbacks(
+                feedback_name=feedback_name,
+                status_filter=[Status.PENDING],
+            )
         )
         assert (
             len(pending_feedbacks) == 0
@@ -1236,12 +1238,10 @@ def test_manual_feedback_generation_with_source_filter(
         assert response_b.success is True
 
         # Call manual_feedback_generation with source filter
-        manual_response = (
-            reflexio_instance_manual_feedback.manual_feedback_generation(
-                ManualFeedbackGenerationRequest(
-                    agent_version=agent_version,
-                    source="source_a",  # Only process source_a
-                )
+        manual_response = reflexio_instance_manual_feedback.manual_feedback_generation(
+            ManualFeedbackGenerationRequest(
+                agent_version=agent_version,
+                source="source_a",  # Only process source_a
             )
         )
         # Should succeed (or fail gracefully if no matching extractors)
@@ -1288,10 +1288,8 @@ def test_manual_feedback_generation_with_dict_input(
         assert publish_response.success is True
 
         # Call with dict input
-        manual_response = (
-            reflexio_instance_manual_feedback.manual_feedback_generation(
-                {"agent_version": agent_version}
-            )
+        manual_response = reflexio_instance_manual_feedback.manual_feedback_generation(
+            {"agent_version": agent_version}
         )
         assert (
             manual_response.success is True
@@ -1337,12 +1335,10 @@ def test_manual_feedback_generation_with_feedback_name_filter(
         assert publish_response.success is True
 
         # Call with feedback_name filter
-        manual_response = (
-            reflexio_instance_manual_feedback.manual_feedback_generation(
-                ManualFeedbackGenerationRequest(
-                    agent_version=agent_version,
-                    feedback_name=feedback_name,
-                )
+        manual_response = reflexio_instance_manual_feedback.manual_feedback_generation(
+            ManualFeedbackGenerationRequest(
+                agent_version=agent_version,
+                feedback_name=feedback_name,
             )
         )
         assert (
@@ -1412,8 +1408,12 @@ def test_rerun_feedback_generation_with_source_filter(
         )
         assert response_webhook.success is True
 
-        # Step 3: Delete all raw feedbacks to start fresh for rerun test
-        storage.delete_all_raw_feedbacks()
+        # Step 3: Delete raw feedbacks created by this test's extractors to start fresh for rerun test
+        config = (
+            reflexio_instance_multiple_feedback_extractors.request_context.configurator.get_config()
+        )
+        for fc in config.agent_feedback_configs:
+            storage.delete_all_raw_feedbacks_by_feedback_name(fc.feedback_name)
 
         # Step 4: Rerun with source="api" filter
         rerun_response = (
@@ -1522,8 +1522,12 @@ def test_rerun_feedback_generation_multiple_extractors_all_sources(
             }
         )
 
-        # Step 2: Delete existing feedbacks
-        storage.delete_all_raw_feedbacks()
+        # Step 2: Delete raw feedbacks created by this test's extractors
+        config = (
+            reflexio_instance_multiple_feedback_extractors.request_context.configurator.get_config()
+        )
+        for fc in config.agent_feedback_configs:
+            storage.delete_all_raw_feedbacks_by_feedback_name(fc.feedback_name)
 
         # Step 3: Rerun WITHOUT source filter (all extractors run)
         rerun_response = reflexio_instance_multiple_feedback_extractors.rerun_feedback_generation(

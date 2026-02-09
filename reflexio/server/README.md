@@ -100,8 +100,9 @@ Key files:
 - `llm_utils.py`: Helper functions for Pydantic model conversion
 
 **Features**:
-- Uses LiteLLM for multi-provider support (OpenAI, Claude, Azure, etc.)
-- API keys read from environment variables (OPENAI_API_KEY, ANTHROPIC_API_KEY)
+- Uses LiteLLM for multi-provider support (OpenAI, Claude, Azure, OpenRouter, etc.)
+- **OpenRouter support**: Model names with `openrouter/` prefix (e.g., `openrouter/openai/gpt-5-nano`) route through OpenRouter; API key from `api_key_config.openrouter`
+- API keys read from environment variables (OPENAI_API_KEY, ANTHROPIC_API_KEY) or `ApiKeyConfig`
 - Interface: `generate_response()`, `generate_chat_response()`, `get_embedding()`
 - **Structured Outputs**: Supports Pydantic models via `response_format` parameter
 - Return types: `str` for text, or `BaseModel` for Pydantic models
@@ -172,9 +173,12 @@ Access: `SiteVarManager().get_site_var(key)`
 
 Main orchestrator flow:
 1. Save interactions to storage
-2. Run ProfileGenerationService (each extractor handles its own stride/data collection)
-3. Run FeedbackGenerationService (each extractor handles its own stride/data collection)
-4. Run AgentSuccessEvaluationService (each extractor handles its own stride/data collection)
+2. Run ProfileGenerationService, FeedbackGenerationService, AgentSuccessEvaluationService in parallel (ThreadPoolExecutor, 3 workers)
+
+**Timeout Protection**: Two-layer timeout strategy:
+- **Service level**: `GENERATION_SERVICE_TIMEOUT_SECONDS = 600` (10 min) — outer timeout for each parallel service
+- **Extractor level**: `EXTRACTOR_TIMEOUT_SECONDS = 300` (5 min) — per-extractor safety net in `base_generation_service.py`
+- If one service/extractor times out, others continue unaffected
 
 **Stride Processing**: Each extractor independently checks if it should run based on its configured stride size and tracks its own operation state.
 
@@ -182,12 +186,12 @@ Called by API endpoints via `Reflexio`
 
 ### Base Infrastructure
 
-- `base_generation_service.py`: Abstract base for all services (parallel extractor execution via ThreadPoolExecutor)
+- `base_generation_service.py`: Abstract base for all services (parallel extractor execution via ThreadPoolExecutor, `EXTRACTOR_TIMEOUT_SECONDS = 300` per-extractor safety timeout)
 - `extractor_config_utils.py`: Shared utility for filtering extractor configs by source, `allow_manual_trigger`, and extractor names
 - `extractor_interaction_utils.py`: Per-extractor utilities for stride checking and source filtering
 - `operation_state_utils.py`: Centralized `OperationStateManager` for all `_operation_state` table interactions (progress tracking, concurrency locks, extractor/aggregator bookmarks, simple locks)
 - `deduplication_utils.py`: Base deduplicator class for LLM-based semantic matching (used by ProfileDeduplicator and FeedbackDeduplicator)
-- `service_utils.py`: Utilities (`construct_messages_from_interactions()`, `format_interactions_to_history_string()` (prepends tool usage info when `tool_used` is present), `extract_json_from_string()`)
+- `service_utils.py`: Utilities (`construct_messages_from_interactions()`, `format_interactions_to_history_string()` (prepends tool usage info when `tools_used` is present), `extract_json_from_string()`, `log_model_response()` for colored LLM response logging)
 
 **Operation State Management** (via `OperationStateManager` in `operation_state_utils.py`):
 - Centralized manager for all `_operation_state` table interactions with 6 use cases:
@@ -329,7 +333,7 @@ Key files:
 |------|---------|
 | `storage_base.py` | BaseStorage abstract class |
 | `supabase_storage.py` | Production storage with vector embeddings (parses `blocking_issue` JSONB for feedbacks) |
-| `supabase_storage_utils.py` | Helpers: data conversion (handles `tool_used`/`blocking_issue` JSONB serialization), SQL migration runner |
+| `supabase_storage_utils.py` | Helpers: data conversion (handles `tools_used`/`blocking_issue` JSONB serialization), SQL migration runner |
 | `supabase_migrations.py` | Data migrations that run alongside SQL schema migrations |
 | `local_json_storage.py` | Local file-based for testing |
 

@@ -3,6 +3,7 @@ import reflexio.data as data
 import logging
 import sys
 from dotenv import load_dotenv
+import colorlog
 
 # Load environment variables from .env file
 load_dotenv()
@@ -56,11 +57,23 @@ INTERACTION_CLEANUP_DELETE_COUNT = int(
 DEBUG_LOG_TO_CONSOLE = os.environ.get("DEBUG_LOG_TO_CONSOLE", "").strip().lower()
 root_logger = logging.getLogger()
 
+logging.addLevelName(25, "MODEL_RESPONSE")
+
 if DEBUG_LOG_TO_CONSOLE and DEBUG_LOG_TO_CONSOLE not in ("false", "0", "no"):
-    # Enable verbose logging to console
+    # Enable verbose logging to console with colored output
     if not any(isinstance(h, logging.StreamHandler) for h in root_logger.handlers):
         handler = logging.StreamHandler(sys.stdout)
-        formatter = logging.Formatter("%(name)s - %(levelname)s - %(message)s")
+        formatter = colorlog.ColoredFormatter(
+            "%(log_color)s%(name)s - %(levelname)s - %(message)s",
+            log_colors={
+                "DEBUG": "cyan",
+                "INFO": "reset",
+                "MODEL_RESPONSE": "cyan",
+                "WARNING": "yellow",
+                "ERROR": "red",
+                "CRITICAL": "bold_red",
+            },
+        )
         handler.setFormatter(formatter)
         root_logger.addHandler(handler)
     root_logger.setLevel(logging.INFO)
