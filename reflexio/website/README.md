@@ -40,6 +40,11 @@ Key files:
 
 ## Development
 
+**Install dependencies (first time setup):**
+```bash
+npm install
+```
+
 **Start dev server:**
 ```bash
 npm run dev

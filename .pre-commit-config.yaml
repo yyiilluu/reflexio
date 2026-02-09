@@ -59,7 +59,7 @@ repos:
         #     require_serial: true
         -   id: pytest-check
             name: Run unit tests
-            entry: env PRECOMMIT=1 pytest -n auto --dist loadfile
+            entry: env PRECOMMIT=1 poetry run pytest
             language: system
             types: [python]
             args: [reflexio/tests/]
