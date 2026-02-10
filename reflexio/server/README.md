@@ -199,6 +199,7 @@ Called by API endpoints via `Reflexio`
   2. **Concurrency lock**: Atomic lock with request queuing (key: `{service}::{org_id}[::scope_id]::lock`)
   3. **Extractor bookmark**: Track last-processed interactions per extractor (key: `{service}::{org_id}[::scope_id]::{name}`)
   4. **Aggregator bookmark**: Track last-processed raw_feedback_id per aggregator
+  4b. **Cluster fingerprints**: Track cluster membership fingerprints for change detection (key: `{service}::{org_id}::{name}[::version]::clusters`)
   5. **Simple lock**: Non-queuing lock for cleanup operations
   6. **Cancellation**: Cooperative cancellation for batch operations (`request_cancellation()`, `is_cancellation_requested()`, `mark_cancelled()`)
 - Stale lock timeout: 5 minutes (assumes crashed if lock held longer)
@@ -276,16 +277,34 @@ Users can regenerate and manage profile versions using a four-state system:
 Key files:
 - `feedback_generation_service.py`: Service orchestrator
 - `feedback_extractor.py`: Extractor that extracts raw feedback
-- `feedback_aggregator.py`: Aggregates similar raw feedbacks
+- `feedback_aggregator.py`: Aggregates similar raw feedbacks (with cluster-level change detection to skip unchanged clusters)
 - `feedback_deduplicator.py`: Merges duplicate feedbacks from multiple extractors using LLM
 
 **Flow**:
 - Interactions → FeedbackExtractor → FeedbackDeduplicator (optional) → RawFeedback (with optional `blocking_issue`) → Storage
-- RawFeedback (manual trigger) → FeedbackAggregator → Feedback (with optional `blocking_issue`) → Storage
+- RawFeedback (manual trigger) → FeedbackAggregator → cluster fingerprint comparison → LLM only for changed clusters → Feedback (with optional `blocking_issue`) → Storage
 
 **Tool Analysis**: FeedbackExtractor reads `tool_can_use` from root `Config` and passes it to prompts for tool usage analysis and blocking issue detection.
 
 **Rerun Behavior**: Groups interactions by `user_id` for per-user feedback extraction (fetches all users, then processes each user's interactions together)
+
+**Feedback Aggregation with Cluster Change Detection** (`feedback_aggregator.py`):
+
+Aggregation clusters raw feedbacks by embedding similarity, then calls LLM per cluster to produce aggregated feedback. Cluster-level change detection avoids redundant LLM calls on subsequent runs:
+
+1. Cluster all raw feedbacks (agglomerative for <50, HDBSCAN for >=50)
+2. Compute fingerprint per cluster (SHA-256 of sorted `raw_feedback_id`s, 16 hex chars)
+3. Compare against stored fingerprints from previous run (via `OperationStateManager.get_cluster_fingerprints`)
+4. Only call LLM for changed/new clusters; carry forward existing feedbacks for unchanged clusters
+5. Archive old feedbacks only for changed/disappeared clusters (via `archive_feedbacks_by_ids`)
+6. Store new fingerprints with feedback_id mapping (via `OperationStateManager.update_cluster_fingerprints`)
+
+| Scenario | Behavior |
+|---|---|
+| First run (no stored fingerprints) | All clusters treated as changed, full LLM run |
+| `rerun=True` | Bypasses fingerprint comparison, full archive/regenerate |
+| No changes | Logs skip message, updates bookmark, returns early |
+| Error during save | Restores only selectively archived feedbacks |
 
 **Generation Modes** (detailed comparison):
 
@@ -360,6 +379,11 @@ Key files:
 - CRUD: profiles, interactions, feedbacks, results, requests
 - `get_request_groups()` → `dict[str, list[RequestInteractionDataModel]]` (groups by request_id)
 - `get_feedbacks(status_filter, feedback_status_filter)` - Filter by profile status and approval status
+- `save_feedbacks()` → returns `list[Feedback]` with `feedback_id` populated (callers can ignore return)
+- Selective feedback operations (used by cluster change detection):
+  - `archive_feedbacks_by_ids(feedback_ids)` - Archive specific feedbacks by ID (skips APPROVED)
+  - `restore_archived_feedbacks_by_ids(feedback_ids)` - Restore archived feedbacks by ID
+  - `delete_feedbacks_by_ids(feedback_ids)` - Delete feedbacks by ID
 - Vector search via LiteLLMClient embeddings
 - Operation state: `get_operation_state()`, `upsert_operation_state()`, `get_operation_state_with_new_request_interaction()`, `try_acquire_in_progress_lock()`
 - All operation state interactions are managed through `OperationStateManager` (in `operation_state_utils.py`)

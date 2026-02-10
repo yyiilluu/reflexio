@@ -413,12 +413,15 @@ class BaseStorage(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def save_feedbacks(self, feedbacks: list[Feedback]):
+    def save_feedbacks(self, feedbacks: list[Feedback]) -> list[Feedback]:
         """
         Save regular feedbacks with embeddings.
 
         Args:
             feedbacks (list[Feedback]): List of feedback objects to save
+
+        Returns:
+            list[Feedback]: Saved feedbacks with feedback_id populated from storage
         """
         raise NotImplementedError
 
@@ -592,6 +595,17 @@ class BaseStorage(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    def archive_feedbacks_by_ids(self, feedback_ids: list[int]) -> None:
+        """
+        Archive non-APPROVED feedbacks by IDs, setting their status field to 'archived'.
+        APPROVED feedbacks are left untouched. No-op if feedback_ids is empty.
+
+        Args:
+            feedback_ids (list[int]): List of feedback IDs to archive
+        """
+        raise NotImplementedError
+
+    @abstractmethod
     def restore_archived_feedbacks_by_feedback_name(
         self, feedback_name: str, agent_version: Optional[str] = None
     ):
@@ -605,6 +619,17 @@ class BaseStorage(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    def restore_archived_feedbacks_by_ids(self, feedback_ids: list[int]) -> None:
+        """
+        Restore archived feedbacks by IDs, setting their status field to null.
+        No-op if feedback_ids is empty.
+
+        Args:
+            feedback_ids (list[int]): List of feedback IDs to restore
+        """
+        raise NotImplementedError
+
+    @abstractmethod
     def delete_archived_feedbacks_by_feedback_name(
         self, feedback_name: str, agent_version: Optional[str] = None
     ):
@@ -614,6 +639,17 @@ class BaseStorage(ABC):
         Args:
             feedback_name (str): The feedback name to delete
             agent_version (str, optional): The agent version to filter by. If None, deletes all agent versions.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def delete_feedbacks_by_ids(self, feedback_ids: list[int]) -> None:
+        """
+        Permanently delete feedbacks by their IDs.
+        No-op if feedback_ids is empty.
+
+        Args:
+            feedback_ids (list[int]): List of feedback IDs to delete
         """
         raise NotImplementedError
 

@@ -1399,18 +1399,32 @@ class SupabaseStorage(BaseStorage):
             ).execute()
 
     @handle_exceptions
-    def save_feedbacks(self, feedbacks: list[Feedback]):
+    def save_feedbacks(self, feedbacks: list[Feedback]) -> list[Feedback]:
         """
         Save regular feedbacks with embeddings.
 
         Args:
             feedbacks (list[Feedback]): List of feedback objects to save
+
+        Returns:
+            list[Feedback]: Saved feedbacks with feedback_id populated from storage
         """
+        saved_feedbacks = []
         for feedback in feedbacks:
             embedding_text = feedback.when_condition or feedback.feedback_content
             embedding = self._get_embedding(embedding_text)
             feedback.embedding = embedding
-            self.client.table("feedbacks").upsert(feedback_to_data(feedback)).execute()
+            response = (
+                self.client.table("feedbacks")
+                .upsert(feedback_to_data(feedback))
+                .execute()
+            )
+            if response.data:
+                feedback.feedback_id = response.data[0].get(
+                    "feedback_id", feedback.feedback_id
+                )
+            saved_feedbacks.append(feedback)
+        return saved_feedbacks
 
     @handle_exceptions
     def get_raw_feedbacks(
@@ -1849,6 +1863,51 @@ class SupabaseStorage(BaseStorage):
             query = query.eq("agent_version", agent_version)
 
         query.execute()
+
+    @handle_exceptions
+    def archive_feedbacks_by_ids(self, feedback_ids: list[int]) -> None:
+        """
+        Archive non-APPROVED feedbacks by IDs, setting their status field to 'archived'.
+        APPROVED feedbacks are left untouched. No-op if feedback_ids is empty.
+
+        Args:
+            feedback_ids (list[int]): List of feedback IDs to archive
+        """
+        if not feedback_ids:
+            return
+        self.client.table("feedbacks").update({"status": "archived"}).in_(
+            "feedback_id", feedback_ids
+        ).neq("feedback_status", FeedbackStatus.APPROVED.value).execute()
+
+    @handle_exceptions
+    def restore_archived_feedbacks_by_ids(self, feedback_ids: list[int]) -> None:
+        """
+        Restore archived feedbacks by IDs, setting their status field to null.
+        No-op if feedback_ids is empty.
+
+        Args:
+            feedback_ids (list[int]): List of feedback IDs to restore
+        """
+        if not feedback_ids:
+            return
+        self.client.table("feedbacks").update({"status": None}).in_(
+            "feedback_id", feedback_ids
+        ).eq("status", "archived").execute()
+
+    @handle_exceptions
+    def delete_feedbacks_by_ids(self, feedback_ids: list[int]) -> None:
+        """
+        Permanently delete feedbacks by their IDs.
+        No-op if feedback_ids is empty.
+
+        Args:
+            feedback_ids (list[int]): List of feedback IDs to delete
+        """
+        if not feedback_ids:
+            return
+        self.client.table("feedbacks").delete().in_(
+            "feedback_id", feedback_ids
+        ).execute()
 
     @handle_exceptions
     def update_all_raw_feedbacks_status(

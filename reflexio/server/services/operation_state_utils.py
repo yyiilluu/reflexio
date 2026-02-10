@@ -591,6 +591,48 @@ class OperationStateManager:
             last_processed_id,
         )
 
+    # ── Use Case 4b: Aggregator Cluster Fingerprints ──
+    # (Track cluster fingerprints for change detection)
+
+    def get_cluster_fingerprints(self, name: str, version: str) -> dict:
+        """
+        Get stored cluster fingerprints for an aggregator.
+
+        Args:
+            name: Aggregator/feedback name
+            version: Agent version
+
+        Returns:
+            dict: Mapping of fingerprint_hash to {"feedback_id": int, "raw_feedback_ids": list[int]}.
+                  Returns empty dict if no state exists.
+        """
+        state_key = self._bookmark_key(name, version=version) + "::clusters"
+        operation_state = self.storage.get_operation_state(state_key)
+        if operation_state:
+            return operation_state.get("cluster_fingerprints", {})
+        return {}
+
+    def update_cluster_fingerprints(
+        self, name: str, version: str, fingerprints: dict
+    ) -> None:
+        """
+        Store cluster fingerprint mapping for an aggregator.
+
+        Args:
+            name: Aggregator/feedback name
+            version: Agent version
+            fingerprints: Mapping of fingerprint_hash to {"feedback_id": int, "raw_feedback_ids": list[int]}
+        """
+        state_key = self._bookmark_key(name, version=version) + "::clusters"
+        state = {"cluster_fingerprints": fingerprints}
+        self.storage.upsert_operation_state(state_key, state)
+        logger.info(
+            "Updated cluster fingerprints for '%s' v%s with %d clusters",
+            name,
+            version,
+            len(fingerprints),
+        )
+
     # ── Use Case 5: Simple Lock ──
     # (Non-queuing lock for cleanup operations)
 

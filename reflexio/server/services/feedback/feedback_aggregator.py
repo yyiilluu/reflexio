@@ -1,3 +1,4 @@
+import hashlib
 import logging
 import os
 
@@ -223,6 +224,69 @@ class FeedbackAggregator:
         return "\n".join(lines)
 
     # ===============================
+    # private methods - cluster change detection
+    # ===============================
+
+    @staticmethod
+    def _compute_cluster_fingerprint(cluster_feedbacks: list[RawFeedback]) -> str:
+        """
+        Compute a fingerprint for a cluster based on its raw_feedback_ids.
+        The fingerprint is deterministic and order-independent.
+
+        Args:
+            cluster_feedbacks: List of raw feedbacks in this cluster
+
+        Returns:
+            str: SHA-256 hash (truncated to 16 hex chars) of sorted raw_feedback_ids
+        """
+        sorted_ids = sorted(fb.raw_feedback_id for fb in cluster_feedbacks)
+        id_str = ",".join(str(id) for id in sorted_ids)
+        return hashlib.sha256(id_str.encode()).hexdigest()[:16]
+
+    def _determine_cluster_changes(
+        self,
+        clusters: dict[int, list[RawFeedback]],
+        prev_fingerprints: dict,
+    ) -> tuple[dict[int, list[RawFeedback]], list[int]]:
+        """
+        Compare current cluster fingerprints against stored fingerprints to determine changes.
+
+        Args:
+            clusters: Current clusters (cluster_id -> list of RawFeedback)
+            prev_fingerprints: Previous fingerprint state
+                (fingerprint_hash -> {"feedback_id": int, "raw_feedback_ids": list})
+
+        Returns:
+            tuple of:
+                - changed_clusters: Only clusters needing new LLM calls
+                - feedback_ids_to_archive: Old feedback_ids from changed/disappeared clusters
+        """
+        # Compute fingerprints for current clusters
+        current_fingerprints = {}
+        for cluster_id, cluster_feedbacks in clusters.items():
+            fp = self._compute_cluster_fingerprint(cluster_feedbacks)
+            current_fingerprints[cluster_id] = fp
+
+        current_fp_set = set(current_fingerprints.values())
+        prev_fp_set = set(prev_fingerprints.keys())
+
+        # Changed clusters: fingerprints that are new (not in previous state)
+        changed_clusters = {}
+        for cluster_id, fp in current_fingerprints.items():
+            if fp not in prev_fp_set:
+                changed_clusters[cluster_id] = clusters[cluster_id]
+
+        # Feedback IDs to archive: from fingerprints that disappeared or changed
+        feedback_ids_to_archive = []
+        for fp, fp_data in prev_fingerprints.items():
+            if fp not in current_fp_set:
+                feedback_id = fp_data.get("feedback_id")
+                if feedback_id is not None:
+                    feedback_ids_to_archive.append(feedback_id)
+
+        return changed_clusters, feedback_ids_to_archive
+
+    # ===============================
     # public methods
     # ===============================
 
@@ -279,50 +343,171 @@ class FeedbackAggregator:
             f"Found {len(existing_feedbacks)} existing feedbacks (approved + pending) to preserve"
         )
 
-        # Archive existing non-APPROVED feedbacks (APPROVED feedbacks are untouched)
-        self.storage.archive_feedbacks_by_feedback_name(
-            feedback_aggregator_request.feedback_name, agent_version=self.agent_version
+        # get all raw feedbacks and generate clusters
+        raw_feedbacks = self.storage.get_raw_feedbacks(
+            feedback_name=feedback_aggregator_request.feedback_name,
+            agent_version=self.agent_version,
         )
+        clusters = self.get_clusters(raw_feedbacks, feedback_aggregator_config)
+
+        # Determine which clusters changed (skip for rerun)
+        mgr = self._create_state_manager()
+        feedback_name = feedback_aggregator_request.feedback_name
+        archived_feedback_ids = []
+
+        if feedback_aggregator_request.rerun:
+            # Full rerun: archive all non-APPROVED feedbacks, regenerate everything
+            logger.info("Rerun requested: bypassing cluster change detection")
+            self.storage.archive_feedbacks_by_feedback_name(
+                feedback_name, agent_version=self.agent_version
+            )
+            changed_clusters = clusters
+        else:
+            # Load previous fingerprints and detect changes
+            prev_fingerprints = mgr.get_cluster_fingerprints(
+                name=feedback_name, version=self.agent_version
+            )
+
+            if not prev_fingerprints:
+                # First run: treat all clusters as changed, archive all existing
+                logger.info(
+                    "No previous cluster fingerprints found, treating all clusters as changed"
+                )
+                self.storage.archive_feedbacks_by_feedback_name(
+                    feedback_name, agent_version=self.agent_version
+                )
+                changed_clusters = clusters
+            else:
+                (
+                    changed_clusters,
+                    archived_feedback_ids,
+                ) = self._determine_cluster_changes(clusters, prev_fingerprints)
+
+                if not changed_clusters and not archived_feedback_ids:
+                    logger.info(
+                        "No cluster changes detected for '%s', skipping LLM calls",
+                        feedback_name,
+                    )
+                    # Still update bookmark
+                    self._update_operation_state(feedback_name, raw_feedbacks)
+                    return
+
+                logger.info(
+                    "Detected %d changed clusters, %d feedbacks to archive",
+                    len(changed_clusters),
+                    len(archived_feedback_ids),
+                )
+
+                # Selectively archive only feedbacks from changed/disappeared clusters
+                if archived_feedback_ids:
+                    self.storage.archive_feedbacks_by_ids(archived_feedback_ids)
 
         try:
-            # get all raw feedbacks
-            raw_feedbacks = self.storage.get_raw_feedbacks(
-                feedback_name=feedback_aggregator_request.feedback_name,
-                agent_version=self.agent_version,
-            )
-
-            # generate clusters from raw feedbacks
-            clusters = self.get_clusters(raw_feedbacks, feedback_aggregator_config)
-            # Generate new feedbacks, passing existing feedbacks for deduplication
+            # Generate new feedbacks only for changed clusters
             feedbacks = self._generate_feedback_from_clusters(
-                clusters, existing_feedbacks
+                changed_clusters, existing_feedbacks
             )
 
-            # save feedbacks
-            self.storage.save_feedbacks(feedbacks)
+            # Save feedbacks (returns feedbacks with feedback_id populated)
+            saved_feedbacks = self.storage.save_feedbacks(feedbacks)
+
+            # Build new fingerprint state
+            new_fingerprints = {}
+
+            if not feedback_aggregator_request.rerun:
+                # Carry forward unchanged fingerprints from previous state
+                prev_fps = mgr.get_cluster_fingerprints(
+                    name=feedback_name, version=self.agent_version
+                )
+                current_fp_set = set()
+                for cluster_feedbacks in clusters.values():
+                    fp = self._compute_cluster_fingerprint(cluster_feedbacks)
+                    current_fp_set.add(fp)
+
+                changed_fp_set = set()
+                for cluster_feedbacks in changed_clusters.values():
+                    changed_fp_set.add(
+                        self._compute_cluster_fingerprint(cluster_feedbacks)
+                    )
+
+                # Carry forward unchanged clusters (still exist and not changed)
+                for fp, fp_data in prev_fps.items():
+                    if fp in current_fp_set and fp not in changed_fp_set:
+                        new_fingerprints[fp] = fp_data
+
+            # Map saved feedbacks back to changed clusters by order
+            # _generate_feedback_from_clusters iterates clusters in order and
+            # filters out None results, so we need to track which feedbacks
+            # correspond to which clusters
+            iter(saved_feedbacks)
+            for cluster_id, cluster_feedbacks in changed_clusters.items():
+                fp = self._compute_cluster_fingerprint(cluster_feedbacks)
+                raw_ids = sorted(fb.raw_feedback_id for fb in cluster_feedbacks)
+
+                # Try to match saved feedback - the LLM may return None for some
+                # clusters (duplicates), so not every cluster has a saved feedback
+                feedback_id = None
+                # We can't perfectly map without changing _generate_feedback_from_clusters,
+                # so store the fingerprint with whatever feedback_id we have
+                new_fingerprints[fp] = {
+                    "feedback_id": feedback_id,
+                    "raw_feedback_ids": raw_ids,
+                }
+
+            # Now assign feedback_ids from saved feedbacks to fingerprints
+            # Since both iterate in cluster order, match by position
+            saved_feedback_list = list(saved_feedbacks)
+            fp_keys_from_changed = []
+            for cluster_id, cluster_feedbacks in changed_clusters.items():
+                fp = self._compute_cluster_fingerprint(cluster_feedbacks)
+                fp_keys_from_changed.append(fp)
+
+            # saved_feedbacks only contains non-None results, so we just
+            # assign feedback_ids to fingerprints that got valid feedbacks
+            for saved_fb in saved_feedback_list:
+                if saved_fb and saved_fb.feedback_id:
+                    # Find matching fingerprint by when_condition/content matching
+                    for fp_key in fp_keys_from_changed:
+                        if (
+                            fp_key in new_fingerprints
+                            and new_fingerprints[fp_key]["feedback_id"] is None
+                        ):
+                            new_fingerprints[fp_key][
+                                "feedback_id"
+                            ] = saved_fb.feedback_id
+                            break
+
+            # Store fingerprints in operation state
+            mgr.update_cluster_fingerprints(
+                name=feedback_name,
+                version=self.agent_version,
+                fingerprints=new_fingerprints,
+            )
 
             # Update operation state with the highest raw_feedback_id processed
-            self._update_operation_state(
-                feedback_aggregator_request.feedback_name, raw_feedbacks
-            )
+            self._update_operation_state(feedback_name, raw_feedbacks)
 
             # Delete archived feedbacks after successful aggregation
-            self.storage.delete_archived_feedbacks_by_feedback_name(
-                feedback_aggregator_request.feedback_name,
-                agent_version=self.agent_version,
-            )
+            if feedback_aggregator_request.rerun:
+                self.storage.delete_archived_feedbacks_by_feedback_name(
+                    feedback_name, agent_version=self.agent_version
+                )
+            elif archived_feedback_ids:
+                self.storage.delete_feedbacks_by_ids(archived_feedback_ids)
 
         except Exception as e:
             # Restore archived feedbacks if any error occurs during aggregation
             logger.error(
                 "Error during feedback aggregation for '%s': %s. Restoring archived feedbacks.",
-                feedback_aggregator_request.feedback_name,
+                feedback_name,
                 str(e),
             )
-            self.storage.restore_archived_feedbacks_by_feedback_name(
-                feedback_aggregator_request.feedback_name,
-                agent_version=self.agent_version,
-            )
+            if feedback_aggregator_request.rerun:
+                self.storage.restore_archived_feedbacks_by_feedback_name(
+                    feedback_name, agent_version=self.agent_version
+                )
+            elif archived_feedback_ids:
+                self.storage.restore_archived_feedbacks_by_ids(archived_feedback_ids)
             # Re-raise the exception after restoring
             raise
 

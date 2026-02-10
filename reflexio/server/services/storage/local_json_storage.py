@@ -1311,20 +1311,36 @@ class LocalJsonStorage(BaseStorage):
             ]
             self._save(all_memories)
 
-    def save_feedbacks(self, feedbacks: list[Feedback]):
+    def save_feedbacks(self, feedbacks: list[Feedback]) -> list[Feedback]:
         """
         Save feedbacks to storage.
 
         Args:
             feedbacks (list[Feedback]): List of feedbacks to save
+
+        Returns:
+            list[Feedback]: Saved feedbacks with feedback_id populated
         """
         all_memories = self._load()
         if "feedbacks" not in all_memories:
             all_memories["feedbacks"] = []
+
+        # Assign incremental feedback_ids for local storage
+        existing_max_id = 0
+        for fb_json in all_memories["feedbacks"]:
+            fb = Feedback.model_validate_json(fb_json)
+            if fb.feedback_id and fb.feedback_id > existing_max_id:
+                existing_max_id = fb.feedback_id
+
+        for i, feedback in enumerate(feedbacks):
+            if not feedback.feedback_id:
+                feedback.feedback_id = existing_max_id + i + 1
+
         all_memories["feedbacks"].extend(
             [feedback.model_dump_json() for feedback in feedbacks]
         )
         self._save(all_memories)
+        return feedbacks
 
     def get_feedbacks(
         self,
@@ -1493,6 +1509,85 @@ class LocalJsonStorage(BaseStorage):
                 )
                 and Feedback.model_validate_json(feedback_json).status == "archived"
             )
+        ]
+        self._save(all_memories)
+
+    def archive_feedbacks_by_ids(self, feedback_ids: list[int]) -> None:
+        """
+        Archive non-APPROVED feedbacks by IDs, setting their status field to 'archived'.
+        APPROVED feedbacks are left untouched. No-op if feedback_ids is empty.
+
+        Args:
+            feedback_ids (list[int]): List of feedback IDs to archive
+        """
+        if not feedback_ids:
+            return
+        feedback_id_set = set(feedback_ids)
+        all_memories = self._load()
+        if "feedbacks" not in all_memories:
+            return
+
+        updated_feedbacks = []
+        for feedback_json in all_memories["feedbacks"]:
+            feedback = Feedback.model_validate_json(feedback_json)
+            if (
+                feedback.feedback_id in feedback_id_set
+                and feedback.feedback_status != FeedbackStatus.APPROVED
+            ):
+                feedback.status = "archived"
+            updated_feedbacks.append(feedback.model_dump_json())
+
+        all_memories["feedbacks"] = updated_feedbacks
+        self._save(all_memories)
+
+    def restore_archived_feedbacks_by_ids(self, feedback_ids: list[int]) -> None:
+        """
+        Restore archived feedbacks by IDs, setting their status field to null.
+        No-op if feedback_ids is empty.
+
+        Args:
+            feedback_ids (list[int]): List of feedback IDs to restore
+        """
+        if not feedback_ids:
+            return
+        feedback_id_set = set(feedback_ids)
+        all_memories = self._load()
+        if "feedbacks" not in all_memories:
+            return
+
+        updated_feedbacks = []
+        for feedback_json in all_memories["feedbacks"]:
+            feedback = Feedback.model_validate_json(feedback_json)
+            if (
+                feedback.feedback_id in feedback_id_set
+                and feedback.status == "archived"
+            ):
+                feedback.status = None
+            updated_feedbacks.append(feedback.model_dump_json())
+
+        all_memories["feedbacks"] = updated_feedbacks
+        self._save(all_memories)
+
+    def delete_feedbacks_by_ids(self, feedback_ids: list[int]) -> None:
+        """
+        Permanently delete feedbacks by their IDs.
+        No-op if feedback_ids is empty.
+
+        Args:
+            feedback_ids (list[int]): List of feedback IDs to delete
+        """
+        if not feedback_ids:
+            return
+        feedback_id_set = set(feedback_ids)
+        all_memories = self._load()
+        if "feedbacks" not in all_memories:
+            return
+
+        all_memories["feedbacks"] = [
+            feedback_json
+            for feedback_json in all_memories["feedbacks"]
+            if Feedback.model_validate_json(feedback_json).feedback_id
+            not in feedback_id_set
         ]
         self._save(all_memories)
 
