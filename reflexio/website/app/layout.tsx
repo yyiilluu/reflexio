@@ -15,8 +15,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Reflexio - Agent Personalization and Self-improvement",
-  description: "Frontend portal for Reflexio service for agent personalization and self-improvements learnt from user interactions",
+  title: "Reflexio - The Learning Layer for AI Agents",
+  description: "Turn static AI agents into self-improving systems. Reflexio autonomously reflects on interactions, corrects mistakes, and learns new skills from user feedback.",
   icons: {
     icon: { url: "/reflexio_fav.svg", type: "image/svg+xml" },
     shortcut: { url: "/reflexio_fav.svg", type: "image/svg+xml" },

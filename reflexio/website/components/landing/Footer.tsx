@@ -18,7 +18,7 @@ export function Footer() {
               <span className="font-bold text-xl text-slate-800">Reflexio</span>
             </div>
             <p className="text-sm text-slate-600 leading-relaxed mb-4">
-              Learning and memory infrastructure that allows agents to improve over time.
+              The learning layer that turns AI agents into self-improving systems.
             </p>
             {/* Social Links */}
             <div className="flex gap-3">

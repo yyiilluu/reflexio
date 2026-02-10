@@ -24,10 +24,10 @@ export function CTA() {
             </div>
 
             <h2 className="text-3xl sm:text-4xl font-bold text-white mb-4">
-              Ready to Build Smarter Agents?
+              Stop Fixing the Same Agent Mistakes
             </h2>
             <p className="text-white/80 text-lg mb-8 max-w-xl mx-auto">
-              Start building agents that learn, improve, and compound intelligence — starting today.
+              Add a learning loop to your agents in minutes. Free to start, scales with the value created.
             </p>
 
             <div className="flex flex-col sm:flex-row gap-4 justify-center">

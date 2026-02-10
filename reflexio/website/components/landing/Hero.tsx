@@ -5,9 +5,9 @@ import Link from "next/link"
 import { Button } from "@/components/ui/button"
 
 const phrases = [
-  "Learn User Preferences",
-  "Reflects on Interactions",
-  "Improves Over Time",
+  "Self-Correct From Feedback",
+  "Remember User Preferences",
+  "Improve Autonomously",
 ]
 
 export function Hero() {
@@ -36,7 +36,7 @@ export function Hero() {
 
       <div className="max-w-4xl mx-auto text-center">
         <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight mb-6">
-          <span className="text-slate-800">Second Brain for AI Agents</span>{" "}
+          <span className="text-slate-800">Agents That Learn From Every Interaction</span>{" "}
           <span className="block text-center">
             <span
               className={`bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 bg-clip-text text-transparent transition-opacity duration-500 ${isVisible ? 'opacity-100' : 'opacity-0'}`}
@@ -47,8 +47,8 @@ export function Hero() {
         </h1>
 
         <p className="text-lg sm:text-xl text-slate-600 max-w-2xl mx-auto mb-10 leading-relaxed">
-        Your agents don’t just remember — they improve.
-        Reflexio is the reflection layer that learns from interactions and feedback, making agents more personal and eliminating repeated mistakes..
+        Most AI agents are static — they fail the same way every time until someone manually fixes them.
+        Reflexio adds a learning loop that turns user corrections and feedback into permanent behavioral improvements.
         </p>
 
         <div className="flex flex-col sm:flex-row gap-4 justify-center">
@@ -75,7 +75,7 @@ export function Hero() {
         <div className="mt-16 flex flex-wrap items-center justify-center gap-8 text-sm text-slate-500">
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
-            <span>Feedback-driven learning</span>
+            <span>3-line SDK integration</span>
           </div>
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
@@ -83,7 +83,7 @@ export function Hero() {
           </div>
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
-            <span>Easy integration</span>
+            <span>Safe behavioral versioning</span>
           </div>
         </div>
       </div>

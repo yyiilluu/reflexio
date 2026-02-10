@@ -217,12 +217,21 @@ Key files:
 
 **Flow**: Interactions → ProfileExtractor → ProfileDeduplicator (optional) → ProfileUpdater → Storage
 
-**Generation Modes**:
-| Mode | Trigger | Interactions | Output Status | Use Case |
-|------|---------|--------------|---------------|----------|
-| Regular | Auto (on publish) | Window-sized | CURRENT | Normal operation |
-| Rerun | Manual | ALL | PENDING | Test prompt changes |
-| Manual Regular | Manual | Window-sized | CURRENT | Force regeneration |
+**Generation Modes** (detailed comparison):
+
+| Aspect | Regular | Rerun | Manual Regular |
+|--------|---------|-------|----------------|
+| **Trigger** | Auto (on publish) | Manual (API) | Manual (API) |
+| **Stride Check** | Yes (skips if below threshold) | No (always runs) | No (always runs) |
+| **Interactions** | Window-sized (last k) | Window-sized (last k) | Window-sized (last k) |
+| **Time Range Filter** | No | Yes (optional start/end) | No |
+| **Pre-processing** | None | None | None |
+| **Existing Profile Context** | All profiles loaded | Only PENDING profiles loaded | All profiles loaded |
+| **Output Status** | CURRENT | PENDING | CURRENT |
+| **Scope** | Single user | Batch (all matching users, with progress) | Batch (all/single user, with progress) |
+| **Use Case** | Normal operation | Test prompt changes | Force regeneration |
+
+**Note**: All modes use `extraction_window_size` (per-extractor override or global). The key difference is that Regular checks stride before running, while Rerun/Manual always run. When no window is configured, rerun/manual falls back to `k=1000`.
 
 **Constructor Flags** (`ProfileGenerationService`):
 - `allow_manual_trigger`: Include `manual_trigger=True` extractors (default: False)
@@ -278,12 +287,20 @@ Key files:
 
 **Rerun Behavior**: Groups interactions by `user_id` for per-user feedback extraction (fetches all users, then processes each user's interactions together)
 
-**Generation Modes**:
-| Mode | Trigger | Interactions | Output Status | Use Case |
-|------|---------|--------------|---------------|----------|
-| Regular | Auto (on publish) | Window-sized | CURRENT | Normal operation |
-| Rerun | Manual | ALL | PENDING | Test prompt changes |
-| Manual Regular | Manual | Window-sized | CURRENT | Force regeneration |
+**Generation Modes** (detailed comparison):
+
+| Aspect | Regular | Rerun | Manual Regular |
+|--------|---------|-------|----------------|
+| **Trigger** | Auto (on publish) | Manual (API) | Manual (API) |
+| **Stride Check** | Yes (skips if below threshold) | No (always runs) | No (always runs) |
+| **Interactions** | Window-sized (last k) | Window-sized (last k) | Window-sized (last k) |
+| **Time Range Filter** | No | Yes (optional start/end) | No |
+| **Pre-processing** | None | Deletes existing PENDING raw feedbacks | None |
+| **Output Status** | CURRENT | PENDING | CURRENT |
+| **Scope** | Single user | Batch (all matching users, with progress) | Batch (all/single user, with progress) |
+| **Use Case** | Normal operation | Test prompt changes | Force regeneration |
+
+**Note**: All modes use `extraction_window_size` (per-extractor override or global). The key difference is that Regular checks stride before running, while Rerun/Manual always run. When no window is configured, rerun/manual falls back to `k=1000`.
 
 **Constructor Flags** (`FeedbackGenerationService`):
 - `allow_manual_trigger`: Include `manual_trigger=True` extractors (default: False)

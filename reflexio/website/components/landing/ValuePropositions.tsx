@@ -4,38 +4,38 @@ import { CheckCircle2, Sliders, GitCompare, Cpu, RefreshCw, Shield } from "lucid
 
 const comparisonData = [
   {
-    traditional: "Extracts mentioned facts",
-    reflexio: "Infers learning signals",
-    reflexioHighlight: "(preferences, constraints, corrections, habits)",
-  },
-  {
-    traditional: "Stores generic conversation facts",
-    reflexio: "Builds customized personalization models",
-    reflexioHighlight: "per user",
-  },
-  {
-    traditional: "Forgets behavioral corrections",
-    reflexio: "Learns from feedback",
-    reflexioHighlight: "and prevents repeated mistakes",
-  },
-  {
-    traditional: "Searches stored memories",
-    reflexio: "Trains self-improvement behavior",
-    reflexioHighlight: "over time",
-  },
-  {
-    traditional: "Static memory records",
-    reflexio: "Evolving agent intelligence",
+    traditional: "Stores what users said",
+    reflexio: "Learns how agents should act",
     reflexioHighlight: "",
   },
   {
-    traditional: "Context retrieval",
-    reflexio: "Production learning loop",
+    traditional: "Remembers user facts",
+    reflexio: "Builds actionable behavioral rules",
+    reflexioHighlight: "",
+  },
+  {
+    traditional: "Static memory records",
+    reflexio: "Self-evolving learned behaviors",
+    reflexioHighlight: "",
+  },
+  {
+    traditional: "No validation",
+    reflexio: "Shadow deployment testing",
+    reflexioHighlight: "",
+  },
+  {
+    traditional: "Passive retrieval",
+    reflexio: "Active learning loop",
+    reflexioHighlight: "",
+  },
+  {
+    traditional: "Generic conversation context",
+    reflexio: "Domain-specific signal extraction",
     reflexioHighlight: "",
   },
   {
     traditional: '"What did the user say?"',
-    reflexio: '"How should the agent behave next time?"',
+    reflexio: '"How should the agent behave differently next time?"',
     reflexioHighlight: "",
     isPhilosophy: true,
   },
@@ -43,40 +43,40 @@ const comparisonData = [
 
 const valueProps = [
   {
-    title: "Long-Term Personalization",
-    description: "Enable your agent to maintain long-term user context, creating a deeply personalized experience that evolves over time.",
+    title: "Autonomy Through Reflection",
+    description: "Agents 'think back' on their performance and optimize their own logic — not just retrieve stored facts.",
     icon: CheckCircle2,
     color: "text-emerald-600",
     bgColor: "bg-emerald-100",
     borderColor: "border-emerald-200",
   },
   {
-    title: "Extreme Customizability",
-    description: "Full control over what facts to extract. Memory is personal, and you know your users best.",
+    title: "Full Extraction Control",
+    description: "Tunable extractors that look for business-specific signals — a churn signal in customer service, a syntax error in a coding agent.",
     icon: Sliders,
     color: "text-purple-600",
     bgColor: "bg-purple-100",
     borderColor: "border-purple-200",
   },
   {
-    title: "Easy Iteration",
-    description: "Compare responses, iterate on memory versions, and refine extraction rules without starting over.",
+    title: "Safe Behavioral Evolution",
+    description: "Treat agent learning like software deployments. Version behaviors, test with shadow deployment, and roll back bad learning like a git commit.",
     icon: GitCompare,
     color: "text-blue-600",
     bgColor: "bg-blue-100",
     borderColor: "border-blue-200",
   },
   {
-    title: "Self-Improving Agents",
-    description: "Agents that learn from user interactions and mistakes, constantly evolving to serve users better.",
+    title: "Low-Cost Skill Acquisition",
+    description: "When a user corrects your agent's tool usage or process, Reflexio extracts that as a learned skill for all future similar scenarios.",
     icon: Cpu,
     color: "text-orange-600",
     bgColor: "bg-orange-100",
     borderColor: "border-orange-200",
   },
   {
-    title: "Self-Maintenance",
-    description: "Automatic memory updates and higher-level abstractions that evolve as understanding deepens.",
+    title: "Conflict Resolution",
+    description: "A background process de-duplicates and resolves conflicting learning signals, preventing behavioral drift and learning rot.",
     icon: RefreshCw,
     color: "text-pink-600",
     bgColor: "bg-pink-100",
@@ -84,7 +84,7 @@ const valueProps = [
   },
   {
     title: "Data Privacy",
-    description: "100% user-owned data. Bring your own storage. Your users' memories belong to them.",
+    description: "Bring your own storage. Your users' learning data never stays on our servers. 100% data ownership guaranteed.",
     icon: Shield,
     color: "text-indigo-600",
     bgColor: "bg-indigo-100",
@@ -148,11 +148,11 @@ export function ValuePropositions() {
             <div className="grid grid-cols-2">
               <div className="bg-slate-50 border-b border-r border-slate-200 p-5 sm:p-6">
                 <h3 className="font-semibold text-slate-500 text-sm uppercase tracking-wide">Traditional Memory</h3>
-                <p className="text-xs text-slate-400 mt-1">RAG memory, etc.</p>
+                <p className="text-xs text-slate-400 mt-1">Vector DBs, Mem0, Zep</p>
               </div>
               <div className="bg-emerald-50 border-b border-slate-200 p-5 sm:p-6">
                 <h3 className="font-semibold text-emerald-700 text-sm uppercase tracking-wide">Reflexio</h3>
-                <p className="text-xs text-emerald-600/70 mt-1">Self-improving agents</p>
+                <p className="text-xs text-emerald-600/70 mt-1">Behavioral learning layer</p>
               </div>
             </div>
 

@@ -21,13 +21,13 @@ export function HowItWorks() {
         {/* Section Header */}
         <div className="text-center mb-16">
           <p className="text-sm font-semibold text-indigo-600 uppercase tracking-wider mb-3">
-            Dynamic & Customizable
+            Simple & Powerful
           </p>
           <h2 className="text-3xl sm:text-4xl font-bold text-slate-800 mb-4">
             How It Works
           </h2>
           <p className="text-slate-600 text-lg max-w-2xl mx-auto">
-            A continuous learning loop — where every interaction trains your agents in production.
+            A continuous learning loop that turns every interaction into actionable improvement — no retraining required.
           </p>
         </div>
 
@@ -434,34 +434,34 @@ export function HowItWorks() {
             </div>
             <h3 className="font-semibold text-slate-800 mb-2">Simple Integration</h3>
             <p className="text-sm text-slate-600 leading-relaxed">
-              Publish interactions with a single API call
+              Wrap your existing LLM calls with a lightweight SDK — no agent rewrite needed
             </p>
           </div>
           <div className="text-center p-5 rounded-2xl bg-white border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
             <div className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-purple-500 mb-3">
               <Sparkles className="w-5 h-5 text-white" />
             </div>
-            <h3 className="font-semibold text-slate-800 mb-2">Intelligent Extraction</h3>
+            <h3 className="font-semibold text-slate-800 mb-2">Actionable Signals</h3>
             <p className="text-sm text-slate-600 leading-relaxed">
-              Automatically extract profiles, feedback, and success metrics
+              Automatically extract triggering conditions and do/don't rules from user corrections
             </p>
           </div>
           <div className="text-center p-5 rounded-2xl bg-white border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
             <div className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-br from-teal-500 to-cyan-500 mb-3">
               <RefreshCw className="w-5 h-5 text-white" />
             </div>
-            <h3 className="font-semibold text-slate-800 mb-2">Dynamic Memory</h3>
+            <h3 className="font-semibold text-slate-800 mb-2">Evolving Intelligence</h3>
             <p className="text-sm text-slate-600 leading-relaxed">
-              Memories evolve and aggregate over time
+              Learned behaviors consolidate and resolve conflicts automatically over time
             </p>
           </div>
           <div className="text-center p-5 rounded-2xl bg-white border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
             <div className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-500 mb-3">
               <MessageSquarePlus className="w-5 h-5 text-white" />
             </div>
-            <h3 className="font-semibold text-slate-800 mb-2">Context-Rich Prompts</h3>
+            <h3 className="font-semibold text-slate-800 mb-2">Precise Context Injection</h3>
             <p className="text-sm text-slate-600 leading-relaxed">
-              Search and inject relevant memory into agent prompts
+              Only inject relevant signals at the moment of inference — reducing token waste
             </p>
           </div>
         </div>

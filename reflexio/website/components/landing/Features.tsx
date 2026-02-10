@@ -5,15 +5,15 @@ import { Brain, TrendingUp, BarChart3 } from "lucide-react"
 const features = [
   {
     title: "Personalization Signals",
-    description: "Define what your agents should learn from each interaction — preferences, constraints, habits, and domain context — so responses adapt to the user, not just the past.",
+    description: "Go beyond remembering that 'John likes blue.' Reflexio learns that 'When John asks for a report, he expects a 7-day rolling average' — extracting preferences, constraints, and habits that shape how your agent actually behaves.",
     icon: Brain,
     gradient: "from-violet-500 to-purple-600",
     bgGradient: "from-violet-50 to-purple-50",
     iconBg: "bg-gradient-to-br from-violet-500 to-purple-600",
   },
   {
-    title: "Agent Self-Improvement",
-    description: "Automatically turns user feedback and failures into permanent behavioral improvements — so your agent never makes the same mistake twice.",
+    title: "Self-Correction Loop",
+    description: "When a user undoes an action or corrects your agent, Reflexio extracts specific do/don't rules with triggering conditions — turning one-time fixes into permanent behavioral changes.",
     icon: TrendingUp,
     gradient: "from-emerald-500 to-teal-600",
     bgGradient: "from-emerald-50 to-teal-50",
@@ -21,7 +21,7 @@ const features = [
   },
   {
     title: "Observation & Measurement",
-    description: "Track and measure agent improvement over time. Compare responses, iterate on memory versions, and gain insights into what makes your agent successful.",
+    description: "Test new learned behaviors in parallel with current ones using shadow deployment. Measure whether your agent is actually getting smarter, not just different.",
     icon: BarChart3,
     gradient: "from-orange-500 to-amber-600",
     bgGradient: "from-orange-50 to-amber-50",
@@ -38,10 +38,10 @@ export function Features() {
             Core Capabilities
           </p>
           <h2 className="text-3xl sm:text-4xl font-bold text-slate-800 mb-4">
-          Built for Learning, Not Just Memory
+          From Static Agents to Self-Improving Systems
           </h2>
           <p className="text-slate-600 text-lg max-w-2xl mx-auto">
-          Reflexio turns interactions and feedback into durable learning, so agents become more personal over time and stop repeating the same mistakes.
+          Your agents interact with users thousands of times, but the lessons from those interactions are trapped in logs. Reflexio closes that loop.
           </p>
         </div>
 
