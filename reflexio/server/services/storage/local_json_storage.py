@@ -16,6 +16,8 @@ from reflexio_commons.api_schema.service_schemas import (
     Request,
     ProfileChangeLog,
     Feedback,
+    Skill,
+    SkillStatus,
     AgentSuccessEvaluationResult,
     FeedbackStatus,
     Status,
@@ -2693,3 +2695,130 @@ class LocalJsonStorage(BaseStorage):
                         stats["expiring_soon_count"] += 1
 
         return stats
+
+    # ==============================
+    # Skill methods (stubs)
+    # ==============================
+
+    def _next_skill_id(self, all_memories: dict) -> int:
+        """Get next available skill_id by finding the max existing ID."""
+        max_id = 0
+        for skill_json in all_memories.get("skills", []):
+            s = Skill.model_validate_json(skill_json)
+            if s.skill_id > max_id:
+                max_id = s.skill_id
+        return max_id + 1
+
+    def save_skills(self, skills: list[Skill]):
+        all_memories = self._load()
+        if "skills" not in all_memories:
+            all_memories["skills"] = []
+
+        for skill in skills:
+            if skill.skill_id:
+                # Update existing skill: replace in-place
+                all_memories["skills"] = [
+                    skill.model_dump_json()
+                    if Skill.model_validate_json(sj).skill_id == skill.skill_id
+                    else sj
+                    for sj in all_memories["skills"]
+                ]
+            else:
+                # New skill: assign auto-incrementing ID
+                skill.skill_id = self._next_skill_id(all_memories)
+                all_memories["skills"].append(skill.model_dump_json())
+
+        self._save(all_memories)
+
+    def get_skills(
+        self,
+        limit: int = 100,
+        feedback_name: Optional[str] = None,
+        agent_version: Optional[str] = None,
+        skill_status: Optional[SkillStatus] = None,
+    ) -> list[Skill]:
+        all_memories = self._load()
+        if "skills" not in all_memories:
+            return []
+
+        results = []
+        for skill_json in all_memories["skills"]:
+            s = Skill.model_validate_json(skill_json)
+            if feedback_name and s.feedback_name != feedback_name:
+                continue
+            if agent_version and s.agent_version != agent_version:
+                continue
+            if skill_status and s.skill_status != skill_status:
+                continue
+            results.append(s)
+            if len(results) >= limit:
+                break
+        return results
+
+    def search_skills(
+        self,
+        query: Optional[str] = None,
+        feedback_name: Optional[str] = None,
+        agent_version: Optional[str] = None,
+        skill_status: Optional[SkillStatus] = None,
+        match_threshold: float = 0.5,
+        match_count: int = 10,
+    ) -> list[Skill]:
+        all_memories = self._load()
+        if "skills" not in all_memories:
+            return []
+
+        results = []
+        for skill_json in all_memories["skills"]:
+            s = Skill.model_validate_json(skill_json)
+            if query and query.lower() not in (s.instructions + s.description).lower():
+                continue
+            if feedback_name and s.feedback_name != feedback_name:
+                continue
+            if agent_version and s.agent_version != agent_version:
+                continue
+            if skill_status and s.skill_status != skill_status:
+                continue
+            results.append(s)
+            if len(results) >= match_count:
+                break
+        return results
+
+    def update_skill_status(self, skill_id: int, skill_status: SkillStatus):
+        all_memories = self._load()
+        if "skills" not in all_memories:
+            return
+        updated_skills = []
+        for skill_json in all_memories["skills"]:
+            s = Skill.model_validate_json(skill_json)
+            if s.skill_id == skill_id:
+                s.skill_status = skill_status
+            updated_skills.append(s.model_dump_json())
+        all_memories["skills"] = updated_skills
+        self._save(all_memories)
+
+    def delete_skill(self, skill_id: int):
+        all_memories = self._load()
+        if "skills" not in all_memories:
+            return
+        all_memories["skills"] = [
+            skill_json
+            for skill_json in all_memories["skills"]
+            if Skill.model_validate_json(skill_json).skill_id != skill_id
+        ]
+        self._save(all_memories)
+
+    def get_interactions_by_request_ids(
+        self, request_ids: list[str]
+    ) -> list[Interaction]:
+        if not request_ids:
+            return []
+        all_memories = self._load()
+        results = []
+        for user_data in all_memories.values():
+            if isinstance(user_data, dict) and "interactions" in user_data:
+                for interaction_json in user_data["interactions"]:
+                    interaction = Interaction.model_validate_json(interaction_json)
+                    if interaction.request_id in request_ids:
+                        results.append(interaction)
+        return results

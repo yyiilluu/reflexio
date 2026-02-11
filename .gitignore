@@ -176,6 +176,7 @@ local_storage/
 tmp/
 sql_app.db
 data/
+reflexio/data
 experiments/
 evaluation_results/
 

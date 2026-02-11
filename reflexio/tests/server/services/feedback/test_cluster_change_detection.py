@@ -417,12 +417,13 @@ class TestAggregatorRunWithChangeDetection:
         mock_storage.save_feedbacks.return_value = []
 
         # Setup operation state (for fingerprints and bookmarks)
+        # Storage returns {"operation_state": {...}} wrapping
         def get_operation_state_side_effect(key):
             if operation_state is not None and "clusters" in key:
-                return {"cluster_fingerprints": operation_state}
+                return {"operation_state": {"cluster_fingerprints": operation_state}}
             if operation_state is not None and "clusters" not in key:
                 # Return bookmark
-                return {"last_processed_raw_feedback_id": 0}
+                return {"operation_state": {"last_processed_raw_feedback_id": 0}}
             return None
 
         mock_storage.get_operation_state.side_effect = get_operation_state_side_effect
@@ -696,6 +697,138 @@ class TestAggregatorRunWithChangeDetection:
             mock_storage.restore_archived_feedbacks_by_feedback_name.called
         )
         assert restore_by_ids_called or restore_by_name_called
+
+    def test_first_run_deletes_archived_on_success(self):
+        """Regression: first-run (non-rerun) path must delete archived feedbacks after success."""
+        group_a = create_similar_embeddings(3, base_seed=42)
+        group_b = create_similar_embeddings(3, base_seed=100)
+        raw_feedbacks = create_raw_feedbacks_with_embeddings(group_a + group_b)
+
+        aggregator, mock_storage, mock_llm_client = self._setup_aggregator_for_run(
+            raw_feedbacks=raw_feedbacks,
+            operation_state=None,  # No previous state → first-run path
+        )
+
+        def save_feedbacks_side_effect(feedbacks):
+            for i, fb in enumerate(feedbacks):
+                fb.feedback_id = i + 1
+            return feedbacks
+
+        mock_storage.save_feedbacks.side_effect = save_feedbacks_side_effect
+
+        request = FeedbackAggregatorRequest(
+            agent_version="1.0",
+            feedback_name="test_feedback",
+            rerun=False,
+        )
+
+        aggregator.run(request)
+
+        mock_storage.delete_archived_feedbacks_by_feedback_name.assert_called_once()
+
+    def test_first_run_restores_archived_on_error(self):
+        """Regression: first-run (non-rerun) must restore archived feedbacks on save error."""
+        group_a = create_similar_embeddings(3, base_seed=42)
+        group_b = create_similar_embeddings(3, base_seed=100)
+        raw_feedbacks = create_raw_feedbacks_with_embeddings(group_a + group_b)
+
+        aggregator, mock_storage, mock_llm_client = self._setup_aggregator_for_run(
+            raw_feedbacks=raw_feedbacks,
+            operation_state=None,  # No previous state → first-run path
+        )
+
+        mock_storage.save_feedbacks.side_effect = Exception("Storage save error")
+
+        request = FeedbackAggregatorRequest(
+            agent_version="1.0",
+            feedback_name="test_feedback",
+            rerun=False,
+        )
+
+        with pytest.raises(Exception, match="Storage save error"):
+            aggregator.run(request)
+
+        mock_storage.restore_archived_feedbacks_by_feedback_name.assert_called_once()
+
+
+class TestLLMResponseTypeSafety:
+    """Regression tests for LLM response isinstance guard."""
+
+    def test_raw_string_response_returns_none(self):
+        """Regression: plain string from LLM must not crash with AttributeError on .feedback."""
+        mock_llm_client = MagicMock()
+        mock_request_context = MagicMock()
+        mock_request_context.storage = MagicMock()
+        mock_request_context.configurator = MagicMock()
+
+        # LLM returns a raw string instead of FeedbackAggregationOutput
+        mock_llm_client.generate_chat_response.return_value = "unparsed text"
+        mock_llm_client.config = MagicMock()
+        mock_llm_client.config.model = "test-model"
+
+        aggregator = FeedbackAggregator(
+            llm_client=mock_llm_client,
+            request_context=mock_request_context,
+            agent_version="1.0",
+        )
+
+        cluster_feedbacks = [
+            RawFeedback(
+                raw_feedback_id=1,
+                agent_version="1.0",
+                request_id="r1",
+                feedback_content="content",
+                feedback_name="test",
+                do_action="do something",
+                when_condition="when asked",
+                embedding=[0.0] * 512,
+            ),
+        ]
+
+        result = aggregator._generate_feedback_from_cluster(cluster_feedbacks, "None")
+        assert result is None
+
+    def test_valid_aggregation_output_is_processed(self):
+        """Positive test: valid FeedbackAggregationOutput produces a Feedback."""
+        mock_llm_client = MagicMock()
+        mock_request_context = MagicMock()
+        mock_request_context.storage = MagicMock()
+        mock_request_context.configurator = MagicMock()
+
+        structured = StructuredFeedbackContent(
+            do_action="Be concise",
+            when_condition="When answering questions",
+        )
+        mock_llm_client.generate_chat_response.return_value = FeedbackAggregationOutput(
+            feedback=structured
+        )
+        mock_llm_client.config = MagicMock()
+        mock_llm_client.config.model = "test-model"
+
+        aggregator = FeedbackAggregator(
+            llm_client=mock_llm_client,
+            request_context=mock_request_context,
+            agent_version="1.0",
+        )
+
+        cluster_feedbacks = [
+            RawFeedback(
+                raw_feedback_id=1,
+                agent_version="1.0",
+                request_id="r1",
+                feedback_content="content",
+                feedback_name="test",
+                do_action="do something",
+                when_condition="when asked",
+                embedding=[0.0] * 512,
+            ),
+        ]
+
+        result = aggregator._generate_feedback_from_cluster(cluster_feedbacks, "None")
+        assert result is not None
+        assert result.do_action == "Be concise"
+        assert result.when_condition == "When answering questions"
+        assert result.feedback_status == FeedbackStatus.PENDING
 
 
 class TestClusteringStability:

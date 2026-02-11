@@ -23,6 +23,8 @@ from reflexio.server.services.storage.supabase_storage_utils import (
     profile_change_log_to_data,
     response_list_to_profile_change_logs,
     feedback_to_data,
+    skill_to_data,
+    response_to_skill,
     agent_success_evaluation_result_to_data,
     execute_migration,
 )
@@ -30,6 +32,8 @@ from reflexio_commons.api_schema.service_schemas import (
     DeleteUserProfileRequest,
     DeleteUserInteractionRequest,
     Feedback,
+    Skill,
+    SkillStatus,
     UserProfile,
     Interaction,
     Request,
@@ -1388,12 +1392,24 @@ class SupabaseStorage(BaseStorage):
     @handle_exceptions
     def save_raw_feedbacks(self, raw_feedbacks: list[RawFeedback]):
         for raw_feedback in raw_feedbacks:
-            # Use indexed_content if available, otherwise use full feedback_content
+            # Use indexed_content if available, otherwise when_condition,
+            # otherwise build from structured fields
             embedding_text = (
-                raw_feedback.indexed_content or raw_feedback.feedback_content
+                raw_feedback.indexed_content
+                or raw_feedback.when_condition
+                or raw_feedback.feedback_content
+                or " ".join(
+                    filter(
+                        None,
+                        [
+                            raw_feedback.do_action,
+                            raw_feedback.do_not_action,
+                        ],
+                    )
+                )
             )
-            embedding = self._get_embedding(embedding_text)
-            raw_feedback.embedding = embedding
+            if embedding_text:
+                raw_feedback.embedding = self._get_embedding(embedding_text)
             self.client.table("raw_feedbacks").upsert(
                 raw_feedback_to_data(raw_feedback)
             ).execute()
@@ -2961,3 +2977,181 @@ class SupabaseStorage(BaseStorage):
                 stats["expiring_soon_count"] += 1
 
         return stats
+
+    # ==============================
+    # Skill methods
+    # ==============================
+
+    @handle_exceptions
+    def save_skills(self, skills: list[Skill]):
+        """
+        Save skills with embeddings.
+
+        Args:
+            skills (list[Skill]): List of skill objects to save
+        """
+        for skill in skills:
+            embedding_text = skill.instructions or skill.description
+            embedding = self._get_embedding(embedding_text)
+            skill.embedding = embedding
+            data = skill_to_data(skill)
+            data["org_id"] = self.org_id
+
+            if skill.skill_id:
+                # Update existing skill (skill_id is GENERATED ALWAYS, cannot be inserted)
+                skill_id = data.pop("skill_id")
+                self.client.table("skills").update(data).eq(
+                    "skill_id", skill_id
+                ).execute()
+            else:
+                # Insert new skill, let DB auto-generate skill_id
+                self.client.table("skills").insert(data).execute()
+
+    @handle_exceptions
+    def get_skills(
+        self,
+        limit: int = 100,
+        feedback_name: Optional[str] = None,
+        agent_version: Optional[str] = None,
+        skill_status: Optional[SkillStatus] = None,
+    ) -> list[Skill]:
+        """
+        Get skills from storage.
+
+        Args:
+            limit (int): Maximum number of skills to return
+            feedback_name (str, optional): Filter by feedback name
+            agent_version (str, optional): Filter by agent version
+            skill_status (SkillStatus, optional): Filter by skill status
+
+        Returns:
+            list[Skill]: List of skill objects
+        """
+        db_query = (
+            self.client.table("skills")
+            .select("*")
+            .eq("org_id", self.org_id)
+            .order("created_at", desc=True)
+            .limit(limit)
+        )
+
+        if feedback_name:
+            db_query = db_query.eq("feedback_name", feedback_name)
+        if agent_version:
+            db_query = db_query.eq("agent_version", agent_version)
+        if skill_status:
+            db_query = db_query.eq("skill_status", skill_status.value)
+
+        response = db_query.execute()
+        return [response_to_skill(item) for item in response.data]
+
+    @handle_exceptions
+    def search_skills(
+        self,
+        query: Optional[str] = None,
+        feedback_name: Optional[str] = None,
+        agent_version: Optional[str] = None,
+        skill_status: Optional[SkillStatus] = None,
+        match_threshold: float = 0.5,
+        match_count: int = 10,
+    ) -> list[Skill]:
+        """
+        Search skills with hybrid search (vector + FTS).
+
+        Args:
+            query (str, optional): Text query for semantic/text search
+            feedback_name (str, optional): Filter by feedback name
+            agent_version (str, optional): Filter by agent version
+            skill_status (SkillStatus, optional): Filter by skill status
+            match_threshold (float): Minimum similarity threshold
+            match_count (int): Maximum number of results to return
+
+        Returns:
+            list[Skill]: List of matching skill objects
+        """
+        if query:
+            response = self.client.rpc(
+                "hybrid_match_skills",
+                {
+                    "p_query_embedding": self._get_embedding(query),
+                    "p_query_text": query,
+                    "p_match_threshold": match_threshold,
+                    "p_match_count": match_count * 10,
+                    "p_org_id": self.org_id,
+                    "p_search_mode": self.search_mode.value,
+                    "p_rrf_k": 60,
+                },
+            ).execute()
+
+            skills = [response_to_skill(item) for item in response.data]
+
+            # Apply Python-level filters
+            filtered_skills = []
+            for s in skills:
+                if feedback_name and s.feedback_name != feedback_name:
+                    continue
+                if agent_version and s.agent_version != agent_version:
+                    continue
+                if skill_status and s.skill_status != skill_status:
+                    continue
+                filtered_skills.append(s)
+            return filtered_skills[:match_count]
+
+        # No query - use regular table query
+        return self.get_skills(
+            limit=match_count,
+            feedback_name=feedback_name,
+            agent_version=agent_version,
+            skill_status=skill_status,
+        )
+
+    @handle_exceptions
+    def update_skill_status(self, skill_id: int, skill_status: SkillStatus):
+        """
+        Update the status of a specific skill.
+
+        Args:
+            skill_id (int): The ID of the skill to update
+            skill_status (SkillStatus): The new status to set
+        """
+        self.client.table("skills").update({"skill_status": skill_status.value}).eq(
+            "skill_id", skill_id
+        ).eq("org_id", self.org_id).execute()
+
+    @handle_exceptions
+    def delete_skill(self, skill_id: int):
+        """
+        Delete a skill by ID.
+
+        Args:
+            skill_id (int): The ID of the skill to delete
+        """
+        self.client.table("skills").delete().eq("skill_id", skill_id).eq(
+            "org_id", self.org_id
+        ).execute()
+
+    @handle_exceptions
+    def get_interactions_by_request_ids(
+        self, request_ids: list[str]
+    ) -> list[Interaction]:
+        """
+        Fetch interactions by their request IDs.
+
+        Args:
+            request_ids (list[str]): List of request IDs to fetch interactions for
+
+        Returns:
+            list[Interaction]: List of matching interaction objects
+        """
+        if not request_ids:
+            return []
+
+        response = (
+            self.client.table("interactions")
+            .select("*")
+            .eq("org_id", self.org_id)
+            .in_("request_id", request_ids)
+            .order("created_at", desc=False)
+            .execute()
+        )
+        return [response_to_interaction(item) for item in response.data]

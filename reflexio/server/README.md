@@ -48,6 +48,12 @@ Description: FastAPI backend server that processes user interactions to generate
 - `POST /api/rerun_feedback_generation` - Regenerate feedback for agent version (creates PENDING)
 - `POST /api/manual_feedback_generation` - Regenerate feedback from window-sized interactions (creates CURRENT)
 - `POST /api/run_feedback_aggregation` - Aggregate raw feedbacks into insights
+- `POST /api/run_skill_generation` - Generate skills from clustered raw feedbacks (expensive, 5/min)
+- `POST /api/get_skills` - List skills (filtered by feedback_name, agent_version, skill_status)
+- `POST /api/search_skills` - Hybrid search skills (vector + FTS)
+- `POST /api/update_skill_status` - Update skill status (DRAFT → PUBLISHED → DEPRECATED)
+- `DELETE /api/delete_skill` - Delete a skill by ID
+- `POST /api/export_skills` - Export skills as SKILL.md markdown
 - `POST /api/upgrade_all_raw_feedbacks` - PENDING → CURRENT for raw feedbacks
 - `POST /api/downgrade_all_raw_feedbacks` - ARCHIVED → CURRENT for raw feedbacks
 - `DELETE /api/delete_feedback` - Delete feedback by ID
@@ -274,15 +280,19 @@ Users can regenerate and manage profile versions using a four-state system:
 
 **Directory**: `services/feedback/`
 
+See `services/feedback/README.md` for detailed component documentation.
+
 Key files:
 - `feedback_generation_service.py`: Service orchestrator
 - `feedback_extractor.py`: Extractor that extracts raw feedback
 - `feedback_aggregator.py`: Aggregates similar raw feedbacks (with cluster-level change detection to skip unchanged clusters)
 - `feedback_deduplicator.py`: Merges duplicate feedbacks from multiple extractors using LLM
+- `skill_generator.py`: Generates rich skills from clustered raw feedbacks enriched with interaction context
 
 **Flow**:
 - Interactions → FeedbackExtractor → FeedbackDeduplicator (optional) → RawFeedback (with optional `blocking_issue`) → Storage
 - RawFeedback (manual trigger) → FeedbackAggregator → cluster fingerprint comparison → LLM only for changed clusters → Feedback (with optional `blocking_issue`) → Storage
+- RawFeedback → SkillGenerator (clusters + interaction enrichment + LLM) → Skill → Storage
 
 **Tool Analysis**: FeedbackExtractor reads `tool_can_use` from root `Config` and passes it to prompts for tool usage analysis and blocking issue detection.
 
@@ -376,7 +386,7 @@ Key files:
 **Pattern**: **NEVER import SupabaseStorage/LocalJsonStorage directly** - Always use `request_context.storage`
 
 **Key Methods**:
-- CRUD: profiles, interactions, feedbacks, results, requests
+- CRUD: profiles, interactions, feedbacks, results, requests, skills
 - `get_request_groups()` → `dict[str, list[RequestInteractionDataModel]]` (groups by request_id)
 - `get_feedbacks(status_filter, feedback_status_filter)` - Filter by profile status and approval status
 - `save_feedbacks()` → returns `list[Feedback]` with `feedback_id` populated (callers can ignore return)
@@ -445,6 +455,7 @@ flowchart TB
         E --> G2[FeedbackExtractor N]
         G1 --> FD[FeedbackDeduplicator]
         G2 --> FD
+        FD -.->|auto trigger| SG[SkillGenerator]
     end
 
     subgraph EvalService["AgentSuccessEvaluationService"]

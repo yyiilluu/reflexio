@@ -65,19 +65,36 @@ TEST_FEEDBACK_NAMES = [
 
 @pytest.fixture
 def cleanup_after_test(supabase_storage):
-    """Fixture to clean up test data after each test."""
-    yield  # This allows the test to run
-    try:
-        # Only delete feedbacks and raw_feedbacks created by this test file
-        supabase_storage.client.table("feedbacks").delete().in_(
-            "feedback_name", TEST_FEEDBACK_NAMES
-        ).execute()
-        supabase_storage.client.table("raw_feedbacks").delete().in_(
-            "feedback_name", TEST_FEEDBACK_NAMES
-        ).execute()
-        print("Test data cleaned up successfully")
-    except Exception as e:
-        print(f"Error during cleanup: {str(e)}")
+    """Fixture to clean up test data before and after each test."""
+
+    def _cleanup():
+        try:
+            # Only delete feedbacks and raw_feedbacks created by this test file
+            supabase_storage.client.table("feedbacks").delete().in_(
+                "feedback_name", TEST_FEEDBACK_NAMES
+            ).execute()
+            supabase_storage.client.table("raw_feedbacks").delete().in_(
+                "feedback_name", TEST_FEEDBACK_NAMES
+            ).execute()
+            # Clean up operation state entries for aggregation tests
+            for feedback_name in TEST_FEEDBACK_NAMES:
+                for org_id in ["test_org", "test_archival"]:
+                    for version in ["1.0.0"]:
+                        base_key = (
+                            f"feedback_aggregator::{org_id}::{feedback_name}::{version}"
+                        )
+                        for key in [base_key, f"{base_key}::clusters"]:
+                            try:
+                                supabase_storage.delete_operation_state(key)
+                            except Exception:
+                                pass
+            print("Test data cleaned up successfully")
+        except Exception as e:
+            print(f"Error during cleanup: {str(e)}")
+
+    _cleanup()
+    yield
+    _cleanup()
 
 
 @pytest.fixture

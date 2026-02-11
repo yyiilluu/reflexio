@@ -52,6 +52,14 @@ from reflexio_commons.api_schema.service_schemas import (
     AddFeedbackResponse,
     RunFeedbackAggregationRequest,
     RunFeedbackAggregationResponse,
+    RunSkillGenerationRequest,
+    RunSkillGenerationResponse,
+    UpdateSkillStatusRequest,
+    UpdateSkillStatusResponse,
+    DeleteSkillRequest,
+    DeleteSkillResponse,
+    ExportSkillsRequest,
+    ExportSkillsResponse,
     RerunProfileGenerationRequest,
     RerunProfileGenerationResponse,
     ManualProfileGenerationRequest,
@@ -100,6 +108,10 @@ from reflexio_commons.api_schema.retriever_schema import (
     GetDashboardStatsRequest,
     GetDashboardStatsResponse,
     GetProfileStatisticsResponse,
+    GetSkillsRequest,
+    GetSkillsResponse,
+    SearchSkillsRequest,
+    SearchSkillsResponse,
 )
 from reflexio.server.db.db_operations import get_db_session
 from reflexio_commons.api_schema.login_schema import (
@@ -356,11 +368,11 @@ def login_for_access_token(
         return {"api_key": org.api_key, "token_type": "bearer"}
 
     # create a new temporary api key if not already present
-    access_token_expires = timedelta(days=7)
-    access_token = create_access_token(
-        data={"sub": org.email}, expires_delta=access_token_expires
+    api_key_expires = timedelta(days=7)
+    api_key = create_access_token(
+        data={"sub": org.email}, expires_delta=api_key_expires
     )
-    return {"api_key": access_token, "token_type": "bearer"}
+    return {"api_key": api_key, "token_type": "bearer"}
 
 
 @app.get("/api/users/", response_model=User, response_model_exclude_none=True)
@@ -381,7 +393,7 @@ def register(
     background_tasks: BackgroundTasks,
     session: Session = Depends(get_db_session),
 ):
-    access_token = create_access_token(
+    api_key = create_access_token(
         data={"sub": form_data.username},
         expires_delta=timedelta(days=ACCESS_TOKEN_EXPIRE_DAYS),
     )
@@ -389,7 +401,7 @@ def register(
         org_email=form_data.username,
         password=form_data.password,
         session=session,
-        api_key=access_token,
+        api_key=api_key,
     )
     if not org:
         raise HTTPException(
@@ -407,7 +419,7 @@ def register(
         verification_token,
     )
 
-    return {"api_key": access_token, "token_type": "bearer"}
+    return {"api_key": api_key, "token_type": "bearer"}
 
 
 @app.post("/api/verify-email", response_model=VerifyEmailResponse)
@@ -988,6 +1000,125 @@ def run_feedback_aggregation(
     org_id: str = Depends(get_org_id_for_self_host),
 ):
     return publisher_api.run_feedback_aggregation(org_id=org_id, request=payload)
+
+
+@app.post(
+    "/api/run_skill_generation",
+    response_model=RunSkillGenerationResponse,
+    response_model_exclude_none=True,
+)
+@limiter.limit("5/minute")
+def run_skill_generation(
+    request: Request,
+    payload: RunSkillGenerationRequest,
+    org_id: str = Depends(get_org_id_for_self_host),
+):
+    return publisher_api.run_skill_generation(org_id=org_id, request=payload)
+
+
+@app.post(
+    "/api/get_skills",
+    response_model=GetSkillsResponse,
+    response_model_exclude_none=True,
+)
+@limiter.limit("120/minute")
+def get_skills(
+    request: Request,
+    payload: GetSkillsRequest,
+    org_id: str = Depends(get_org_id_for_self_host),
+):
+    reflexio = get_reflexio(org_id)
+    skills = reflexio.get_skills(
+        limit=payload.limit or 100,
+        feedback_name=payload.feedback_name,
+        agent_version=payload.agent_version,
+        skill_status=payload.skill_status,
+    )
+    return GetSkillsResponse(success=True, skills=skills)
+
+
+@app.post(
+    "/api/search_skills",
+    response_model=SearchSkillsResponse,
+    response_model_exclude_none=True,
+)
+@limiter.limit("120/minute")
+def search_skills(
+    request: Request,
+    payload: SearchSkillsRequest,
+    org_id: str = Depends(get_org_id_for_self_host),
+):
+    reflexio = get_reflexio(org_id)
+    skills = reflexio.search_skills(
+        query=payload.query,
+        feedback_name=payload.feedback_name,
+        agent_version=payload.agent_version,
+        skill_status=payload.skill_status,
+        threshold=payload.threshold or 0.5,
+        count=payload.top_k or 10,
+    )
+    return SearchSkillsResponse(success=True, skills=skills)
+
+
+@app.post(
+    "/api/update_skill_status",
+    response_model=UpdateSkillStatusResponse,
+    response_model_exclude_none=True,
+)
+@limiter.limit("60/minute")
+def update_skill_status(
+    request: Request,
+    payload: UpdateSkillStatusRequest,
+    org_id: str = Depends(get_org_id_for_self_host),
+):
+    reflexio = get_reflexio(org_id)
+    try:
+        reflexio.update_skill_status(payload.skill_id, payload.skill_status)
+    except Exception as e:
+        return UpdateSkillStatusResponse(success=False, message=str(e))
+    return UpdateSkillStatusResponse(success=True)
+
+
+@app.delete(
+    "/api/delete_skill",
+    response_model=DeleteSkillResponse,
+    response_model_exclude_none=True,
+)
+@limiter.limit("60/minute")
+def delete_skill(
+    request: Request,
+    payload: DeleteSkillRequest,
+    org_id: str = Depends(get_org_id_for_self_host),
+):
+    reflexio = get_reflexio(org_id)
+    try:
+        reflexio.delete_skill(payload.skill_id)
+    except Exception as e:
+        return DeleteSkillResponse(success=False, message=str(e))
+    return DeleteSkillResponse(success=True)
+
+
+@app.post(
+    "/api/export_skills",
+    response_model=ExportSkillsResponse,
+    response_model_exclude_none=True,
+)
+@limiter.limit("30/minute")
+def export_skills(
+    request: Request,
+    payload: ExportSkillsRequest,
+    org_id: str = Depends(get_org_id_for_self_host),
+):
+    reflexio = get_reflexio(org_id)
+    try:
+        markdown = reflexio.export_skills(
+            feedback_name=payload.feedback_name,
+            agent_version=payload.agent_version,
+            skill_status=payload.skill_status,
+        )
+    except Exception as e:
+        return ExportSkillsResponse(success=False, msg=str(e))
+    return ExportSkillsResponse(success=True, markdown=markdown)
 
 
 @app.post("/api/set_config")

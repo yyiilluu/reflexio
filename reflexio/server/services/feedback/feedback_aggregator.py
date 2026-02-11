@@ -354,6 +354,7 @@ class FeedbackAggregator:
         mgr = self._create_state_manager()
         feedback_name = feedback_aggregator_request.feedback_name
         archived_feedback_ids = []
+        full_archive = False  # True when archive_feedbacks_by_feedback_name was used
 
         if feedback_aggregator_request.rerun:
             # Full rerun: archive all non-APPROVED feedbacks, regenerate everything
@@ -362,6 +363,7 @@ class FeedbackAggregator:
                 feedback_name, agent_version=self.agent_version
             )
             changed_clusters = clusters
+            full_archive = True
         else:
             # Load previous fingerprints and detect changes
             prev_fingerprints = mgr.get_cluster_fingerprints(
@@ -377,6 +379,7 @@ class FeedbackAggregator:
                     feedback_name, agent_version=self.agent_version
                 )
                 changed_clusters = clusters
+                full_archive = True
             else:
                 (
                     changed_clusters,
@@ -488,7 +491,7 @@ class FeedbackAggregator:
             self._update_operation_state(feedback_name, raw_feedbacks)
 
             # Delete archived feedbacks after successful aggregation
-            if feedback_aggregator_request.rerun:
+            if full_archive:
                 self.storage.delete_archived_feedbacks_by_feedback_name(
                     feedback_name, agent_version=self.agent_version
                 )
@@ -502,7 +505,7 @@ class FeedbackAggregator:
                 feedback_name,
                 str(e),
             )
-            if feedback_aggregator_request.rerun:
+            if full_archive:
                 self.storage.restore_archived_feedbacks_by_feedback_name(
                     feedback_name, agent_version=self.agent_version
                 )
@@ -802,6 +805,13 @@ class FeedbackAggregator:
                 parse_structured_output=True,
             )
             log_model_response(logger, "Aggregation structured response", response)
+
+            if not isinstance(response, FeedbackAggregationOutput):
+                logger.warning(
+                    "LLM response was not parsed as FeedbackAggregationOutput (got %s), returning None.",
+                    type(response).__name__,
+                )
+                return None
 
             return self._process_aggregation_response(response, cluster_feedbacks)
         except Exception as exc:

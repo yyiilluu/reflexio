@@ -19,6 +19,8 @@ from reflexio_commons.api_schema.service_schemas import (
     DeleteRawFeedbackResponse,
     RunFeedbackAggregationRequest,
     RunFeedbackAggregationResponse,
+    RunSkillGenerationRequest,
+    RunSkillGenerationResponse,
     PublishUserInteractionRequest,
     PublishUserInteractionResponse,
     AddRawFeedbackRequest,
@@ -245,13 +247,43 @@ def run_feedback_aggregation(
     """
     reflexio = get_reflexio(org_id=org_id)
     try:
-        reflexio.run_feedback_aggregation(
-            request.agent_version, request.feedback_name
-        )
+        reflexio.run_feedback_aggregation(request.agent_version, request.feedback_name)
     except Exception as e:
         logger.error("Failed to run feedback aggregation: %s", e)
         return RunFeedbackAggregationResponse(success=False, message=str(e))
     return RunFeedbackAggregationResponse(success=True)
+
+
+# ==============================
+# Run skill generation
+# ==============================
+
+
+def run_skill_generation(
+    org_id: str, request: RunSkillGenerationRequest
+) -> RunSkillGenerationResponse:
+    """Run skill generation for a given agent version and feedback name.
+
+    Args:
+        org_id (str): Organization ID
+        request (RunSkillGenerationRequest): The run skill generation request
+
+    Returns:
+        RunSkillGenerationResponse: Response containing success status and counts
+    """
+    reflexio = get_reflexio(org_id=org_id)
+    try:
+        result = reflexio.run_skill_generation(
+            request.agent_version, request.feedback_name
+        )
+    except Exception as e:
+        logger.error("Failed to run skill generation: %s", e)
+        return RunSkillGenerationResponse(success=False, message=str(e))
+    return RunSkillGenerationResponse(
+        success=True,
+        skills_generated=result.get("skills_generated", 0),
+        skills_updated=result.get("skills_updated", 0),
+    )
 
 
 # ==============================

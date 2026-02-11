@@ -33,6 +33,18 @@ def _create_mock_completion(prompt_content, parse_structured_output=False):
     """Create a mock LiteLLM completion response."""
     if "Output just a boolean value" in prompt_content:
         content = "true"
+    elif (
+        "policy consolidation" in prompt_content or "WHEN conditions" in prompt_content
+    ):
+        # Feedback aggregation response (feedback_generation prompt)
+        content = json.dumps(
+            {
+                "feedback": {
+                    "do_action": "consolidated helpful action",
+                    "when_condition": "when user asks a question",
+                }
+            }
+        )
     elif parse_structured_output:
         content = json.dumps(
             {

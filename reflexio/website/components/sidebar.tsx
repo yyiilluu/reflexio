@@ -19,6 +19,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   BarChart3,
+  Sparkles,
 } from "lucide-react"
 import { useState, useEffect } from "react"
 import {
@@ -74,6 +75,11 @@ const navSections: NavSection[] = [
         title: "Feedback",
         href: "/feedbacks",
         icon: BarChart3,
+      },
+      {
+        title: "Skills",
+        href: "/skills",
+        icon: Sparkles,
       },
     ],
   },

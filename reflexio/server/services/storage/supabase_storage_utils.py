@@ -2,6 +2,7 @@
 Utility functions for Supabase storage operations
 """
 
+import re
 from datetime import datetime, timezone
 from typing import Any
 from reflexio_commons.api_schema.service_schemas import (
@@ -13,10 +14,37 @@ from reflexio_commons.api_schema.service_schemas import (
     ProfileChangeLog,
     RawFeedback,
     Feedback,
+    Skill,
+    SkillStatus,
     AgentSuccessEvaluationResult,
+    BlockingIssue,
+    BlockingIssueKind,
     ToolUsed,
 )
 import psycopg2
+
+
+def _parse_iso_timestamp(ts: str) -> int:
+    """
+    Parse an ISO 8601 timestamp string to a Unix timestamp int.
+
+    Handles variable-precision fractional seconds from Postgres (e.g. 5-digit microseconds)
+    that Python 3.10's datetime.fromisoformat() cannot parse.
+
+    Args:
+        ts: ISO 8601 timestamp string
+
+    Returns:
+        int: Unix timestamp
+    """
+    ts = ts.replace("Z", "+00:00")
+    # Normalize fractional seconds to exactly 6 digits for Python 3.10 compat
+    ts = re.sub(
+        r"\.(\d+)",
+        lambda m: "." + m.group(1)[:6].ljust(6, "0"),
+        ts,
+    )
+    return int(datetime.fromisoformat(ts).timestamp())
 
 
 def response_to_user_profile(item: dict[str, Any]) -> UserProfile:
@@ -384,6 +412,94 @@ def agent_success_evaluation_result_to_data(
         ),
         "embedding": result.embedding if len(result.embedding) > 0 else None,
     }
+
+
+def skill_to_data(skill: Skill) -> dict[str, Any]:
+    """
+    Convert a Skill object to data for upserting into Supabase.
+
+    Args:
+        skill: Skill object to convert
+
+    Returns:
+        Dictionary containing data ready for upsert
+    """
+    data = {
+        "skill_name": skill.skill_name,
+        "description": skill.description,
+        "version": skill.version,
+        "agent_version": skill.agent_version,
+        "feedback_name": skill.feedback_name,
+        "instructions": skill.instructions,
+        "allowed_tools": skill.allowed_tools,
+        "blocking_issues": [bi.model_dump() for bi in skill.blocking_issues],
+        "raw_feedback_ids": skill.raw_feedback_ids,
+        "skill_status": skill.skill_status.value if skill.skill_status else "draft",
+        "embedding": skill.embedding if len(skill.embedding) > 0 else None,
+        "updated_at": datetime.fromtimestamp(
+            skill.updated_at, tz=timezone.utc
+        ).isoformat(),
+    }
+    # Only include skill_id if it's set (non-zero), otherwise let DB auto-generate
+    if skill.skill_id:
+        data["skill_id"] = skill.skill_id
+    return data
+
+
+def response_to_skill(item: dict[str, Any]) -> Skill:
+    """
+    Convert a response item from Supabase to a Skill object.
+
+    Args:
+        item: Dictionary containing skill data from Supabase response
+
+    Returns:
+        Skill object
+    """
+    # Parse blocking_issues from JSONB
+    blocking_issues = []
+    blocking_issues_data = item.get("blocking_issues")
+    if blocking_issues_data and isinstance(blocking_issues_data, list):
+        for bi in blocking_issues_data:
+            if isinstance(bi, dict):
+                blocking_issues.append(
+                    BlockingIssue(
+                        kind=BlockingIssueKind(bi["kind"]),
+                        details=bi.get("details", ""),
+                    )
+                )
+
+    # Parse created_at timestamp
+    created_at = item.get("created_at")
+    if isinstance(created_at, str):
+        created_at = _parse_iso_timestamp(created_at)
+    elif created_at is None:
+        created_at = 0
+
+    # Parse updated_at timestamp
+    updated_at = item.get("updated_at")
+    if isinstance(updated_at, str):
+        updated_at = _parse_iso_timestamp(updated_at)
+    elif updated_at is None:
+        updated_at = 0
+
+    return Skill(
+        skill_id=item.get("skill_id", 0),
+        skill_name=item.get("skill_name", ""),
+        description=item.get("description", ""),
+        version=item.get("version", "1.0.0"),
+        agent_version=item.get("agent_version", ""),
+        feedback_name=item.get("feedback_name", ""),
+        instructions=item.get("instructions", ""),
+        allowed_tools=item.get("allowed_tools") or [],
+        blocking_issues=blocking_issues,
+        raw_feedback_ids=item.get("raw_feedback_ids") or [],
+        skill_status=SkillStatus(item["skill_status"])
+        if item.get("skill_status")
+        else SkillStatus.DRAFT,
+        created_at=created_at,
+        updated_at=updated_at,
+    )
 
 
 def execute_sql_file_direct(db_url: str, file_path: str) -> list[Any]:

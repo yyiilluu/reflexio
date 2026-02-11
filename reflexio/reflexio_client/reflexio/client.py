@@ -27,6 +27,10 @@ from reflexio_commons.api_schema.retriever_schema import (
     GetRequestsResponse,
     GetAgentSuccessEvaluationResultsRequest,
     GetAgentSuccessEvaluationResultsResponse,
+    GetSkillsRequest,
+    GetSkillsResponse,
+    SearchSkillsRequest,
+    SearchSkillsResponse,
 )
 from dotenv import load_dotenv
 
@@ -72,6 +76,15 @@ from reflexio_commons.api_schema.service_schemas import (
     RerunProfileGenerationResponse,
     RunFeedbackAggregationRequest,
     RunFeedbackAggregationResponse,
+    RunSkillGenerationRequest,
+    RunSkillGenerationResponse,
+    UpdateSkillStatusRequest,
+    UpdateSkillStatusResponse,
+    DeleteSkillRequest,
+    DeleteSkillResponse,
+    ExportSkillsRequest,
+    ExportSkillsResponse,
+    SkillStatus,
     Status,
 )
 from reflexio_commons.api_schema.login_schema import Token
@@ -87,14 +100,17 @@ class ReflexioClient:
     # Shared thread pool for all instances to maximize efficiency
     _thread_pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="reflexio")
 
-    def __init__(self, api_key: str = "", url_endpoint: str = ""):
+    def __init__(self, api_key: str = "", url_endpoint: str = "", timeout: int = 300):
         """Initialize the Reflexio client.
 
         Args:
             api_key (str): Your API key for authentication
+            url_endpoint (str): Base URL for the API
+            timeout (int): Default request timeout in seconds (default 300)
         """
         self.api_key = api_key
         self.base_url = url_endpoint if url_endpoint else BACKEND_URL
+        self.timeout = timeout
         self.session = requests.Session()
         self._cache = InMemoryCache()
 
@@ -201,6 +217,7 @@ class ReflexioClient:
             request_headers.update(headers)
 
         self.session.headers.update(request_headers)
+        kwargs.setdefault("timeout", self.timeout)
         response = self.session.request(method, url, **kwargs)
         response.raise_for_status()
         return response.json()
@@ -1460,3 +1477,192 @@ class ReflexioClient:
         else:
             self._fire_and_forget(self._run_feedback_aggregation_async, req)
             return None
+
+    def _run_skill_generation_sync(
+        self, request: RunSkillGenerationRequest
+    ) -> RunSkillGenerationResponse:
+        """Internal sync method to run skill generation."""
+        response = self._make_request(
+            "POST",
+            "/api/run_skill_generation",
+            json=request.model_dump(),
+        )
+        return RunSkillGenerationResponse(**response)
+
+    async def _run_skill_generation_async(
+        self, request: RunSkillGenerationRequest
+    ) -> RunSkillGenerationResponse:
+        """Internal async method to run skill generation."""
+        response = await self._make_async_request(
+            "POST",
+            "/api/run_skill_generation",
+            json=request.model_dump(),
+        )
+        return RunSkillGenerationResponse(**response)
+
+    def run_skill_generation(
+        self,
+        request: Optional[Union[RunSkillGenerationRequest, dict]] = None,
+        wait_for_response: bool = False,
+        *,
+        agent_version: Optional[str] = None,
+        feedback_name: Optional[str] = None,
+    ) -> Optional[RunSkillGenerationResponse]:
+        """Run skill generation to create skills from clustered feedback.
+
+        Args:
+            request: The skill generation request object (alternative to kwargs)
+            wait_for_response: If True, wait for response
+            agent_version: The agent version
+            feedback_name: The feedback type name
+
+        Returns:
+            RunSkillGenerationResponse if wait_for_response=True, None otherwise
+        """
+        req = self._build_request(
+            request,
+            RunSkillGenerationRequest,
+            agent_version=agent_version,
+            feedback_name=feedback_name,
+        )
+        if wait_for_response:
+            return self._run_skill_generation_sync(req)
+        else:
+            self._fire_and_forget(self._run_skill_generation_async, req)
+            return None
+
+    def get_skills(
+        self,
+        request: Optional[Union[GetSkillsRequest, dict]] = None,
+        *,
+        limit: Optional[int] = None,
+        feedback_name: Optional[str] = None,
+        agent_version: Optional[str] = None,
+        skill_status: Optional[SkillStatus] = None,
+    ) -> GetSkillsResponse:
+        """Get skills.
+
+        Args:
+            request: The get request object (alternative to kwargs)
+            limit: Maximum number of results
+            feedback_name: Filter by feedback name
+            agent_version: Filter by agent version
+            skill_status: Filter by skill status
+
+        Returns:
+            GetSkillsResponse containing skills
+        """
+        req = self._build_request(
+            request,
+            GetSkillsRequest,
+            limit=limit,
+            feedback_name=feedback_name,
+            agent_version=agent_version,
+            skill_status=skill_status,
+        )
+        response = self._make_request("POST", "/api/get_skills", json=req.model_dump())
+        return GetSkillsResponse(**response)
+
+    def search_skills(
+        self,
+        request: Optional[Union[SearchSkillsRequest, dict]] = None,
+        *,
+        query: Optional[str] = None,
+        feedback_name: Optional[str] = None,
+        agent_version: Optional[str] = None,
+        skill_status: Optional[SkillStatus] = None,
+        threshold: Optional[float] = None,
+        top_k: Optional[int] = None,
+    ) -> SearchSkillsResponse:
+        """Search skills with hybrid search.
+
+        Args:
+            request: The search request object (alternative to kwargs)
+            query: Query for semantic/text search
+            feedback_name: Filter by feedback name
+            agent_version: Filter by agent version
+            skill_status: Filter by skill status
+            threshold: Similarity threshold
+            top_k: Maximum number of results
+
+        Returns:
+            SearchSkillsResponse containing matching skills
+        """
+        req = self._build_request(
+            request,
+            SearchSkillsRequest,
+            query=query,
+            feedback_name=feedback_name,
+            agent_version=agent_version,
+            skill_status=skill_status,
+            threshold=threshold,
+            top_k=top_k,
+        )
+        response = self._make_request(
+            "POST", "/api/search_skills", json=req.model_dump()
+        )
+        return SearchSkillsResponse(**response)
+
+    def update_skill_status(
+        self, skill_id: int, skill_status: SkillStatus
+    ) -> UpdateSkillStatusResponse:
+        """Update skill status.
+
+        Args:
+            skill_id: The skill ID
+            skill_status: The new status
+
+        Returns:
+            UpdateSkillStatusResponse
+        """
+        request = UpdateSkillStatusRequest(skill_id=skill_id, skill_status=skill_status)
+        response = self._make_request(
+            "POST", "/api/update_skill_status", json=request.model_dump()
+        )
+        return UpdateSkillStatusResponse(**response)
+
+    def delete_skill(self, skill_id: int) -> DeleteSkillResponse:
+        """Delete a skill by ID.
+
+        Args:
+            skill_id: The skill ID to delete
+
+        Returns:
+            DeleteSkillResponse
+        """
+        request = DeleteSkillRequest(skill_id=skill_id)
+        response = self._make_request(
+            "DELETE", "/api/delete_skill", json=request.model_dump()
+        )
+        return DeleteSkillResponse(**response)
+
+    def export_skills(
+        self,
+        request: Optional[Union[ExportSkillsRequest, dict]] = None,
+        *,
+        feedback_name: Optional[str] = None,
+        agent_version: Optional[str] = None,
+        skill_status: Optional[SkillStatus] = None,
+    ) -> ExportSkillsResponse:
+        """Export skills as markdown.
+
+        Args:
+            request: The export request object (alternative to kwargs)
+            feedback_name: Filter by feedback name
+            agent_version: Filter by agent version
+            skill_status: Filter by skill status
+
+        Returns:
+            ExportSkillsResponse containing markdown
+        """
+        req = self._build_request(
+            request,
+            ExportSkillsRequest,
+            feedback_name=feedback_name,
+            agent_version=agent_version,
+            skill_status=skill_status,
+        )
+        response = self._make_request(
+            "POST", "/api/export_skills", json=req.model_dump()
+        )
+        return ExportSkillsResponse(**response)

@@ -1051,3 +1051,216 @@ export async function cancelOperation(
     throw error
   }
 }
+
+// Skill types
+export type SkillStatus = "draft" | "published" | "deprecated"
+
+export interface Skill {
+  skill_id: number
+  skill_name: string
+  description: string
+  version: string
+  agent_version: string
+  feedback_name: string
+  instructions: string
+  allowed_tools: string[]
+  blocking_issues: BlockingIssue[]
+  raw_feedback_ids: number[]
+  skill_status: SkillStatus
+  created_at: number
+  updated_at: number
+}
+
+export interface GetSkillsRequest {
+  limit?: number
+  feedback_name?: string
+  agent_version?: string
+  skill_status?: SkillStatus
+}
+
+export interface GetSkillsResponse {
+  success: boolean
+  skills: Skill[]
+  msg?: string
+}
+
+export interface SearchSkillsRequest {
+  query?: string
+  feedback_name?: string
+  agent_version?: string
+  skill_status?: SkillStatus
+  threshold?: number
+  top_k?: number
+}
+
+export interface SearchSkillsResponse {
+  success: boolean
+  skills: Skill[]
+  msg?: string
+}
+
+export interface UpdateSkillStatusRequest {
+  skill_id: number
+  skill_status: SkillStatus
+}
+
+export interface UpdateSkillStatusResponse {
+  success: boolean
+  message?: string
+}
+
+export interface DeleteSkillRequest {
+  skill_id: number
+}
+
+export interface DeleteSkillResponse {
+  success: boolean
+  message?: string
+}
+
+export interface ExportSkillsRequest {
+  feedback_name?: string
+  agent_version?: string
+  skill_status?: SkillStatus
+}
+
+export interface ExportSkillsResponse {
+  success: boolean
+  markdown: string
+}
+
+export interface RunSkillGenerationRequest {
+  agent_version: string
+  feedback_name: string
+}
+
+export interface RunSkillGenerationResponse {
+  success: boolean
+  message: string
+  skills_generated: number
+  skills_updated: number
+}
+
+export async function getSkills(request: GetSkillsRequest): Promise<GetSkillsResponse> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/get_skills`, {
+      method: "POST",
+      headers: getHeaders(),
+      body: JSON.stringify(request),
+    })
+
+    if (!response.ok) {
+      throw new Error(`API request failed with status ${response.status}`)
+    }
+
+    const data = await response.json()
+    return data
+  } catch (error) {
+    console.error("Error fetching skills:", error)
+    throw error
+  }
+}
+
+export async function searchSkills(request: SearchSkillsRequest): Promise<SearchSkillsResponse> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/search_skills`, {
+      method: "POST",
+      headers: getHeaders(),
+      body: JSON.stringify(request),
+    })
+
+    if (!response.ok) {
+      throw new Error(`API request failed with status ${response.status}`)
+    }
+
+    const data = await response.json()
+    return data
+  } catch (error) {
+    console.error("Error searching skills:", error)
+    throw error
+  }
+}
+
+export async function updateSkillStatus(
+  request: UpdateSkillStatusRequest
+): Promise<UpdateSkillStatusResponse> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/update_skill_status`, {
+      method: "POST",
+      headers: getHeaders(),
+      body: JSON.stringify(request),
+    })
+
+    if (!response.ok) {
+      throw new Error(`API request failed with status ${response.status}`)
+    }
+
+    const data = await response.json()
+    return data
+  } catch (error) {
+    console.error("Error updating skill status:", error)
+    throw error
+  }
+}
+
+export async function deleteSkill(request: DeleteSkillRequest): Promise<DeleteSkillResponse> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/delete_skill`, {
+      method: "DELETE",
+      headers: getHeaders(),
+      body: JSON.stringify(request),
+    })
+
+    if (!response.ok) {
+      throw new Error(`API request failed with status ${response.status}`)
+    }
+
+    const data = await response.json()
+    return data
+  } catch (error) {
+    console.error("Error deleting skill:", error)
+    throw error
+  }
+}
+
+export async function exportSkills(request: ExportSkillsRequest): Promise<ExportSkillsResponse> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/export_skills`, {
+      method: "POST",
+      headers: getHeaders(),
+      body: JSON.stringify(request),
+    })
+
+    if (!response.ok) {
+      throw new Error(`API request failed with status ${response.status}`)
+    }
+
+    const data = await response.json()
+    return data
+  } catch (error) {
+    console.error("Error exporting skills:", error)
+    throw error
+  }
+}
+
+export async function runSkillGeneration(
+  request: RunSkillGenerationRequest
+): Promise<RunSkillGenerationResponse> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/run_skill_generation`, {
+      method: "POST",
+      headers: getHeaders(),
+      body: JSON.stringify(request),
+    })
+
+    if (!response.ok) {
+      throw new Error(`API request failed with status ${response.status}`)
+    }
+
+    const data = await response.json()
+    return data
+  } catch (error) {
+    console.error("Error running skill generation:", error)
+    throw error
+  }
+}

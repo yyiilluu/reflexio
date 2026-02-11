@@ -6,6 +6,8 @@ import reflexio.data as data
 from reflexio_commons.api_schema.service_schemas import (
     RawFeedback,
     Feedback,
+    Skill,
+    SkillStatus,
     UserProfile,
     Interaction,
     Request,
@@ -906,6 +908,104 @@ class BaseStorage(ABC):
     @abstractmethod
     def delete_all_operation_states(self):
         """Delete all operation states."""
+        raise NotImplementedError
+
+    # ==============================
+    # Skill methods
+    # ==============================
+
+    @abstractmethod
+    def save_skills(self, skills: list[Skill]):
+        """
+        Save skills with embeddings.
+
+        Args:
+            skills (list[Skill]): List of skill objects to save
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_skills(
+        self,
+        limit: int = 100,
+        feedback_name: Optional[str] = None,
+        agent_version: Optional[str] = None,
+        skill_status: Optional[SkillStatus] = None,
+    ) -> list[Skill]:
+        """
+        Get skills from storage.
+
+        Args:
+            limit (int): Maximum number of skills to return
+            feedback_name (str, optional): Filter by feedback name
+            agent_version (str, optional): Filter by agent version
+            skill_status (SkillStatus, optional): Filter by skill status
+
+        Returns:
+            list[Skill]: List of skill objects
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def search_skills(
+        self,
+        query: Optional[str] = None,
+        feedback_name: Optional[str] = None,
+        agent_version: Optional[str] = None,
+        skill_status: Optional[SkillStatus] = None,
+        match_threshold: float = 0.5,
+        match_count: int = 10,
+    ) -> list[Skill]:
+        """
+        Search skills with hybrid search (vector + FTS).
+
+        Args:
+            query (str, optional): Text query for semantic/text search
+            feedback_name (str, optional): Filter by feedback name
+            agent_version (str, optional): Filter by agent version
+            skill_status (SkillStatus, optional): Filter by skill status
+            match_threshold (float): Minimum similarity threshold
+            match_count (int): Maximum number of results to return
+
+        Returns:
+            list[Skill]: List of matching skill objects
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def update_skill_status(self, skill_id: int, skill_status: SkillStatus):
+        """
+        Update the status of a specific skill.
+
+        Args:
+            skill_id (int): The ID of the skill to update
+            skill_status (SkillStatus): The new status to set
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def delete_skill(self, skill_id: int):
+        """
+        Delete a skill by ID.
+
+        Args:
+            skill_id (int): The ID of the skill to delete
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_interactions_by_request_ids(
+        self, request_ids: list[str]
+    ) -> list[Interaction]:
+        """
+        Fetch interactions by their request IDs.
+
+        Args:
+            request_ids (list[str]): List of request IDs to fetch interactions for
+
+        Returns:
+            list[Interaction]: List of matching interaction objects
+        """
         raise NotImplementedError
 
     @abstractmethod

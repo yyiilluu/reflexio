@@ -8,8 +8,10 @@ from reflexio_commons.api_schema.service_schemas import (
     UserProfile,
     RawFeedback,
     Feedback,
+    Skill,
     AgentSuccessEvaluationResult,
     FeedbackStatus,
+    SkillStatus,
     Status,
 )
 
@@ -282,4 +284,37 @@ class GetDashboardStatsResponse(BaseModel):
 
     success: bool
     stats: Optional[DashboardStats] = None
+    msg: Optional[str] = None
+
+
+# ===============================
+# Skill Retriever Models
+# ===============================
+
+
+class GetSkillsRequest(BaseModel):
+    limit: Optional[int] = 100
+    feedback_name: Optional[str] = None
+    agent_version: Optional[str] = None
+    skill_status: Optional[SkillStatus] = None
+
+
+class GetSkillsResponse(BaseModel):
+    success: bool
+    skills: list[Skill] = []
+    msg: Optional[str] = None
+
+
+class SearchSkillsRequest(BaseModel):
+    query: Optional[str] = None
+    feedback_name: Optional[str] = None
+    agent_version: Optional[str] = None
+    skill_status: Optional[SkillStatus] = None
+    threshold: Optional[float] = 0.5
+    top_k: Optional[int] = 10
+
+
+class SearchSkillsResponse(BaseModel):
+    success: bool
+    skills: list[Skill] = []
     msg: Optional[str] = None

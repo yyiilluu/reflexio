@@ -19,3 +19,9 @@ class FeedbackServiceConstants:
         "agent_success_evaluation_should_evaluate"
     )
     AGENT_SUCCESS_EVALUATION_PROMPT_ID = "agent_success_evaluation"
+
+    # ===============================
+    # skill generation prompt ids
+    # ===============================
+    SKILL_GENERATION_PROMPT_ID = "skill_generation"
+    SKILL_UPDATE_PROMPT_ID = "skill_update"

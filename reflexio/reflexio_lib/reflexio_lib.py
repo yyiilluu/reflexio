@@ -633,6 +633,100 @@ class Reflexio:
         )
         feedback_aggregator.run(feedback_aggregator_request)
 
+    def run_skill_generation(self, agent_version: str, feedback_name: str):
+        """Run skill generation for a given agent version.
+
+        Args:
+            agent_version (str): The agent version
+            feedback_name (str): The feedback name
+
+        Raises:
+            ValueError: If storage is not configured
+        """
+        if not self._is_storage_configured():
+            raise ValueError(STORAGE_NOT_CONFIGURED_MSG)
+        from reflexio.server.services.feedback.skill_generator import SkillGenerator
+        from reflexio.server.services.feedback.feedback_service_utils import (
+            SkillGeneratorRequest,
+        )
+
+        skill_generator = SkillGenerator(
+            llm_client=self.llm_client,
+            request_context=self.request_context,
+            agent_version=agent_version,
+        )
+        skill_generator_request = SkillGeneratorRequest(
+            agent_version=agent_version,
+            feedback_name=feedback_name,
+            rerun=True,
+        )
+        return skill_generator.run(skill_generator_request)
+
+    def get_skills(
+        self,
+        limit: int = 100,
+        feedback_name=None,
+        agent_version=None,
+        skill_status=None,
+    ):
+        """Get skills from storage."""
+        if not self._is_storage_configured():
+            raise ValueError(STORAGE_NOT_CONFIGURED_MSG)
+        return self.request_context.storage.get_skills(
+            limit=limit,
+            feedback_name=feedback_name,
+            agent_version=agent_version,
+            skill_status=skill_status,
+        )
+
+    def search_skills(
+        self,
+        query=None,
+        feedback_name=None,
+        agent_version=None,
+        skill_status=None,
+        threshold=0.5,
+        count=10,
+    ):
+        """Search skills with hybrid search."""
+        if not self._is_storage_configured():
+            raise ValueError(STORAGE_NOT_CONFIGURED_MSG)
+        return self.request_context.storage.search_skills(
+            query=query,
+            feedback_name=feedback_name,
+            agent_version=agent_version,
+            skill_status=skill_status,
+            match_threshold=threshold,
+            match_count=count,
+        )
+
+    def update_skill_status(self, skill_id: int, skill_status):
+        """Update skill status."""
+        if not self._is_storage_configured():
+            raise ValueError(STORAGE_NOT_CONFIGURED_MSG)
+        self.request_context.storage.update_skill_status(skill_id, skill_status)
+
+    def delete_skill(self, skill_id: int):
+        """Delete a skill by ID."""
+        if not self._is_storage_configured():
+            raise ValueError(STORAGE_NOT_CONFIGURED_MSG)
+        self.request_context.storage.delete_skill(skill_id)
+
+    def export_skills(self, feedback_name=None, agent_version=None, skill_status=None):
+        """Export skills as markdown."""
+        if not self._is_storage_configured():
+            raise ValueError(STORAGE_NOT_CONFIGURED_MSG)
+        from reflexio.server.services.feedback.skill_generator import (
+            render_skills_markdown,
+        )
+
+        skills = self.request_context.storage.get_skills(
+            feedback_name=feedback_name,
+            agent_version=agent_version,
+            skill_status=skill_status,
+        )
+        return render_skills_markdown(skills)
+
     def set_config(self, config: Union[Config, dict]) -> SetConfigResponse:
         """Set configuration for the organization.
 
@@ -746,6 +840,10 @@ class Reflexio:
                         request_id=rf.request_id,
                         feedback_name=rf.feedback_name,
                         feedback_content=rf.feedback_content,
+                        do_action=rf.do_action,
+                        do_not_action=rf.do_not_action,
+                        when_condition=rf.when_condition,
+                        indexed_content=rf.indexed_content,
                     )
                 )
 

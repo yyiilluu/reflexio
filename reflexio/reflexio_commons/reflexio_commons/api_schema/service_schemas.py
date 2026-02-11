@@ -33,6 +33,12 @@ class FeedbackStatus(str, enum.Enum):
     REJECTED = "rejected"
 
 
+class SkillStatus(str, enum.Enum):
+    DRAFT = "draft"
+    PUBLISHED = "published"
+    DEPRECATED = "deprecated"
+
+
 class Status(str, enum.Enum):
     CURRENT = None  # None for current profile/feedback
     ARCHIVED = "archived"  # archived old profiles/feedbacks
@@ -204,6 +210,27 @@ class Feedback(BaseModel):
     status: Optional[
         Status
     ] = None  # used for tracking intermediate states during feedback aggregation. Status.ARCHIVED for feedbacks during aggregation process, None for current feedbacks
+
+
+class Skill(BaseModel):
+    skill_id: int = 0
+    skill_name: str
+    description: str = ""
+    version: str = "1.0.0"
+    agent_version: str = ""
+    feedback_name: str = ""
+    instructions: str = ""
+    allowed_tools: list[str] = Field(default_factory=list)
+    blocking_issues: list[BlockingIssue] = Field(default_factory=list)
+    raw_feedback_ids: list[int] = Field(default_factory=list)
+    skill_status: SkillStatus = SkillStatus.DRAFT
+    embedding: list[float] = Field(default_factory=list, exclude=True)
+    created_at: int = Field(
+        default_factory=lambda: int(datetime.now(timezone.utc).timestamp())
+    )
+    updated_at: int = Field(
+        default_factory=lambda: int(datetime.now(timezone.utc).timestamp())
+    )
 
 
 class AgentSuccessEvaluationResult(BaseModel):
@@ -530,4 +557,52 @@ class CancelOperationRequest(BaseModel):
 class CancelOperationResponse(BaseModel):
     success: bool
     cancelled_services: list[str] = []
+    msg: Optional[str] = None
+
+
+# ===============================
+# Skill Request/Response Models
+# ===============================
+
+
+class RunSkillGenerationRequest(BaseModel):
+    agent_version: str
+    feedback_name: str
+
+
+class RunSkillGenerationResponse(BaseModel):
+    success: bool
+    message: str = ""
+    skills_generated: int = 0
+    skills_updated: int = 0
+
+
+class UpdateSkillStatusRequest(BaseModel):
+    skill_id: int
+    skill_status: SkillStatus
+
+
+class UpdateSkillStatusResponse(BaseModel):
+    success: bool
+    message: str = ""
+
+
+class DeleteSkillRequest(BaseModel):
+    skill_id: int
+
+
+class DeleteSkillResponse(BaseModel):
+    success: bool
+    message: str = ""
+
+
+class ExportSkillsRequest(BaseModel):
+    feedback_name: Optional[str] = None
+    agent_version: Optional[str] = None
+    skill_status: Optional[SkillStatus] = None
+
+
+class ExportSkillsResponse(BaseModel):
+    success: bool
+    markdown: str = ""
     msg: Optional[str] = None

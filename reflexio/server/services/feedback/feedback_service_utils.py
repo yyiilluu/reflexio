@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from typing import Any, Optional
 
 from reflexio_commons.api_schema.internal_schema import RequestInteractionDataModel
@@ -110,6 +111,31 @@ class FeedbackAggregationOutput(BaseModel):
         extra="forbid",
         json_schema_extra={"additionalProperties": False},
     )
+
+
+# ===============================
+# Pydantic classes for skill generation prompt output schema
+# ===============================
+
+
+class SkillGenerationOutput(BaseModel):
+    """Output schema for skill_generation prompt."""
+
+    skill_name: str
+    description: str
+    instructions: str
+    allowed_tools: list[str] = Field(default_factory=list)
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={"additionalProperties": False},
+    )
+
+
+@dataclass
+class SkillGeneratorRequest:
+    agent_version: str
+    feedback_name: str
+    rerun: bool = False
 
 
 class FeedbackGenerationRequest(BaseModel):

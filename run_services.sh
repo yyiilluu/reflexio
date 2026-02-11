@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Start first service
-uvicorn reflexio.server.api:app --host 0.0.0.0 --port 8081 --reload &
+uvicorn reflexio.server.api:app --host 0.0.0.0 --port 8081 --reload --reload-include "*.json" &
 
 # Start website
 npm run dev --prefix reflexio/website &

@@ -302,6 +302,36 @@ class FeedbackGenerationService(
             )
             aggregator.run(aggregator_request)
 
+            # After aggregation, optionally trigger skill generation
+            try:
+                skill_config = feedback_config.skill_generator_config
+                if (
+                    skill_config
+                    and skill_config.enabled
+                    and skill_config.auto_generate_on_aggregation
+                ):
+                    from reflexio.server.services.feedback.skill_generator import (
+                        SkillGenerator,
+                    )
+                    from reflexio.server.services.feedback.feedback_service_utils import (
+                        SkillGeneratorRequest,
+                    )
+
+                    logger.info("Triggering skill generation")
+                    skill_gen = SkillGenerator(
+                        llm_client=self.client,
+                        request_context=self.request_context,
+                        agent_version=self.service_config.agent_version,
+                    )
+                    skill_gen.run(
+                        SkillGeneratorRequest(
+                            agent_version=self.service_config.agent_version,
+                            feedback_name=feedback_name,
+                        )
+                    )
+            except Exception as e:
+                logger.error("Skill generation failed: %s", e)
+
     # ===============================
     # Rerun hook implementations (override base class methods)
     # ===============================

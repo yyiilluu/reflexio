@@ -587,7 +587,7 @@ class TestAggregatorBookmark:
 
     def test_get_aggregator_bookmark(self, manager, mock_storage):
         mock_storage.get_operation_state.return_value = {
-            "last_processed_raw_feedback_id": 42
+            "operation_state": {"last_processed_raw_feedback_id": 42}
         }
 
         result = manager.get_aggregator_bookmark("feedback_a", "v1")
@@ -607,6 +607,30 @@ class TestAggregatorBookmark:
         key, state = mock_storage.upsert_operation_state.call_args[0]
         assert key == "test_service::org_123::feedback_a::v2"
         assert state == {"last_processed_raw_feedback_id": 99}
+
+    def test_get_aggregator_bookmark_ignores_top_level_keys(
+        self, manager, mock_storage
+    ):
+        """Regression: bookmark must read from nested operation_state, not top-level dict."""
+        mock_storage.get_operation_state.return_value = {
+            "last_processed_raw_feedback_id": 999,
+            "operation_state": {},
+        }
+        result = manager.get_aggregator_bookmark("fb", "v1")
+        assert result is None
+
+    def test_get_cluster_fingerprints_ignores_top_level_keys(
+        self, manager, mock_storage
+    ):
+        """Regression: fingerprints must read from nested operation_state, not top-level dict."""
+        mock_storage.get_operation_state.return_value = {
+            "cluster_fingerprints": {
+                "fp1": {"feedback_id": 1, "raw_feedback_ids": [1, 2]}
+            },
+            "operation_state": {},
+        }
+        result = manager.get_cluster_fingerprints("fb", "v1")
+        assert result == {}
 
 
 # ===============================

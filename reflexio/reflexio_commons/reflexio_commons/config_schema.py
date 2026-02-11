@@ -106,12 +106,21 @@ class FeedbackAggregatorConfig(BaseModel):
     refresh_count: int = 2
 
 
+class SkillGeneratorConfig(BaseModel):
+    enabled: bool = False
+    min_feedback_per_cluster: int = 5
+    cooldown_hours: int = 24
+    auto_generate_on_aggregation: bool = False
+    max_interactions_per_skill: int = 20
+
+
 class AgentFeedbackConfig(BaseModel):
     feedback_name: str
     # define what success looks like
     feedback_definition_prompt: str
     metadata_definition_prompt: Optional[str] = None
     feedback_aggregator_config: Optional[FeedbackAggregatorConfig] = None
+    skill_generator_config: Optional[SkillGeneratorConfig] = None
     request_sources_enabled: Optional[
         list[str]
     ] = None  # default enabled for all sources, if set, only extract feedbacks from the enabled request sources

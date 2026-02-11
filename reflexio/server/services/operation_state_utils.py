@@ -566,9 +566,11 @@ class OperationStateManager:
             Last processed raw_feedback_id, or None if no state exists
         """
         state_key = self._bookmark_key(name, version=version)
-        operation_state = self.storage.get_operation_state(state_key)
-        if operation_state:
-            return operation_state.get("last_processed_raw_feedback_id")
+        record = self.storage.get_operation_state(state_key)
+        if record:
+            state = record.get("operation_state", {})
+            if isinstance(state, dict):
+                return state.get("last_processed_raw_feedback_id")
         return None
 
     def update_aggregator_bookmark(
@@ -607,9 +609,11 @@ class OperationStateManager:
                   Returns empty dict if no state exists.
         """
         state_key = self._bookmark_key(name, version=version) + "::clusters"
-        operation_state = self.storage.get_operation_state(state_key)
-        if operation_state:
-            return operation_state.get("cluster_fingerprints", {})
+        record = self.storage.get_operation_state(state_key)
+        if record:
+            state = record.get("operation_state", {})
+            if isinstance(state, dict):
+                return state.get("cluster_fingerprints", {})
         return {}
 
     def update_cluster_fingerprints(

@@ -36,10 +36,11 @@ export function Hero() {
 
       <div className="max-w-4xl mx-auto text-center">
         <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight mb-6">
-          <span className="text-slate-800">Agents That Learn From Every Interaction</span>{" "}
-          <span className="block text-center">
+          <span className="block text-slate-400 text-3xl sm:text-4xl lg:text-5xl font-medium mb-2">Beyond Memory.</span>
+          <span className="block bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 bg-clip-text text-transparent">Toward Evolution.</span>
+          <span className="block mt-4 text-2xl sm:text-3xl lg:text-4xl">
             <span
-              className={`bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 bg-clip-text text-transparent transition-opacity duration-500 ${isVisible ? 'opacity-100' : 'opacity-0'}`}
+              className={`bg-gradient-to-r from-slate-600 to-slate-800 bg-clip-text text-transparent transition-opacity duration-500 ${isVisible ? 'opacity-100' : 'opacity-0'}`}
             >
               {phrases[currentIndex]}
             </span>
