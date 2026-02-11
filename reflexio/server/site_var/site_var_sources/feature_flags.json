@@ -1,0 +1,6 @@
+{
+    "skill_generation": {
+        "enabled": false,
+        "enabled_org_ids": []
+    }
+}

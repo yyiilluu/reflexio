@@ -1,9 +1,12 @@
+from typing import Optional
+
 from pydantic import BaseModel
 
 
 class Token(BaseModel):
     api_key: str
     token_type: str
+    feature_flags: Optional[dict[str, bool]] = None
 
 
 class User(BaseModel):

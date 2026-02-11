@@ -11,6 +11,7 @@ Description: Next.js frontend for viewing user profiles and interactions
 - **Interactions**: `app/interactions/page.tsx` - View conversation history
 - **Feedbacks**: `app/feedbacks/page.tsx` - View and manage user feedback
 - **Evaluations**: `app/evaluations/page.tsx` - View agent success evaluation results
+- **Skills**: `app/skills/page.tsx` - View and manage generated skills (gated by `skill_generation` feature flag)
 - **Settings**: `app/settings/page.tsx` - Configuration and settings management
 
 ## Purpose
@@ -20,17 +21,28 @@ Description: Next.js frontend for viewing user profiles and interactions
 3. **Interaction browsing** - View conversation history, tool usage (tool name + inputs), and context
 4. **Feedback management** - View and manage user feedback (displays blocking issues when present)
 5. **Evaluation monitoring** - Track agent success metrics and analyze failures
-6. **Settings configuration** - Manage application settings including root-level tool configuration (`tool_can_use`)
-7. **API integration** - Sync client communicates with FastAPI backend
+6. **Skill management** - View, search, export, and manage generated skills (feature-flag gated)
+7. **Settings configuration** - Manage application settings including root-level tool configuration (`tool_can_use`)
+8. **API integration** - Sync client communicates with FastAPI backend
 
 ## Components
 
 **Directory**: `components/`
 
 Key files:
-- `sidebar.tsx`: Navigation sidebar for switching between views
+- `sidebar.tsx`: Navigation sidebar for switching between views (filters items by feature flags)
 - `layout-content.tsx`: Authentication wrapper that handles auth routing and sidebar display
 - `ui/`: ShadCN UI components (button, card, input, table, etc.)
+
+## Feature Flags
+
+**File**: `lib/auth-context.tsx`
+
+Feature flags are returned from the login API and stored in localStorage (`reflexio_feature_flags`). The `AuthContext` exposes `isFeatureEnabled(name)` which returns `true` if the flag is not explicitly `false` (fail-open). In self-host mode, all features are enabled.
+
+**Usage**:
+- **Sidebar** (`components/sidebar.tsx`): Nav items with `featureFlag` property are hidden when the flag is disabled
+- **Skills page** (`app/skills/page.tsx`): Shows lock screen when `skill_generation` is disabled
 
 ## Architecture Pattern
 

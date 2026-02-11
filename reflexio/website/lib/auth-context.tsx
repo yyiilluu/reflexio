@@ -9,6 +9,7 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || ""
 const SELF_HOST = process.env.NEXT_PUBLIC_SELF_HOST === "true"
 const TOKEN_COOKIE_NAME = "reflexio_token"
 const USER_EMAIL_COOKIE_NAME = "reflexio_user_email"
+const FEATURE_FLAGS_KEY = "reflexio_feature_flags"
 
 interface AuthContextType {
   isAuthenticated: boolean
@@ -18,6 +19,8 @@ interface AuthContextType {
   register: (email: string, password: string) => Promise<{ success: boolean; error?: string }>
   logout: () => Promise<void>
   isSelfHost: boolean
+  featureFlags: Record<string, boolean>
+  isFeatureEnabled: (name: string) => boolean
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -25,13 +28,14 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined)
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [token, setToken] = useState<string | null>(null)
   const [userEmail, setUserEmail] = useState<string | null>(null)
+  const [featureFlags, setFeatureFlags] = useState<Record<string, boolean>>({})
   const [isLoading, setIsLoading] = useState(true)
   const router = useRouter()
 
-  // Initialize auth state from cookies
+  // Initialize auth state from cookies/localStorage
   useEffect(() => {
     if (SELF_HOST) {
-      // In self-host mode, no authentication needed
+      // In self-host mode, no authentication needed, all features enabled
       setIsLoading(false)
       return
     }
@@ -43,6 +47,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setToken(storedToken)
       setUserEmail(storedEmail || null)
     }
+
+    // Restore feature flags from localStorage
+    try {
+      const storedFlags = localStorage.getItem(FEATURE_FLAGS_KEY)
+      if (storedFlags) {
+        setFeatureFlags(JSON.parse(storedFlags))
+      }
+    } catch {
+      // Ignore parse errors
+    }
+
     setIsLoading(false)
   }, [])
 
@@ -76,6 +91,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Store token and email in cookies (7 days expiry)
       Cookies.set(TOKEN_COOKIE_NAME, apiKey, { expires: 7 })
       Cookies.set(USER_EMAIL_COOKIE_NAME, email, { expires: 7 })
+
+      // Store feature flags
+      const flags = data.feature_flags || {}
+      localStorage.setItem(FEATURE_FLAGS_KEY, JSON.stringify(flags))
+      setFeatureFlags(flags)
 
       setToken(apiKey)
       setUserEmail(email)
@@ -133,15 +153,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.error('Failed to invalidate cache:', error)
     }
 
-    // Remove cookies
+    // Remove cookies and localStorage
     Cookies.remove(TOKEN_COOKIE_NAME)
     Cookies.remove(USER_EMAIL_COOKIE_NAME)
+    localStorage.removeItem(FEATURE_FLAGS_KEY)
 
     setToken(null)
     setUserEmail(null)
+    setFeatureFlags({})
 
     // Redirect to landing page
     router.push("/")
+  }
+
+  const isFeatureEnabled = (name: string): boolean => {
+    // In self-host mode, all features are enabled
+    if (SELF_HOST) return true
+    // If flag is not present, default to enabled (fail-open)
+    return featureFlags[name] !== false
   }
 
   const value: AuthContextType = {
@@ -152,6 +181,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     register,
     logout,
     isSelfHost: SELF_HOST,
+    featureFlags,
+    isFeatureEnabled,
   }
 
   // Show loading state while checking cookies

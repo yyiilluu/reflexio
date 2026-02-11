@@ -9,7 +9,7 @@ Description: AI agent memory system that makes AI agents personalized and self-i
 | `reflexio/reflexio_lib/` | Core library - `Reflexio` orchestrator connecting API to services | `reflexio_lib.py` |
 | `reflexio/reflexio_client/` | Python SDK for interacting with Reflexio API | [README](reflexio/README.md) |
 | `reflexio/reflexio_commons/` | Shared schemas and configuration models | [README](reflexio/README.md) |
-| `reflexio/website/` | Next.js frontend - profiles, interactions, feedbacks, evaluations, auth UI | `app/`, `components/` |
+| `reflexio/website/` | Next.js frontend - profiles, interactions, feedbacks, evaluations, skills, auth UI | `app/`, `components/` |
 | `supabase/` | Local Supabase - user data (profiles, interactions, feedbacks), atomic lock RPC | Migrations |
 | `supabase_login/` | Cloud Supabase - authentication (organizations, API keys) | [README](supabase_login/README.md) |
 | `demo/` | Conversation simulation demo - scenarios, simulator, and live viewer | [README](demo/readme.md) |

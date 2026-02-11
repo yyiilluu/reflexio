@@ -48,18 +48,20 @@ Description: FastAPI backend server that processes user interactions to generate
 - `POST /api/rerun_feedback_generation` - Regenerate feedback for agent version (creates PENDING)
 - `POST /api/manual_feedback_generation` - Regenerate feedback from window-sized interactions (creates CURRENT)
 - `POST /api/run_feedback_aggregation` - Aggregate raw feedbacks into insights
-- `POST /api/run_skill_generation` - Generate skills from clustered raw feedbacks (expensive, 5/min)
-- `POST /api/get_skills` - List skills (filtered by feedback_name, agent_version, skill_status)
-- `POST /api/search_skills` - Hybrid search skills (vector + FTS)
-- `POST /api/update_skill_status` - Update skill status (DRAFT → PUBLISHED → DEPRECATED)
-- `DELETE /api/delete_skill` - Delete a skill by ID
-- `POST /api/export_skills` - Export skills as SKILL.md markdown
+- `POST /api/run_skill_generation` - Generate skills from clustered raw feedbacks (expensive, 5/min) **[gated by `skill_generation` feature flag]**
+- `POST /api/get_skills` - List skills (filtered by feedback_name, agent_version, skill_status) **[gated]**
+- `POST /api/search_skills` - Hybrid search skills (vector + FTS) **[gated]**
+- `POST /api/update_skill_status` - Update skill status (DRAFT → PUBLISHED → DEPRECATED) **[gated]**
+- `DELETE /api/delete_skill` - Delete a skill by ID **[gated]**
+- `POST /api/export_skills` - Export skills as SKILL.md markdown **[gated]**
 - `POST /api/upgrade_all_raw_feedbacks` - PENDING → CURRENT for raw feedbacks
 - `POST /api/downgrade_all_raw_feedbacks` - ARCHIVED → CURRENT for raw feedbacks
 - `DELETE /api/delete_feedback` - Delete feedback by ID
 - `DELETE /api/delete_raw_feedback` - Delete raw feedback by ID
 - `GET /api/get_operation_status` - Get background operation status
 - `POST /api/cancel_operation` - Cancel an in-progress operation (rerun or manual generation)
+
+**Login Response**: `POST /token` now returns `feature_flags: dict[str, bool]` alongside `api_key` and `token_type`. Frontend stores these in localStorage to gate UI features.
 
 **Authentication Endpoints**:
 - `POST /api/verify-email` - Verify email with token
@@ -148,10 +150,17 @@ Key components:
 ## Site Variables
 
 **Directory**: `site_var/`
-**File**: `site_var_manager.py` - SiteVarManager (singleton)
 
-Global settings: model names, embedding models, feature flags
-Access: `SiteVarManager().get_site_var(key)`
+See `site_var/README.md` for detailed documentation.
+
+| File | Purpose |
+|------|---------|
+| `site_var_manager.py` | SiteVarManager (singleton) - loads JSON/TXT configs |
+| `feature_flags.py` | Per-org feature gating (`is_feature_enabled()`, `get_all_feature_flags()`) |
+
+**Feature Flags**: Config in `site_var_sources/feature_flags.json`. Each flag has global `enabled` toggle and per-org `enabled_org_ids` allowlist. Unknown flags default to enabled (fail-open). Currently gates: `skill_generation` (all skill endpoints return 403 when disabled).
+
+Access: `SiteVarManager().get_site_var(key)` for raw values, `feature_flags.is_feature_enabled(org_id, name)` for flag checks
 
 ## Email Service
 

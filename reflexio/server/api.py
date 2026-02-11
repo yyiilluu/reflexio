@@ -114,6 +114,10 @@ from reflexio_commons.api_schema.retriever_schema import (
     SearchSkillsResponse,
 )
 from reflexio.server.db.db_operations import get_db_session
+from reflexio.server.site_var.feature_flags import (
+    get_all_feature_flags,
+    is_skill_generation_enabled,
+)
 from reflexio_commons.api_schema.login_schema import (
     Token,
     User,
@@ -303,6 +307,28 @@ def get_org_id_for_self_host(
             session.close()
 
 
+def require_skill_generation(
+    org_id: str = Depends(get_org_id_for_self_host),
+) -> str:
+    """Dependency that gates skill endpoints behind the skill_generation feature flag.
+
+    Args:
+        org_id (str): Organization ID resolved from auth
+
+    Returns:
+        str: The org_id if skill generation is enabled
+
+    Raises:
+        HTTPException: 403 if skill generation is not enabled for this org
+    """
+    if not is_skill_generation_enabled(org_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Skill generation is not enabled for this organization",
+        )
+    return org_id
+
+
 @app.get("/")
 def root():
     return {"message": "Hello World"}
@@ -364,15 +390,21 @@ def login_for_access_token(
             detail="Please verify your email address. Check your inbox for the verification link.",
         )
 
+    feature_flags = get_all_feature_flags(str(org.id))
+
     if org.api_key is not None and str(org.api_key) != "":
-        return {"api_key": org.api_key, "token_type": "bearer"}
+        return {
+            "api_key": org.api_key,
+            "token_type": "bearer",
+            "feature_flags": feature_flags,
+        }
 
     # create a new temporary api key if not already present
     api_key_expires = timedelta(days=7)
     api_key = create_access_token(
         data={"sub": org.email}, expires_delta=api_key_expires
     )
-    return {"api_key": api_key, "token_type": "bearer"}
+    return {"api_key": api_key, "token_type": "bearer", "feature_flags": feature_flags}
 
 
 @app.get("/api/users/", response_model=User, response_model_exclude_none=True)
@@ -1011,7 +1043,7 @@ def run_feedback_aggregation(
 def run_skill_generation(
     request: Request,
     payload: RunSkillGenerationRequest,
-    org_id: str = Depends(get_org_id_for_self_host),
+    org_id: str = Depends(require_skill_generation),
 ):
     return publisher_api.run_skill_generation(org_id=org_id, request=payload)
 
@@ -1025,7 +1057,7 @@ def run_skill_generation(
 def get_skills(
     request: Request,
     payload: GetSkillsRequest,
-    org_id: str = Depends(get_org_id_for_self_host),
+    org_id: str = Depends(require_skill_generation),
 ):
     reflexio = get_reflexio(org_id)
     skills = reflexio.get_skills(
@@ -1046,7 +1078,7 @@ def get_skills(
 def search_skills(
     request: Request,
     payload: SearchSkillsRequest,
-    org_id: str = Depends(get_org_id_for_self_host),
+    org_id: str = Depends(require_skill_generation),
 ):
     reflexio = get_reflexio(org_id)
     skills = reflexio.search_skills(
@@ -1069,7 +1101,7 @@ def search_skills(
 def update_skill_status(
     request: Request,
     payload: UpdateSkillStatusRequest,
-    org_id: str = Depends(get_org_id_for_self_host),
+    org_id: str = Depends(require_skill_generation),
 ):
     reflexio = get_reflexio(org_id)
     try:
@@ -1088,7 +1120,7 @@ def update_skill_status(
 def delete_skill(
     request: Request,
     payload: DeleteSkillRequest,
-    org_id: str = Depends(get_org_id_for_self_host),
+    org_id: str = Depends(require_skill_generation),
 ):
     reflexio = get_reflexio(org_id)
     try:
@@ -1107,7 +1139,7 @@ def delete_skill(
 def export_skills(
     request: Request,
     payload: ExportSkillsRequest,
-    org_id: str = Depends(get_org_id_for_self_host),
+    org_id: str = Depends(require_skill_generation),
 ):
     reflexio = get_reflexio(org_id)
     try:

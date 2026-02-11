@@ -35,6 +35,7 @@ interface NavItem {
   href: string
   icon: React.ComponentType<{ className?: string }>
   children?: NavItem[]
+  featureFlag?: string
 }
 
 interface NavSection {
@@ -80,6 +81,7 @@ const navSections: NavSection[] = [
         title: "Skills",
         href: "/skills",
         icon: Sparkles,
+        featureFlag: "skill_generation",
       },
     ],
   },
@@ -99,7 +101,7 @@ export function Sidebar() {
   const pathname = usePathname()
   const [expandedItems, setExpandedItems] = useState<string[]>([])
   const [isCollapsed, setIsCollapsed] = useState(false)
-  const { isAuthenticated, userEmail, logout, isSelfHost } = useAuth()
+  const { isAuthenticated, userEmail, logout, isSelfHost, isFeatureEnabled } = useAuth()
 
   // Load collapsed state from localStorage on mount
   useEffect(() => {
@@ -201,7 +203,7 @@ export function Sidebar() {
 
               {/* Section Items */}
               <div className="space-y-1">
-                {section.items.map((item) => {
+                {section.items.filter((item) => !item.featureFlag || isFeatureEnabled(item.featureFlag)).map((item) => {
                   const Icon = item.icon
                   const isActive = pathname === item.href
                   const isExpanded = expandedItems.includes(item.title)

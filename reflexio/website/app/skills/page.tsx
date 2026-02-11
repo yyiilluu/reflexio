@@ -30,6 +30,7 @@ import {
   AlertTriangle,
   FileText,
   X,
+  Lock,
 } from "lucide-react"
 import ReactMarkdown from "react-markdown"
 import {
@@ -41,6 +42,7 @@ import {
   type SkillStatus,
 } from "@/lib/api"
 import { DeleteConfirmDialog } from "@/components/DeleteConfirmDialog"
+import { useAuth } from "@/lib/auth-context"
 
 // Helper functions
 const formatTimestamp = (timestamp: number): string => {
@@ -409,6 +411,9 @@ function SkillRow({ skill, onUpdateStatus, onDelete, isUpdating = false }: Skill
 }
 
 export default function SkillsPage() {
+  const { isFeatureEnabled } = useAuth()
+  const skillsEnabled = isFeatureEnabled("skill_generation")
+
   const [skills, setSkills] = useState<Skill[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -438,10 +443,14 @@ export default function SkillsPage() {
     type: "success" | "error"
   } | null>(null)
 
-  // Fetch data
+  // Fetch data (skip if feature is disabled to avoid a 403)
   useEffect(() => {
-    fetchSkills()
-  }, [])
+    if (skillsEnabled) {
+      fetchSkills()
+    } else {
+      setIsLoading(false)
+    }
+  }, [skillsEnabled])
 
   const fetchSkills = async () => {
     setIsLoading(true)
@@ -636,6 +645,22 @@ export default function SkillsPage() {
     } finally {
       setGeneratingSkills(false)
     }
+  }
+
+  if (!skillsEnabled) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-50 flex items-center justify-center">
+        <div className="text-center max-w-md">
+          <div className="h-16 w-16 rounded-2xl bg-gradient-to-br from-slate-200 to-slate-300 flex items-center justify-center mx-auto mb-6 shadow-lg">
+            <Lock className="h-8 w-8 text-slate-500" />
+          </div>
+          <h2 className="text-2xl font-bold text-slate-800 mb-3">Skills Not Available</h2>
+          <p className="text-slate-500">
+            The Skills feature is not enabled for your organization. Please contact support if you believe this is an error.
+          </p>
+        </div>
+      </div>
+    )
   }
 
   return (
