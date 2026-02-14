@@ -7,6 +7,7 @@ class Token(BaseModel):
     api_key: str
     token_type: str
     feature_flags: Optional[dict[str, bool]] = None
+    auto_verified: Optional[bool] = None
 
 
 class User(BaseModel):

@@ -2,7 +2,15 @@ import asyncio
 import logging
 import os
 from typing import Annotated, Optional
-from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request, status
+from fastapi import (
+    BackgroundTasks,
+    Depends,
+    FastAPI,
+    Form,
+    HTTPException,
+    Request,
+    status,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import (
     OAuth2PasswordRequestForm,
@@ -116,6 +124,7 @@ from reflexio_commons.api_schema.retriever_schema import (
 from reflexio.server.db.db_operations import get_db_session
 from reflexio.server.site_var.feature_flags import (
     get_all_feature_flags,
+    is_invitation_only_enabled,
     is_skill_generation_enabled,
 )
 from reflexio_commons.api_schema.login_schema import (
@@ -138,6 +147,8 @@ from reflexio.server.cache.reflexio_cache import (
 from reflexio.server.api_endpoints import publisher_api, retriever_api
 from reflexio.server.services.email.email_service import get_email_service
 from reflexio.server.db.db_operations import (
+    claim_invitation_code,
+    release_invitation_code,
     get_organization_by_email,
     update_organization,
 )
@@ -424,25 +435,63 @@ def register(
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
     background_tasks: BackgroundTasks,
     session: Session = Depends(get_db_session),
+    invitation_code: Optional[str] = Form(None),
 ):
+    invitation_only = is_invitation_only_enabled()
+
+    # Validate and atomically claim invitation code if invitation-only mode is enabled
+    if invitation_only:
+        if not invitation_code:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invitation code is required",
+            )
+        inv = claim_invitation_code(
+            session=session, code=invitation_code, email=form_data.username
+        )
+        if inv is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid, expired, or already used invitation code",
+            )
+
     api_key = create_access_token(
         data={"sub": form_data.username},
         expires_delta=timedelta(days=ACCESS_TOKEN_EXPIRE_DAYS),
     )
-    org = register_organization(
-        org_email=form_data.username,
-        password=form_data.password,
-        session=session,
-        api_key=api_key,
-    )
+    try:
+        org = register_organization(
+            org_email=form_data.username,
+            password=form_data.password,
+            session=session,
+            api_key=api_key,
+        )
+    except Exception:
+        # Release the invitation code if registration fails unexpectedly
+        if invitation_only and invitation_code:
+            release_invitation_code(session=session, code=invitation_code)
+        raise
     if not org:
+        # Release the invitation code if org creation returned None (e.g., duplicate email)
+        if invitation_only and invitation_code:
+            release_invitation_code(session=session, code=invitation_code)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect organization email or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # Send verification email in background
+    if invitation_only:
+        # Auto-verify the organization (code already claimed atomically above)
+        org.is_verified = True
+        update_organization(session=session, organization=org)
+        return {
+            "api_key": api_key,
+            "token_type": "bearer",
+            "auto_verified": True,
+        }
+
+    # Normal flow: send verification email
     verification_token = create_verification_token(form_data.username)
     email_service = get_email_service()
     background_tasks.add_task(
@@ -1345,6 +1394,7 @@ def get_dashboard_stats(
 def rerun_profile_generation_endpoint(
     request: Request,
     payload: RerunProfileGenerationRequest,
+    background_tasks: BackgroundTasks,
     org_id: str = Depends(get_org_id_for_self_host),
 ):
     """Rerun profile generation for a user with filtered interactions.
@@ -1352,6 +1402,7 @@ def rerun_profile_generation_endpoint(
     Args:
         request (Request): The HTTP request object (for rate limiting)
         payload (RerunProfileGenerationRequest): Request containing user_id, time filters, and source
+        background_tasks (BackgroundTasks): Background task runner
         org_id (str): Organization ID
 
     Returns:
@@ -1360,10 +1411,13 @@ def rerun_profile_generation_endpoint(
     # Create Reflexio instance
     reflexio = get_reflexio(org_id=org_id)
 
-    # Call rerun_profile_generation
-    response = reflexio.rerun_profile_generation(payload)
+    # Run the long-running task in the background to avoid proxy timeout
+    # Client polls get_operation_status for progress
+    background_tasks.add_task(reflexio.rerun_profile_generation, payload)
 
-    return response
+    return RerunProfileGenerationResponse(
+        success=True, msg="Profile generation started"
+    )
 
 
 @app.post(
@@ -1408,6 +1462,7 @@ def manual_profile_generation_endpoint(
 def rerun_feedback_generation_endpoint(
     request: Request,
     payload: RerunFeedbackGenerationRequest,
+    background_tasks: BackgroundTasks,
     org_id: str = Depends(get_org_id_for_self_host),
 ):
     """Rerun feedback generation with filtered interactions.
@@ -1415,6 +1470,7 @@ def rerun_feedback_generation_endpoint(
     Args:
         request (Request): The HTTP request object (for rate limiting)
         payload (RerunFeedbackGenerationRequest): Request containing agent_version, time filters, and optional feedback_name
+        background_tasks (BackgroundTasks): Background task runner
         org_id (str): Organization ID
 
     Returns:
@@ -1423,10 +1479,13 @@ def rerun_feedback_generation_endpoint(
     # Create Reflexio instance
     reflexio = get_reflexio(org_id=org_id)
 
-    # Call rerun_feedback_generation
-    response = reflexio.rerun_feedback_generation(payload)
+    # Run the long-running task in the background to avoid proxy timeout
+    # Client polls get_operation_status for progress
+    background_tasks.add_task(reflexio.rerun_feedback_generation, payload)
 
-    return response
+    return RerunFeedbackGenerationResponse(
+        success=True, msg="Feedback generation started"
+    )
 
 
 @app.post(

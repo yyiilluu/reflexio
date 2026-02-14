@@ -13,9 +13,11 @@ export default function RegisterPage() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
+  const [invitationCode, setInvitationCode] = useState("")
   const [error, setError] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [showVerificationNotice, setShowVerificationNotice] = useState(false)
+  const [showAutoVerifiedNotice, setShowAutoVerifiedNotice] = useState(false)
   const { register, isAuthenticated, isSelfHost } = useAuth()
   const router = useRouter()
 
@@ -41,10 +43,15 @@ export default function RegisterPage() {
     setIsLoading(true)
 
     try {
-      const result = await register(email, password)
+      const result = await register(email, password, invitationCode || undefined)
       if (result.success) {
-        // Show verification notice instead of redirecting
-        setShowVerificationNotice(true)
+        if (result.autoVerified) {
+          // Auto-verified via invitation code — show success notice
+          setShowAutoVerifiedNotice(true)
+        } else {
+          // Show verification notice instead of redirecting
+          setShowVerificationNotice(true)
+        }
       } else {
         setError(result.error || "Registration failed")
       }
@@ -58,6 +65,41 @@ export default function RegisterPage() {
   // Don't render anything if in self-host mode (will redirect)
   if (isSelfHost) {
     return null
+  }
+
+  // Show auto-verified success notice (invitation code flow)
+  if (showAutoVerifiedNotice) {
+    return (
+      <div className="flex items-center justify-center min-h-screen p-4 bg-background">
+        <div className="w-full max-w-md">
+          <Card>
+            <CardHeader className="text-center">
+              <div className="mx-auto mb-4 h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center">
+                <CheckCircle className="h-8 w-8 text-primary" />
+              </div>
+              <CardTitle className="text-2xl">Account Created</CardTitle>
+              <CardDescription>
+                Your account has been verified automatically
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="text-center">
+              <p className="font-medium text-lg mb-4">{email}</p>
+              <div className="bg-muted/50 rounded-lg p-4 mb-6">
+                <div className="flex items-start gap-3 text-left">
+                  <CheckCircle className="h-5 w-5 text-primary flex-shrink-0 mt-0.5" />
+                  <p className="text-sm text-muted-foreground">
+                    Your account is ready. You can now sign in with your credentials.
+                  </p>
+                </div>
+              </div>
+              <Button asChild className="w-full">
+                <Link href="/login">Go to Login</Link>
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    )
   }
 
   // Show verification notice after successful registration
@@ -188,6 +230,25 @@ export default function RegisterPage() {
                   autoComplete="new-password"
                   disabled={isLoading}
                   placeholder="••••••••"
+                />
+              </div>
+
+              {/* Invitation Code Field */}
+              <div className="space-y-2">
+                <label
+                  htmlFor="invitationCode"
+                  className="block text-sm font-medium"
+                >
+                  Invitation Code <span className="text-muted-foreground font-normal">(optional)</span>
+                </label>
+                <Input
+                  id="invitationCode"
+                  type="text"
+                  value={invitationCode}
+                  onChange={(e) => setInvitationCode(e.target.value)}
+                  autoComplete="off"
+                  disabled={isLoading}
+                  placeholder="REFLEXIO-XXXX-XXXX"
                 />
               </div>
 

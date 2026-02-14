@@ -1,6 +1,6 @@
 # About the code base
-- backend FastAPI server requires OpenAI key, so the server is already started and running on http://0.0.0.0:8081
-- frontend website is also already started and running on http://localhost:8080
+- backend FastAPI server requires OpenAI key, so the server is already started and running on http://0.0.0.0:8081 (or custom port — check `run_services.sh`)
+- frontend website is also already started and running on http://localhost:8080 (or custom port — check `run_services.sh`)
 - You can test your changes by sending api request to above endpoints
 - run command in poetry env
 - all command should be run from `user_profiler` level
@@ -50,3 +50,35 @@ def check_string_token_overlap(str1: str, str2: str, threshold: float = 0.7) -> 
         bool: True if strings have significant overlap, False otherwise
     """
 ```
+
+# Git Worktree Development
+When working in a git worktree, services must run on different ports.
+
+## Port Convention: +10 offset
+| Service | Default | Worktree |
+|---------|---------|----------|
+| Backend | 8081 | 8091 |
+| Frontend | 8080 | 8090 |
+| Docs | 8082 | 8092 |
+
+## Environment Variables
+| Variable | Default | Description |
+|----------|---------|-------------|
+| BACKEND_PORT | 8081 | FastAPI server port |
+| FRONTEND_PORT | 8080 | Next.js dev server port |
+| DOCS_PORT | 8082 | MkDocs server port |
+| API_BACKEND_URL | auto-derived | Auto-set to http://localhost:$BACKEND_PORT |
+
+## Setup Checklist
+1. git worktree add ../reflexio-feature feature-branch
+2. cd ../reflexio-feature
+3. Copy .env from main worktree
+4. poetry install && (cd reflexio/website && npm install)
+5. export BACKEND_PORT=8091 FRONTEND_PORT=8090 DOCS_PORT=8092
+6. ./run_services.sh
+7. To stop: set same env vars, then ./stop_services.sh
+
+## Notes
+- Supabase is shared across worktrees (54321/54322) — no changes needed
+- Do NOT modify .env for port variables — export in shell instead
+- API testing: use http://localhost:$BACKEND_PORT/token

@@ -992,16 +992,14 @@ export default function ProfilesPage() {
                   try {
                     const result = await cancelOperation("profile_generation")
                     if (result.success && result.cancelled_services.length > 0) {
-                      setShouldPollStatus(false)
-                      setShowOperationBanner(false)
                       setMessageModalConfig({
-                        title: "Profile Generation Cancelled",
+                        title: "Cancellation Requested",
                         message: `Cancellation requested. The current user will finish processing, then the operation will stop.`,
                         type: "success"
                       })
                       setShowMessageModal(true)
-                      fetchProfiles(userId, topK, activeStatusTab)
-                      fetchProfileStatistics()
+                      // Keep polling so we see the status transition to "cancelled"
+                      setShouldPollStatus(true)
                     }
                   } catch (err) {
                     console.error("Failed to cancel operation:", err)

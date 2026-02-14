@@ -261,6 +261,185 @@ def get_db_session():
             db.close()
 
 
+def _row_to_invitation_code(row: dict) -> db_models.InvitationCode:
+    """
+    Convert a Supabase row dict to an InvitationCode ORM object.
+
+    Args:
+        row: Dictionary from Supabase response
+
+    Returns:
+        InvitationCode object
+    """
+    inv = db_models.InvitationCode()
+    inv.id = row.get("id")
+    inv.code = row.get("code")
+    inv.is_used = row.get("is_used", False)
+    inv.used_by_email = row.get("used_by_email")
+    inv.used_at = row.get("used_at")
+    inv.created_at = row.get("created_at")
+    inv.expires_at = row.get("expires_at")
+    return inv
+
+
+def get_invitation_code(
+    session: Session, code: str
+) -> Optional[db_models.InvitationCode]:
+    """
+    Look up an invitation code by its code string.
+
+    Args:
+        session: SQLAlchemy session (ignored if using Supabase)
+        code: The invitation code string
+
+    Returns:
+        InvitationCode or None
+    """
+    client = get_login_supabase_client()
+    if client:
+        response = (
+            client.table("invitation_codes").select("*").eq("code", code).execute()
+        )
+        if response.data:
+            return _row_to_invitation_code(response.data[0])
+        return None
+    else:
+        if session is None:
+            logger.error("No session available and Supabase client not configured")
+            return None
+        return (
+            session.query(db_models.InvitationCode)
+            .filter(db_models.InvitationCode.code == code)
+            .first()
+        )
+
+
+def claim_invitation_code(
+    session: Session, code: str, email: str
+) -> Optional[db_models.InvitationCode]:
+    """
+    Atomically claim an invitation code — validates it is unused and not expired,
+    then marks it as used in a single operation to prevent race conditions.
+
+    Args:
+        session: SQLAlchemy session (ignored if using Supabase)
+        code: The invitation code string
+        email: Email of the user claiming the code
+
+    Returns:
+        The claimed InvitationCode if successful, or None if the code was
+        already used, expired, or does not exist.
+    """
+    now = int(datetime.now(timezone.utc).timestamp())
+    client = get_login_supabase_client()
+    if client:
+        # Atomic update: only update if code exists, is unused, and not expired.
+        # The expiration filter uses an OR to allow codes with no expiration (NULL).
+        response = (
+            client.table("invitation_codes")
+            .update({"is_used": True, "used_by_email": email, "used_at": now})
+            .eq("code", code)
+            .eq("is_used", False)
+            .or_(f"expires_at.is.null,expires_at.gte.{now}")
+            .execute()
+        )
+        if not response.data:
+            return None
+        return _row_to_invitation_code(response.data[0])
+    else:
+        if session is None:
+            logger.error("No session available and Supabase client not configured")
+            return None
+        # Use SELECT ... FOR UPDATE to lock the row and prevent concurrent claims
+        inv = (
+            session.query(db_models.InvitationCode)
+            .filter(db_models.InvitationCode.code == code)
+            .with_for_update()
+            .first()
+        )
+        if inv is None or inv.is_used:
+            return None
+        if inv.expires_at and inv.expires_at < now:
+            return None
+        inv.is_used = True
+        inv.used_by_email = email
+        inv.used_at = now
+        session.flush()
+        return inv
+
+
+def release_invitation_code(session: Session, code: str) -> None:
+    """
+    Release a previously claimed invitation code, marking it as unused again.
+
+    Used to roll back a claim when a subsequent operation (e.g., registration) fails.
+
+    Args:
+        session: SQLAlchemy session (ignored if using Supabase)
+        code: The invitation code string to release
+    """
+    client = get_login_supabase_client()
+    if client:
+        client.table("invitation_codes").update(
+            {"is_used": False, "used_by_email": None, "used_at": None}
+        ).eq("code", code).execute()
+    else:
+        if session is None:
+            logger.error("No session available and Supabase client not configured")
+            return
+        inv = (
+            session.query(db_models.InvitationCode)
+            .filter(db_models.InvitationCode.code == code)
+            .first()
+        )
+        if inv:
+            inv.is_used = False
+            inv.used_by_email = None
+            inv.used_at = None
+            session.flush()
+
+
+def create_invitation_code(
+    session: Session, code: str, expires_at: Optional[int] = None
+) -> db_models.InvitationCode:
+    """
+    Insert a new invitation code into the database.
+
+    Args:
+        session: SQLAlchemy session (ignored if using Supabase)
+        code: The invitation code string
+        expires_at: Optional Unix timestamp for code expiration
+
+    Returns:
+        Created InvitationCode object
+    """
+    created_at = int(datetime.now(timezone.utc).timestamp())
+    client = get_login_supabase_client()
+    if client:
+        data = {
+            "code": code,
+            "is_used": False,
+            "created_at": created_at,
+            "expires_at": expires_at,
+        }
+        response = client.table("invitation_codes").insert(data).execute()
+        if response.data:
+            return _row_to_invitation_code(response.data[0])
+        raise Exception("Failed to create invitation code in Supabase")
+    else:
+        if session is None:
+            raise Exception("No session available and Supabase client not configured")
+        inv = db_models.InvitationCode(
+            code=code,
+            created_at=created_at,
+            expires_at=expires_at,
+        )
+        session.add(inv)
+        session.commit()
+        session.refresh(inv)
+        return inv
+
+
 def add_db_model(session: Session, db_model: db_models.Base) -> db_models.Base:
     """
     Add a generic database model (SQLAlchemy only, for backward compatibility).

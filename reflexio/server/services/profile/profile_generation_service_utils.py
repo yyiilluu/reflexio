@@ -134,7 +134,6 @@ def calculate_expiration_timestamp(
     """
     expiration_timestamp = datetime.max
     last_modified_datetime = datetime.fromtimestamp(last_modified_timestamp)
-    print(last_modified_datetime)
 
     if profile_time_to_live == ProfileTimeToLive.ONE_DAY:
         expiration_timestamp = last_modified_datetime + timedelta(days=1)

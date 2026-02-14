@@ -54,6 +54,17 @@ class OperationStateManager:
         """
         return f"{self.service_name}::{self.org_id}::progress"
 
+    def _cancellation_key(self) -> str:
+        """Build cancellation flag key.
+
+        Uses a separate row from progress to avoid lost-update race conditions
+        where progress updates overwrite the cancellation flag.
+
+        Returns:
+            str: Key in format '{service_name}::{org_id}::cancellation'
+        """
+        return f"{self.service_name}::{self.org_id}::cancellation"
+
     def _lock_key(self, scope_id: Optional[str] = None) -> str:
         """Build concurrency lock key.
 
@@ -182,6 +193,12 @@ class OperationStateManager:
         }
         self.storage.upsert_operation_state(key, initial_state)
 
+        # Clear any stale cancellation flag from a previous operation
+        cancel_key = self._cancellation_key()
+        self.storage.upsert_operation_state(
+            cancel_key, {"cancellation_requested": False}
+        )
+
     def set_current_item(self, item_id: str) -> None:
         """Set the current item being processed.
 
@@ -290,14 +307,16 @@ class OperationStateManager:
     def request_cancellation(self) -> bool:
         """Request cancellation of an in-progress operation.
 
-        Sets the cancellation_requested flag in the progress state if the
-        operation is currently IN_PROGRESS.
+        Writes the cancellation flag to a separate DB row from the progress state
+        to avoid lost-update race conditions where concurrent progress updates
+        overwrite the flag.
 
         Returns:
             bool: True if cancellation was requested (operation was in progress), False otherwise
         """
-        key = self._progress_key()
-        state_entry = self.storage.get_operation_state(key)
+        # Verify the operation is actually in progress
+        progress_key = self._progress_key()
+        state_entry = self.storage.get_operation_state(progress_key)
         if not state_entry:
             return False
 
@@ -305,8 +324,11 @@ class OperationStateManager:
         if state.get("status") != OperationStatus.IN_PROGRESS.value:
             return False
 
-        state["cancellation_requested"] = True
-        self.storage.update_operation_state(key, state)
+        # Write cancellation flag to a separate row to avoid race conditions
+        cancel_key = self._cancellation_key()
+        self.storage.upsert_operation_state(
+            cancel_key, {"cancellation_requested": True}
+        )
         logger.info(
             "Cancellation requested for %s (org=%s)", self.service_name, self.org_id
         )
@@ -315,22 +337,26 @@ class OperationStateManager:
     def is_cancellation_requested(self) -> bool:
         """Check if cancellation has been requested for the current operation.
 
+        Reads from a separate cancellation row to avoid race conditions with
+        progress updates.
+
         Returns:
             bool: True if cancellation was requested
         """
-        key = self._progress_key()
-        state_entry = self.storage.get_operation_state(key)
-        if not state_entry:
+        cancel_key = self._cancellation_key()
+        cancel_entry = self.storage.get_operation_state(cancel_key)
+        if not cancel_entry:
             return False
-        state = state_entry.get("operation_state", state_entry)
-        return state.get("cancellation_requested", False)
+        cancel_state = cancel_entry.get("operation_state", cancel_entry)
+        return cancel_state.get("cancellation_requested", False)
 
     def mark_cancelled(self) -> None:
         """Mark the current operation as CANCELLED.
 
-        Sets status to CANCELLED, clears cancellation_requested flag,
-        and records completed_at timestamp.
+        Sets status to CANCELLED in the progress row and clears the separate
+        cancellation flag row.
         """
+        # Update progress state to CANCELLED
         key = self._progress_key()
         state_entry = self.storage.get_operation_state(key)
         if not state_entry:
@@ -338,9 +364,14 @@ class OperationStateManager:
 
         state = state_entry.get("operation_state", state_entry)
         state["status"] = OperationStatus.CANCELLED.value
-        state["cancellation_requested"] = False
         state["completed_at"] = int(datetime.now(timezone.utc).timestamp())
         self.storage.update_operation_state(key, state)
+
+        # Clear the separate cancellation flag
+        cancel_key = self._cancellation_key()
+        self.storage.upsert_operation_state(
+            cancel_key, {"cancellation_requested": False}
+        )
         logger.info(
             "Operation marked as cancelled for %s (org=%s)",
             self.service_name,

@@ -4,6 +4,20 @@ from sqlalchemy import Boolean, Column, Integer, String
 from .database import Base
 
 
+class InvitationCode(Base):
+    __tablename__ = "invitation_codes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String, unique=True, nullable=False, index=True)
+    is_used = Column(Boolean, default=False)
+    used_by_email = Column(String, nullable=True)
+    used_at = Column(Integer, nullable=True)
+    created_at = Column(
+        Integer, default=lambda: int(datetime.now(timezone.utc).timestamp())
+    )
+    expires_at = Column(Integer, nullable=True)
+
+
 class Organization(Base):
     __tablename__ = "organizations"
 

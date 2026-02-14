@@ -1,18 +1,23 @@
 #!/bin/bash
 
+# Configurable ports (must match what was used in run_services.sh)
+BACKEND_PORT=${BACKEND_PORT:-8081}
+FRONTEND_PORT=${FRONTEND_PORT:-8080}
+DOCS_PORT=${DOCS_PORT:-8082}
+
 echo "Stopping services..."
 
-# Stop FastAPI server (port 8081)
-PIDS=$(lsof -t -i:8081 2>/dev/null)
+# Stop FastAPI server
+PIDS=$(lsof -t -i:${BACKEND_PORT} 2>/dev/null)
 if [ -n "$PIDS" ]; then
     echo "$PIDS" | xargs kill 2>/dev/null
     sleep 1
     # Force kill any survivors (uvicorn reload workers can ignore SIGTERM)
-    PIDS=$(lsof -t -i:8081 2>/dev/null)
+    PIDS=$(lsof -t -i:${BACKEND_PORT} 2>/dev/null)
     [ -n "$PIDS" ] && echo "$PIDS" | xargs kill -9 2>/dev/null
-    echo "Stopped FastAPI server (8081)"
+    echo "Stopped FastAPI server (${BACKEND_PORT})"
 else
-    echo "FastAPI server (8081) not running"
+    echo "FastAPI server (${BACKEND_PORT}) not running"
 fi
 
 # Stop FastAPI server (port 8000)
@@ -28,7 +33,11 @@ else
 fi
 
 # Stop website
-pkill -f "npm run dev" && echo "Stopped website" || echo "Website not running"
+if pkill -f "next dev.*-p ${FRONTEND_PORT}" 2>/dev/null || pkill -f "npm run dev" 2>/dev/null; then
+    echo "Stopped website (${FRONTEND_PORT})"
+else
+    echo "Website (${FRONTEND_PORT}) not running"
+fi
 
 # Stop mkdocs
 pkill -f "mkdocs serve" && echo "Stopped mkdocs" || echo "MkDocs not running"

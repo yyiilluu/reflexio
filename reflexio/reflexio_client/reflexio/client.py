@@ -1,6 +1,8 @@
 import os
+import time
 import aiohttp
 import asyncio
+import logging
 from urllib.parse import urljoin
 import requests
 from concurrent.futures import ThreadPoolExecutor
@@ -63,9 +65,11 @@ from reflexio_commons.api_schema.service_schemas import (
     DeleteRawFeedbackRequest,
     DeleteRawFeedbackResponse,
     FeedbackStatus,
+    GetOperationStatusResponse,
     InteractionData,
     ManualFeedbackGenerationRequest,
     ManualProfileGenerationRequest,
+    OperationStatus,
     ProfileChangeLogResponse,
     PublishUserInteractionRequest,
     PublishUserInteractionResponse,
@@ -90,6 +94,8 @@ from reflexio_commons.api_schema.service_schemas import (
 from reflexio_commons.api_schema.login_schema import Token
 from reflexio_commons.config_schema import Config
 from .cache import InMemoryCache
+
+logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 
@@ -1201,16 +1207,91 @@ class ReflexioClient:
         )
         return GetAgentSuccessEvaluationResultsResponse(**response)
 
+    def _poll_operation_status(
+        self, service_name: str, poll_interval: float = 3.0, max_wait: float = 600.0
+    ) -> GetOperationStatusResponse:
+        """
+        Poll the operation status endpoint until the operation completes, fails, or is cancelled.
+
+        Args:
+            service_name: The service name to poll (e.g. "profile_generation", "feedback_generation")
+            poll_interval: Seconds between polls
+            max_wait: Maximum seconds to wait before raising TimeoutError
+
+        Returns:
+            GetOperationStatusResponse: Final operation status
+        """
+        start = time.monotonic()
+        while True:
+            try:
+                response = self._make_request(
+                    "GET",
+                    "/api/get_operation_status",
+                    params={"service_name": service_name},
+                )
+            except Exception as e:
+                logger.warning("Failed to poll operation status: %s", e)
+                elapsed = time.monotonic() - start
+                if elapsed + poll_interval > max_wait:
+                    raise TimeoutError(
+                        f"Operation '{service_name}' did not complete within {max_wait}s"
+                    ) from e
+                time.sleep(poll_interval)
+                continue
+            status_response = GetOperationStatusResponse(**response)
+            op = status_response.operation_status
+            if op and op.status in (
+                OperationStatus.COMPLETED,
+                OperationStatus.FAILED,
+                OperationStatus.CANCELLED,
+            ):
+                return status_response
+            elapsed = time.monotonic() - start
+            if elapsed + poll_interval > max_wait:
+                raise TimeoutError(
+                    f"Operation '{service_name}' did not complete within {max_wait}s"
+                )
+            time.sleep(poll_interval)
+
     def _rerun_profile_generation_sync(
         self, request: RerunProfileGenerationRequest
     ) -> RerunProfileGenerationResponse:
-        """Internal sync method to rerun profile generation."""
+        """Internal sync method to rerun profile generation.
+
+        Submits the request, then polls operation status until completion.
+        """
         response = self._make_request(
             "POST",
             "/api/rerun_profile_generation",
             json=request.model_dump(),
         )
-        return RerunProfileGenerationResponse(**response)
+        initial = RerunProfileGenerationResponse(**response)
+        if not initial.success:
+            return initial
+
+        # Poll until the background task completes
+        try:
+            status_response = self._poll_operation_status("profile_generation")
+            op = status_response.operation_status
+            if op and op.status == OperationStatus.COMPLETED:
+                return RerunProfileGenerationResponse(
+                    success=True,
+                    msg="Profile generation completed",
+                    profiles_generated=op.processed_users,
+                )
+            elif op and op.status == OperationStatus.FAILED:
+                return RerunProfileGenerationResponse(
+                    success=False,
+                    msg=op.error_message or "Profile generation failed",
+                )
+            else:
+                return RerunProfileGenerationResponse(
+                    success=False,
+                    msg="Profile generation was cancelled",
+                )
+        except (TimeoutError, Exception) as e:
+            logger.warning("Error while polling profile generation status: %s", e)
+            return initial
 
     async def _rerun_profile_generation_async(
         self, request: RerunProfileGenerationRequest
@@ -1315,13 +1396,42 @@ class ReflexioClient:
     def _rerun_feedback_generation_sync(
         self, request: RerunFeedbackGenerationRequest
     ) -> RerunFeedbackGenerationResponse:
-        """Internal sync method to rerun feedback generation."""
+        """Internal sync method to rerun feedback generation.
+
+        Submits the request, then polls operation status until completion.
+        """
         response = self._make_request(
             "POST",
             "/api/rerun_feedback_generation",
             json=request.model_dump(),
         )
-        return RerunFeedbackGenerationResponse(**response)
+        initial = RerunFeedbackGenerationResponse(**response)
+        if not initial.success:
+            return initial
+
+        # Poll until the background task completes
+        try:
+            status_response = self._poll_operation_status("feedback_generation")
+            op = status_response.operation_status
+            if op and op.status == OperationStatus.COMPLETED:
+                return RerunFeedbackGenerationResponse(
+                    success=True,
+                    msg="Feedback generation completed",
+                    feedbacks_generated=op.processed_users,
+                )
+            elif op and op.status == OperationStatus.FAILED:
+                return RerunFeedbackGenerationResponse(
+                    success=False,
+                    msg=op.error_message or "Feedback generation failed",
+                )
+            else:
+                return RerunFeedbackGenerationResponse(
+                    success=False,
+                    msg="Feedback generation was cancelled",
+                )
+        except (TimeoutError, Exception) as e:
+            logger.warning("Error while polling feedback generation status: %s", e)
+            return initial
 
     async def _rerun_feedback_generation_async(
         self, request: RerunFeedbackGenerationRequest

@@ -1335,7 +1335,9 @@ class TestCancellationInBatch:
         )
 
         # Set up mock storage that tracks operation state and simulates cancellation
+        # via a separate cancellation key (matching the new implementation)
         state_store = {}
+        cancellation_key = "test_generation::test_org::cancellation"
 
         def get_state(key):
             return state_store.get(key)
@@ -1345,11 +1347,14 @@ class TestCancellationInBatch:
 
         def update_state(key, state):
             # After processing user1, simulate cancellation being requested
+            # by writing to the separate cancellation key
             if (
                 state.get("current_user_id") is None
                 and len(state.get("processed_user_ids", [])) >= 1
             ):
-                state["cancellation_requested"] = True
+                state_store[cancellation_key] = {
+                    "operation_state": {"cancellation_requested": True}
+                }
             state_store[key] = {"operation_state": state}
 
         service.storage.get_operation_state = get_state
@@ -1383,7 +1388,6 @@ class TestCancellationInBatch:
         state_store[progress_key] = {
             "operation_state": {
                 "status": "cancelled",
-                "cancellation_requested": False,
             }
         }
 

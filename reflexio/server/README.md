@@ -40,12 +40,12 @@ Description: FastAPI backend server that processes user interactions to generate
 - `GET /api/get_all_interactions` - Get all interactions across all users
 - `GET /api/get_profile_statistics` - Profile statistics by status
 - `GET /api/get_all_profiles?status_filter=<status>` - Filter by status (current/pending/archived)
-- `POST /api/rerun_profile_generation` - Regenerate profiles from ALL interactions (creates PENDING)
+- `POST /api/rerun_profile_generation` - Regenerate profiles from ALL interactions (creates PENDING, runs in background)
 - `POST /api/manual_profile_generation` - Regenerate profiles from window-sized interactions (creates CURRENT)
 - `POST /api/upgrade_all_profiles` - PENDING → CURRENT, delete old ARCHIVED
 - `POST /api/downgrade_all_profiles` - ARCHIVED → CURRENT, demote PENDING
 - `POST /api/add_raw_feedback` - Add raw feedback directly to storage
-- `POST /api/rerun_feedback_generation` - Regenerate feedback for agent version (creates PENDING)
+- `POST /api/rerun_feedback_generation` - Regenerate feedback for agent version (creates PENDING, runs in background)
 - `POST /api/manual_feedback_generation` - Regenerate feedback from window-sized interactions (creates CURRENT)
 - `POST /api/run_feedback_aggregation` - Aggregate raw feedbacks into insights
 - `POST /api/run_skill_generation` - Generate skills from clustered raw feedbacks (expensive, 5/min) **[gated by `skill_generation` feature flag]**
@@ -64,6 +64,7 @@ Description: FastAPI backend server that processes user interactions to generate
 **Login Response**: `POST /token` now returns `feature_flags: dict[str, bool]` alongside `api_key` and `token_type`. Frontend stores these in localStorage to gate UI features.
 
 **Authentication Endpoints**:
+- `POST /api/register` - Register new org (accepts optional `invitation_code` form field; when `invitation_only` flag enabled, code is required and org is auto-verified)
 - `POST /api/verify-email` - Verify email with token
 - `POST /api/resend-verification` - Resend verification email
 - `POST /api/forgot-password` - Request password reset email
@@ -79,8 +80,8 @@ Description: FastAPI backend server that processes user interactions to generate
 
 Key files:
 - `database.py`: Connection setup (priority: S3 in self-host → Supabase → SQLite)
-- `db_models.py`: SQLAlchemy models (users, tokens, configs)
-- `db_operations.py`: CRUD operations with retry logic (tenacity: 3 attempts, exponential backoff)
+- `db_models.py`: SQLAlchemy models (users, tokens, configs, invitation codes)
+- `db_operations.py`: CRUD operations with retry logic (tenacity: 3 attempts, exponential backoff), invitation code management (claim/release/create)
 - `login_supabase_client.py`: Cloud Supabase client for auth (see `supabase_login/README.md`)
 - `s3_org_storage.py`: S3-based organization storage for self-host mode (singleton, cached in memory)
 
@@ -158,7 +159,7 @@ See `site_var/README.md` for detailed documentation.
 | `site_var_manager.py` | SiteVarManager (singleton) - loads JSON/TXT configs |
 | `feature_flags.py` | Per-org feature gating (`is_feature_enabled()`, `get_all_feature_flags()`) |
 
-**Feature Flags**: Config in `site_var_sources/feature_flags.json`. Each flag has global `enabled` toggle and per-org `enabled_org_ids` allowlist. Unknown flags default to enabled (fail-open). Currently gates: `skill_generation` (all skill endpoints return 403 when disabled).
+**Feature Flags**: Config in `site_var_sources/feature_flags.json`. Each flag has global `enabled` toggle and per-org `enabled_org_ids` allowlist. Unknown flags default to enabled (fail-open). Currently gates: `skill_generation` (all skill endpoints return 403 when disabled), `invitation_only` (global flag, gates registration to require invitation codes).
 
 Access: `SiteVarManager().get_site_var(key)` for raw values, `feature_flags.is_feature_enabled(org_id, name)` for flag checks
 
@@ -177,6 +178,22 @@ Access: `SiteVarManager().get_site_var(key)` for raw values, `feature_flags.is_f
 - Uses AWS SES (requires `AWS_REGION`, `SES_SENDER_EMAIL` env vars)
 
 **Usage**: `get_email_service()` from `api.py` (lazy-loaded singleton)
+
+## Scripts
+
+**Directory**: `scripts/`
+
+| File | Purpose |
+|------|---------|
+| `manage_invitation_codes.py` | CLI to generate and list invitation codes |
+
+**Usage**:
+```shell
+python -m reflexio.server.scripts.manage_invitation_codes generate --count 5
+python -m reflexio.server.scripts.manage_invitation_codes generate --count 3 --expires-in-days 30
+python -m reflexio.server.scripts.manage_invitation_codes list
+python -m reflexio.server.scripts.manage_invitation_codes list --show-used
+```
 
 ## Services
 
@@ -216,7 +233,7 @@ Called by API endpoints via `Reflexio`
   4. **Aggregator bookmark**: Track last-processed raw_feedback_id per aggregator
   4b. **Cluster fingerprints**: Track cluster membership fingerprints for change detection (key: `{service}::{org_id}::{name}[::version]::clusters`)
   5. **Simple lock**: Non-queuing lock for cleanup operations
-  6. **Cancellation**: Cooperative cancellation for batch operations (`request_cancellation()`, `is_cancellation_requested()`, `mark_cancelled()`)
+  6. **Cancellation**: Cooperative cancellation for batch operations (`request_cancellation()`, `is_cancellation_requested()`, `mark_cancelled()`). Uses separate DB row (key: `{service}::{org_id}::cancellation`) to avoid lost-update race conditions with progress updates.
 - Stale lock timeout: 5 minutes (assumes crashed if lock held longer)
 - Lock scoping: Profile generation = per-user, Feedback generation = per-org
 - Re-run mechanism: If new request arrives during generation, `pending_request_id` is set and generation re-runs after completion

@@ -141,9 +141,12 @@ class TestInitializeProgress:
     def test_basic_initialization(self, manager, mock_storage):
         manager.initialize_progress(total_users=5, request_params={"mode": "full"})
 
-        mock_storage.upsert_operation_state.assert_called_once()
-        key, state = mock_storage.upsert_operation_state.call_args[0]
-        assert key == "test_service::org_123::progress"
+        # Called twice: once for progress state, once to clear cancellation flag
+        assert mock_storage.upsert_operation_state.call_count == 2
+
+        # First call: progress initialization
+        progress_key, state = mock_storage.upsert_operation_state.call_args_list[0][0]
+        assert progress_key == "test_service::org_123::progress"
         assert state["service_name"] == "test_service"
         assert state["status"] == OperationStatus.IN_PROGRESS.value
         assert state["total_users"] == 5
@@ -154,6 +157,13 @@ class TestInitializeProgress:
         assert state["stats"]["total_interactions_processed"] == 0
         assert state["stats"]["total_generated"] == 0
 
+        # Second call: clear cancellation flag
+        cancel_key, cancel_state = mock_storage.upsert_operation_state.call_args_list[
+            1
+        ][0]
+        assert cancel_key == "test_service::org_123::cancellation"
+        assert cancel_state["cancellation_requested"] is False
+
     def test_with_extra_stats(self, manager, mock_storage):
         manager.initialize_progress(
             total_users=3,
@@ -161,7 +171,8 @@ class TestInitializeProgress:
             extra_stats={"custom_metric": 0},
         )
 
-        _, state = mock_storage.upsert_operation_state.call_args[0]
+        # First call is the progress state
+        _, state = mock_storage.upsert_operation_state.call_args_list[0][0]
         assert state["stats"]["custom_metric"] == 0
         assert state["stats"]["total_interactions_processed"] == 0
 
@@ -699,7 +710,7 @@ class TestRequestCancellation:
     """Tests for request_cancellation method."""
 
     def test_request_cancellation_in_progress(self, manager, mock_storage):
-        """Cancellation flag is set when operation is IN_PROGRESS."""
+        """Cancellation flag is set in separate row when operation is IN_PROGRESS."""
         mock_storage.get_operation_state.return_value = {
             "operation_state": {"status": OperationStatus.IN_PROGRESS.value}
         }
@@ -707,9 +718,10 @@ class TestRequestCancellation:
         result = manager.request_cancellation()
         assert result is True
 
-        mock_storage.update_operation_state.assert_called_once()
-        key, state = mock_storage.update_operation_state.call_args[0]
-        assert key == "test_service::org_123::progress"
+        # Should upsert to separate cancellation key, not update progress key
+        mock_storage.upsert_operation_state.assert_called_once()
+        key, state = mock_storage.upsert_operation_state.call_args[0]
+        assert key == "test_service::org_123::cancellation"
         assert state["cancellation_requested"] is True
 
     def test_request_cancellation_not_in_progress(self, manager, mock_storage):
@@ -720,7 +732,7 @@ class TestRequestCancellation:
 
         result = manager.request_cancellation()
         assert result is False
-        mock_storage.update_operation_state.assert_not_called()
+        mock_storage.upsert_operation_state.assert_not_called()
 
     def test_request_cancellation_no_state(self, manager, mock_storage):
         """Cancellation returns False when no state exists."""
@@ -740,13 +752,16 @@ class TestRequestCancellation:
 
 
 class TestIsCancellationRequested:
-    """Tests for is_cancellation_requested method."""
+    """Tests for is_cancellation_requested method - reads from separate cancellation key."""
 
     def test_cancellation_requested_true(self, manager, mock_storage):
         mock_storage.get_operation_state.return_value = {
             "operation_state": {"cancellation_requested": True}
         }
         assert manager.is_cancellation_requested() is True
+        mock_storage.get_operation_state.assert_called_with(
+            "test_service::org_123::cancellation"
+        )
 
     def test_cancellation_requested_false(self, manager, mock_storage):
         mock_storage.get_operation_state.return_value = {
@@ -755,9 +770,7 @@ class TestIsCancellationRequested:
         assert manager.is_cancellation_requested() is False
 
     def test_cancellation_not_set(self, manager, mock_storage):
-        mock_storage.get_operation_state.return_value = {
-            "operation_state": {"status": "in_progress"}
-        }
+        mock_storage.get_operation_state.return_value = {"operation_state": {}}
         assert manager.is_cancellation_requested() is False
 
     def test_cancellation_no_state(self, manager, mock_storage):
@@ -772,18 +785,23 @@ class TestMarkCancelled:
         mock_storage.get_operation_state.return_value = {
             "operation_state": {
                 "status": OperationStatus.IN_PROGRESS.value,
-                "cancellation_requested": True,
             }
         }
 
         manager.mark_cancelled()
 
+        # Should update progress key with CANCELLED status
         mock_storage.update_operation_state.assert_called_once()
         key, state = mock_storage.update_operation_state.call_args[0]
         assert key == "test_service::org_123::progress"
         assert state["status"] == OperationStatus.CANCELLED.value
-        assert state["cancellation_requested"] is False
         assert "completed_at" in state
+
+        # Should clear separate cancellation flag
+        mock_storage.upsert_operation_state.assert_called_once()
+        cancel_key, cancel_state = mock_storage.upsert_operation_state.call_args[0]
+        assert cancel_key == "test_service::org_123::cancellation"
+        assert cancel_state["cancellation_requested"] is False
 
     def test_mark_cancelled_no_state(self, manager, mock_storage):
         mock_storage.get_operation_state.return_value = None

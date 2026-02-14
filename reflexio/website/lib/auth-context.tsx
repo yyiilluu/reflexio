@@ -16,7 +16,7 @@ interface AuthContextType {
   userEmail: string | null
   token: string | null
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>
-  register: (email: string, password: string) => Promise<{ success: boolean; error?: string }>
+  register: (email: string, password: string, invitationCode?: string) => Promise<{ success: boolean; autoVerified?: boolean; error?: string }>
   logout: () => Promise<void>
   isSelfHost: boolean
   featureFlags: Record<string, boolean>
@@ -107,12 +107,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  const register = async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
+  const register = async (email: string, password: string, invitationCode?: string): Promise<{ success: boolean; autoVerified?: boolean; error?: string }> => {
     try {
       // Use FormData to match OAuth2PasswordRequestForm format
       const formData = new URLSearchParams()
       formData.append("username", email)
       formData.append("password", password)
+      if (invitationCode) {
+        formData.append("invitation_code", invitationCode)
+      }
 
       const response = await fetch(`${API_BASE_URL}/api/register`, {
         method: "POST",
@@ -127,9 +130,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { success: false, error: error.detail || "Registration failed" }
       }
 
-      // Registration successful - don't log user in yet
-      // They need to verify their email first, then login
-      return { success: true }
+      const data = await response.json()
+      return { success: true, autoVerified: data.auto_verified === true }
     } catch (error) {
       console.error("Registration error:", error)
       return { success: false, error: "Network error" }
