@@ -59,6 +59,16 @@
         .tool-call summary::before { content: '\25B6'; font-size: 0.6em; transition: transform 0.15s; }
         .tool-call[open] summary::before { transform: rotate(90deg); }
         .tool-call .tool-result { margin-top: 0.35em; padding: 0.4em; background: rgba(0,0,0,0.15); border-radius: 4px; white-space: pre-wrap; word-break: break-all; font-family: monospace; font-size: 0.9em; line-height: 1.4; }
+        /* Injected context block highlighting */
+        .context-block-reflexio { border-left: 3px solid #457b9d; background: rgba(69,123,157,0.08); padding: 0.75em 1em; border-radius: 4px; margin-bottom: 0.75em; }
+        .context-block-mem0 { border-left: 3px solid #7c3aed; background: rgba(124,58,237,0.08); padding: 0.75em 1em; border-radius: 4px; margin-bottom: 0.75em; }
+        .context-block-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.4em; }
+        .context-block-label-reflexio { color: #457b9d; }
+        .context-block-label-mem0 { color: #7c3aed; }
+        /* Context source badge on chat bubbles */
+        .context-badge { display: inline-block; font-size: 9px; font-weight: 600; padding: 1px 5px; border-radius: 9999px; vertical-align: middle; margin-left: 4px; }
+        .context-badge-reflexio { background: rgba(69,123,157,0.15); color: #457b9d; }
+        .context-badge-mem0 { background: rgba(124,58,237,0.15); color: #7c3aed; }
     </style>
 </head>
 <body class="h-screen flex flex-col overflow-hidden">
@@ -396,7 +406,15 @@
                 conversations = [];
             }
 
-            conversations.sort((a, b) => a.filename.localeCompare(b.filename));
+            conversations.sort((a, b) => {
+                // Sort by directory first (root last), then by filename
+                const dirA = a.directory || '';
+                const dirB = b.directory || '';
+                if (!dirA && dirB) return 1;   // root after subdirs
+                if (dirA && !dirB) return -1;  // subdirs before root
+                if (dirA !== dirB) return dirA.localeCompare(dirB);
+                return a.filename.localeCompare(b.filename);
+            });
             selectEl.innerHTML = '';
             if (conversations.length === 0) {
                 selectEl.innerHTML = '<option value="">No conversations</option>';
@@ -407,17 +425,33 @@
                 return;
             }
 
+            // Group by directory
+            const groups = {};
             conversations.forEach(c => {
-                const opt = document.createElement('option');
-                opt.value = c.filename;
-                const ts = c.timestamp ? new Date(c.timestamp).toLocaleString() : '';
-                const tags = [];
-                if (c.filename.includes('reflexio')) tags.push('[Reflexio]');
-                if (c.filename.includes('mem0')) tags.push('[mem0]');
-                const tagStr = tags.length > 0 ? ' ' + tags.join(' ') : '';
-                opt.textContent = `${c.scenario_name} — ${c.turn_count} turns — ${ts}${tagStr}`;
-                selectEl.appendChild(opt);
+                const dir = c.directory || '';
+                if (!groups[dir]) groups[dir] = [];
+                groups[dir].push(c);
             });
+
+            // Render optgroups for subdirs, plain options for root
+            for (const [dir, items] of Object.entries(groups)) {
+                const container = dir ? document.createElement('optgroup') : selectEl;
+                if (dir) {
+                    container.label = `📁 ${dir}`;
+                    selectEl.appendChild(container);
+                }
+                items.forEach(c => {
+                    const opt = document.createElement('option');
+                    opt.value = c.filename;
+                    const ts = c.timestamp ? new Date(c.timestamp).toLocaleString() : '';
+                    const tags = [];
+                    if (c.filename.includes('reflexio')) tags.push('[Reflexio]');
+                    if (c.filename.includes('mem0')) tags.push('[mem0]');
+                    const tagStr = tags.length > 0 ? ' ' + tags.join(' ') : '';
+                    opt.textContent = `${c.scenario_name} — ${c.turn_count} turns — ${ts}${tagStr}`;
+                    container.appendChild(opt);
+                });
+            }
 
             if (selectFilename) {
                 selectEl.value = selectFilename;
@@ -437,7 +471,7 @@
             }
 
             try {
-                const data = await api(`/api/conversation/${filename}`);
+                const data = await api(`/api/conversation/${filename.split('/').map(encodeURIComponent).join('/')}`);
                 currentTurns = data.turns;
                 currentScenario = data.scenario;
                 // Select last turn by default
@@ -481,10 +515,13 @@
                 const ring = isSelected ? 'ring-2 ring-primary ring-offset-2' : '';
                 const toolHtml = (!isUser && turn.tool_interactions?.length)
                     ? renderToolInteractions(turn.tool_interactions) : '';
+                const badgeHtml = (!isUser && turn.context_source)
+                    ? `<span class="context-badge context-badge-${turn.context_source === 'mem0' ? 'mem0' : 'reflexio'}">${turn.context_source === 'mem0' ? 'mem0' : 'Reflexio'}</span>`
+                    : '';
 
                 return `
                     <div class="flex flex-col ${align}" data-turn="${turn.turn}">
-                        <span class="text-[10px] ${labelColor} mb-0.5 px-1 font-medium">${label} · Turn ${turn.turn}</span>
+                        <span class="text-[10px] ${labelColor} mb-0.5 px-1 font-medium">${label} · Turn ${turn.turn}${badgeHtml}</span>
                         <div class="${bubbleBg} ${ring} md-prose ${mdTheme} rounded-lg px-3.5 py-2.5 max-w-[85%] cursor-pointer text-sm leading-relaxed transition-shadow hover:shadow-md"
                              onclick="selectTurn(${turn.turn})">
                             ${renderMarkdown(turn.content)}${toolHtml}
@@ -551,19 +588,51 @@
                     }
                 }
                 let badge = '';
+                let contextSource = null;
                 if (hasPerTurnPrompt) {
                     // Find the turn that has the system_prompt to check context_source
-                    let source = 'Reflexio';
+                    contextSource = 'reflexio';
                     for (let i = currentTurns.length - 1; i >= 0; i--) {
                         const t = currentTurns[i];
                         if (t.turn <= selectedTurn && t.role === 'agent' && t.system_prompt) {
-                            if (t.context_source === 'mem0') source = 'mem0';
+                            if (t.context_source === 'mem0') contextSource = 'mem0';
                             break;
                         }
                     }
-                    badge = `<span class="inline-block text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded bg-primary/10 text-primary mb-2">${source}-enhanced (Turn ${selectedTurn})</span>`;
+                    const sourceLabel = contextSource === 'mem0' ? 'mem0' : 'Reflexio';
+                    badge = `<span class="inline-block text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded bg-primary/10 text-primary mb-2">${sourceLabel}-enhanced (Turn ${selectedTurn})</span>`;
                 }
-                contextContent.innerHTML = badge + `<div class="text-xs text-dark leading-relaxed md-prose md-context">${renderMarkdown(systemPrompt)}</div>`;
+
+                // Parse and highlight injected context block delimited by ---
+                if (hasPerTurnPrompt && systemPrompt.includes('---')) {
+                    const parts = systemPrompt.split('---');
+                    // Expected structure: preamble --- context block --- base prompt
+                    if (parts.length >= 3) {
+                        const preamble = parts[0].trim();
+                        const contextBlock = parts.slice(1, parts.length - 1).join('---').trim();
+                        const basePrompt = parts[parts.length - 1].trim();
+                        const sourceKey = contextSource === 'mem0' ? 'mem0' : 'reflexio';
+                        const sourceLabel = contextSource === 'mem0' ? 'Injected by mem0' : 'Injected by Reflexio';
+
+                        let html = badge;
+                        if (preamble) {
+                            html += `<div class="text-xs text-dark leading-relaxed md-prose md-context mb-3">${renderMarkdown(preamble)}</div>`;
+                        }
+                        html += `<div class="context-block-${sourceKey}">`;
+                        html += `<div class="context-block-label context-block-label-${sourceKey}">${sourceLabel}</div>`;
+                        html += `<div class="text-xs text-dark leading-relaxed md-prose md-context">${renderMarkdown(contextBlock)}</div>`;
+                        html += `</div>`;
+                        if (basePrompt) {
+                            html += `<div class="text-xs text-dark leading-relaxed md-prose md-context">${renderMarkdown(basePrompt)}</div>`;
+                        }
+                        contextContent.innerHTML = html;
+                    } else {
+                        // Fallback: less than 3 parts, render as-is
+                        contextContent.innerHTML = badge + `<div class="text-xs text-dark leading-relaxed md-prose md-context">${renderMarkdown(systemPrompt)}</div>`;
+                    }
+                } else {
+                    contextContent.innerHTML = badge + `<div class="text-xs text-dark leading-relaxed md-prose md-context">${renderMarkdown(systemPrompt)}</div>`;
+                }
                 return;
             }
 

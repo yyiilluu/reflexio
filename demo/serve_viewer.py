@@ -45,7 +45,7 @@ logger = logging.getLogger(__name__)
 app = FastAPI(title="Conversation Viewer")
 
 DEMO_DIR = Path(__file__).resolve().parent
-OUTPUT_DIR = DEMO_DIR / "output"
+OUTPUT_DIR = (DEMO_DIR / "output").resolve()
 VIEWER_HTML = DEMO_DIR / "viewer.html"
 
 # Module-level Reflexio client state
@@ -122,13 +122,15 @@ async def list_conversations():
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     conversations = []
 
-    for filepath in OUTPUT_DIR.glob("*.jsonl"):
+    for filepath in OUTPUT_DIR.rglob("*.jsonl"):
         turn_count = 0
         with open(filepath) as f:
             for line in f:
                 if line.strip():
                     turn_count += 1
 
+        # Use relative path from OUTPUT_DIR so subdirs are preserved
+        rel_path = filepath.relative_to(OUTPUT_DIR)
         scenario = match_scenario(filepath.name)
         # Extract timestamp from filename: scenario_YYYYMMDD_HHMMSS.jsonl
         timestamp = None
@@ -142,9 +144,13 @@ async def list_conversations():
             except ValueError:
                 pass
 
+        # Directory relative to output root (empty string for top-level files)
+        directory = str(rel_path.parent) if rel_path.parent != Path(".") else ""
+
         conversations.append(
             {
-                "filename": filepath.name,
+                "filename": str(rel_path),
+                "directory": directory,
                 "scenario_name": scenario["name"] if scenario else "unknown",
                 "description": scenario["description"] if scenario else "",
                 "timestamp": timestamp or filepath.stat().st_mtime,
@@ -156,17 +162,17 @@ async def list_conversations():
     return JSONResponse(conversations)
 
 
-@app.get("/api/conversation/{filename}")
+@app.get("/api/conversation/{filename:path}")
 async def get_conversation(filename: str):
     """
     Return the turns array and matched scenario object for a conversation file.
     Validates against path traversal.
     """
-    if "/" in filename or "\\" in filename or ".." in filename:
+    if "\\" in filename or ".." in filename:
         raise HTTPException(status_code=400, detail="Invalid filename")
 
-    filepath = OUTPUT_DIR / filename
-    if not filepath.exists():
+    filepath = (OUTPUT_DIR / filename).resolve()
+    if not filepath.is_relative_to(OUTPUT_DIR) or not filepath.exists():
         raise HTTPException(status_code=404, detail="Conversation not found")
 
     turns = []
@@ -175,7 +181,7 @@ async def get_conversation(filename: str):
             if line.strip():
                 turns.append(json.loads(line))
 
-    scenario = match_scenario(filename)
+    scenario = match_scenario(filepath.name)
     return JSONResponse({"turns": turns, "scenario": scenario})
 
 
@@ -420,11 +426,11 @@ async def reflexio_publish(req: ReflexioPublishRequest):
     if reflexio_client is None:
         raise HTTPException(status_code=401, detail="Not logged in to Reflexio")
 
-    if "/" in req.filename or "\\" in req.filename or ".." in req.filename:
+    if "\\" in req.filename or ".." in req.filename:
         raise HTTPException(status_code=400, detail="Invalid filename")
 
-    filepath = OUTPUT_DIR / req.filename
-    if not filepath.exists():
+    filepath = (OUTPUT_DIR / req.filename).resolve()
+    if not filepath.is_relative_to(OUTPUT_DIR) or not filepath.exists():
         raise HTTPException(status_code=404, detail="Conversation file not found")
 
     try:
@@ -493,11 +499,11 @@ async def mem0_publish(req: Mem0PublishRequest):
             status_code=500, detail="MEM0_API_KEY not configured in demo/.env"
         )
 
-    if "/" in req.filename or "\\" in req.filename or ".." in req.filename:
+    if "\\" in req.filename or ".." in req.filename:
         raise HTTPException(status_code=400, detail="Invalid filename")
 
-    filepath = OUTPUT_DIR / req.filename
-    if not filepath.exists():
+    filepath = (OUTPUT_DIR / req.filename).resolve()
+    if not filepath.is_relative_to(OUTPUT_DIR) or not filepath.exists():
         raise HTTPException(status_code=404, detail="Conversation file not found")
 
     try:

@@ -32,7 +32,8 @@ Description: Next.js frontend for viewing user profiles and interactions
 Key files:
 - `sidebar.tsx`: Navigation sidebar for switching between views (filters items by feature flags)
 - `layout-content.tsx`: Authentication wrapper that handles auth routing and sidebar display
-- `ui/`: ShadCN UI components (button, card, input, table, etc.)
+- `ui/`: ShadCN UI components (button, card, input, table, accordion, tabs, switch, etc.)
+- `settings/`: Settings page section components (StorageConfigSection, AgentContextSection, ProfileExtractorsSection, AgentFeedbackSection, AgentSuccessSection, AdvancedSettingsSection, ExtractionParamsSection) and shared helpers (FieldLabel, PasswordInput, TagManager, WindowOverrideFields)
 
 ## Feature Flags
 

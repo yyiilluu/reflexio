@@ -106,14 +106,25 @@ Evaluate every change against the following categories. Only report findings tha
 - Are mocks set up correctly (not masking real bugs)?
 - Do tests cover both happy-path and error cases?
 
-#### 3.9 Code Clarity & Maintainability
+#### 3.9 Missing Critical Test Cases
+Go beyond checking whether tests exist for the *changed* code. Proactively identify **core logic in the changed files** that lacks test coverage, even if the logic was not modified in this diff. Focus on:
+
+- **Security-sensitive code paths** — input validation, auth checks, path traversal guards, injection defenses. If these are untested, flag them as Significant.
+- **Pure functions and utilities** — functions with clear inputs/outputs that are easy to unit test but have no tests.
+- **Branching logic with edge cases** — functions with multiple `if`/`else` branches, especially error/fallback branches that are easy to miss.
+- **Data transformation and serialization** — code that converts between formats (e.g., DB rows to API responses, file parsing). Incorrect transformations cause subtle bugs.
+- **Integration points** — API endpoints, file I/O, external service calls. Even if mocked, the request/response contract should be tested.
+
+For each gap found, suggest specific test cases with descriptive names (e.g., `test_get_conversation_rejects_path_traversal`) and briefly describe what the test should verify. Group suggestions by priority (security first, then correctness, then edge cases).
+
+#### 3.10 Code Clarity & Maintainability
 - Are variable and function names descriptive and consistent with codebase conventions?
 - Is complex logic explained with a comment about *why* (not *what*)?
 - Are there dead code paths, unreachable branches, or leftover debug code?
 - Are magic numbers or strings extracted into named constants?
 - Is duplication introduced that should be extracted into a shared utility?
 
-#### 3.10 Frontend (when applicable)
+#### 3.11 Frontend (when applicable)
 - Are components following the project's ShadCN + Tailwind patterns?
 - Is state management appropriate (server state vs. client state)?
 - Are loading and error states handled in the UI?
@@ -153,6 +164,10 @@ Items that degrade code quality, violate architecture, or hurt maintainability.
 ### Minor Issues (nice to fix)
 Items that are low-risk but would improve the code.
 - [ ] **[FILE:LINE]** — Description and suggestion.
+
+### Missing Critical Test Cases
+Core logic that lacks test coverage. Prioritized by risk (security > correctness > edge cases).
+- [ ] `test_name_here` — What the test should verify and why it matters.
 
 ### Observations
 Things that are not wrong but worth noting (e.g., "this module is growing large — consider splitting in the future").
