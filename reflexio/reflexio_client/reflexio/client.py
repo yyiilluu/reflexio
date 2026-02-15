@@ -33,6 +33,8 @@ from reflexio_commons.api_schema.retriever_schema import (
     GetSkillsResponse,
     SearchSkillsRequest,
     SearchSkillsResponse,
+    UnifiedSearchRequest,
+    UnifiedSearchResponse,
 )
 from dotenv import load_dotenv
 
@@ -1712,6 +1714,48 @@ class ReflexioClient:
             "POST", "/api/search_skills", json=req.model_dump()
         )
         return SearchSkillsResponse(**response)
+
+    def search(
+        self,
+        request: Optional[Union[UnifiedSearchRequest, dict]] = None,
+        *,
+        query: Optional[str] = None,
+        top_k: Optional[int] = None,
+        threshold: Optional[float] = None,
+        agent_version: Optional[str] = None,
+        feedback_name: Optional[str] = None,
+        user_id: Optional[str] = None,
+    ) -> UnifiedSearchResponse:
+        """Search across all entity types (profiles, feedbacks, raw_feedbacks, skills).
+
+        Runs query rewriting and searches all entity types in parallel.
+        Query rewriting is gated behind the query_rewrite feature flag on the server.
+        Skills are only searched if the skill_generation feature flag is enabled.
+
+        Args:
+            request (Optional[UnifiedSearchRequest]): The search request object (alternative to kwargs)
+            query (str): Search query text
+            top_k (Optional[int]): Maximum results per entity type (default: 5)
+            threshold (Optional[float]): Similarity threshold for vector search (default: 0.3)
+            agent_version (Optional[str]): Filter by agent version (feedbacks, raw_feedbacks, skills)
+            feedback_name (Optional[str]): Filter by feedback name (feedbacks, raw_feedbacks, skills)
+            user_id (Optional[str]): Filter by user ID (profiles, raw_feedbacks)
+
+        Returns:
+            UnifiedSearchResponse: Combined search results from all entity types
+        """
+        req = self._build_request(
+            request,
+            UnifiedSearchRequest,
+            query=query,
+            top_k=top_k,
+            threshold=threshold,
+            agent_version=agent_version,
+            feedback_name=feedback_name,
+            user_id=user_id,
+        )
+        response = self._make_request("POST", "/api/search", json=req.model_dump())
+        return UnifiedSearchResponse(**response)
 
     def update_skill_status(
         self, skill_id: int, skill_status: SkillStatus

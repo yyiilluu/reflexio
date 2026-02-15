@@ -951,6 +951,7 @@ class SupabaseStorage(BaseStorage):
         self,
         search_user_profile_request: SearchUserProfileRequest,
         status_filter: Optional[list[Optional[Status]]] = None,
+        query_embedding: Optional[list[float]] = None,
     ) -> list[UserProfile]:
         if status_filter is None:
             status_filter = [None]  # Default to current profiles (status=None)
@@ -964,7 +965,7 @@ class SupabaseStorage(BaseStorage):
         response = self.client.rpc(
             "hybrid_match_profiles",
             {
-                "p_query_embedding": self._get_embedding(query_text),
+                "p_query_embedding": query_embedding or self._get_embedding(query_text),
                 "p_query_text": query_text,
                 "p_match_threshold": search_user_profile_request.threshold or 0.7,
                 "p_match_count": search_user_profile_request.top_k or 10,
@@ -1042,6 +1043,7 @@ class SupabaseStorage(BaseStorage):
         status_filter: Optional[list[Optional[Status]]] = None,
         match_threshold: float = 0.5,
         match_count: int = 10,
+        query_embedding: Optional[list[float]] = None,
     ) -> list[RawFeedback]:
         """
         Search raw feedbacks with advanced filtering including semantic search.
@@ -1056,23 +1058,11 @@ class SupabaseStorage(BaseStorage):
             status_filter (list[Optional[Status]], optional): List of status values to filter by
             match_threshold (float): Minimum similarity threshold (0.0 to 1.0)
             match_count (int): Maximum number of results to return
+            query_embedding (list[float], optional): Pre-computed query embedding. When provided, skips internal embedding generation.
 
         Returns:
             list[RawFeedback]: List of matching raw feedback objects
         """
-        # If user_id is provided, first get request_ids for that user
-        request_ids_for_user: Optional[list[str]] = None
-        if user_id:
-            requests_response = (
-                self.client.table("requests")
-                .select("request_id")
-                .eq("user_id", user_id)
-                .execute()
-            )
-            request_ids_for_user = [r["request_id"] for r in requests_response.data]
-            if not request_ids_for_user:
-                # No requests for this user, return empty
-                return []
 
         # Helper to convert Unix timestamp to ISO format for Supabase queries
         def _timestamp_to_iso(ts: int) -> str:
@@ -1098,11 +1088,12 @@ class SupabaseStorage(BaseStorage):
             response = self.client.rpc(
                 "hybrid_match_raw_feedbacks",
                 {
-                    "p_query_embedding": self._get_embedding(query),
+                    "p_query_embedding": query_embedding or self._get_embedding(query),
                     "p_query_text": query,
                     "p_match_threshold": match_threshold,
                     "p_match_count": match_count
                     * 10,  # Get more results to allow for filtering
+                    "p_filter_user_id": user_id,
                     "p_search_mode": self.search_mode.value,
                     "p_rrf_k": 60,
                 },
@@ -1134,11 +1125,6 @@ class SupabaseStorage(BaseStorage):
             # Apply filters in Python for RPC results
             filtered_feedbacks = []
             for rf in raw_feedbacks:
-                if (
-                    request_ids_for_user is not None
-                    and rf.request_id not in request_ids_for_user
-                ):
-                    continue
                 if agent_version and rf.agent_version != agent_version:
                     continue
                 if feedback_name and rf.feedback_name != feedback_name:
@@ -1167,6 +1153,19 @@ class SupabaseStorage(BaseStorage):
             return filtered_feedbacks[:match_count]
 
         # No query - use regular table query with Supabase filters
+        # For the non-RPC path, resolve user_id to request_ids via the requests table
+        request_ids_for_user: Optional[list[str]] = None
+        if user_id:
+            requests_response = (
+                self.client.table("requests")
+                .select("request_id")
+                .eq("user_id", user_id)
+                .execute()
+            )
+            request_ids_for_user = [r["request_id"] for r in requests_response.data]
+            if not request_ids_for_user:
+                return []
+
         db_query = (
             self.client.table("raw_feedbacks")
             .select("*")
@@ -1227,6 +1226,7 @@ class SupabaseStorage(BaseStorage):
         feedback_status_filter: Optional[FeedbackStatus] = None,
         match_threshold: float = 0.5,
         match_count: int = 10,
+        query_embedding: Optional[list[float]] = None,
     ) -> list[Feedback]:
         """
         Search aggregated feedbacks with advanced filtering including semantic search.
@@ -1270,7 +1270,7 @@ class SupabaseStorage(BaseStorage):
             response = self.client.rpc(
                 "hybrid_match_feedbacks",
                 {
-                    "p_query_embedding": self._get_embedding(query),
+                    "p_query_embedding": query_embedding or self._get_embedding(query),
                     "p_query_text": query,
                     "p_match_threshold": match_threshold,
                     "p_match_count": match_count
@@ -3054,6 +3054,7 @@ class SupabaseStorage(BaseStorage):
         skill_status: Optional[SkillStatus] = None,
         match_threshold: float = 0.5,
         match_count: int = 10,
+        query_embedding: Optional[list[float]] = None,
     ) -> list[Skill]:
         """
         Search skills with hybrid search (vector + FTS).
@@ -3073,7 +3074,7 @@ class SupabaseStorage(BaseStorage):
             response = self.client.rpc(
                 "hybrid_match_skills",
                 {
-                    "p_query_embedding": self._get_embedding(query),
+                    "p_query_embedding": query_embedding or self._get_embedding(query),
                     "p_query_text": query,
                     "p_match_threshold": match_threshold,
                     "p_match_count": match_count * 10,

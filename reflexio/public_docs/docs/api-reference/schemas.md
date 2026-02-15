@@ -595,6 +595,33 @@ Response model for getting requests.
 | `request_groups` | array[RequestGroup] | List of request groups with their requests | Required |
 | `msg` | string | Additional message | Optional |
 
+### UnifiedSearchRequest
+
+Request model for searching across all entity types in a single call.
+
+| Field | Type | Description | Default |
+|-------|------|-------------|---------|
+| `query` | string | Search query text | Required |
+| `top_k` | integer | Maximum results per entity type | 5 |
+| `threshold` | float | Similarity threshold for vector search | 0.3 |
+| `agent_version` | string | Filter by agent version (feedbacks, raw_feedbacks, skills) | Optional |
+| `feedback_name` | string | Filter by feedback name (feedbacks, raw_feedbacks, skills) | Optional |
+| `user_id` | string | Filter by user ID (profiles, raw_feedbacks) | Optional |
+
+### UnifiedSearchResponse
+
+Response model for unified search across all entity types.
+
+| Field | Type | Description | Default |
+|-------|------|-------------|---------|
+| `success` | boolean | Whether the search was successful | Required |
+| `profiles` | array[UserProfile] | Matching user profiles | Empty array |
+| `feedbacks` | array[Feedback] | Matching aggregated feedbacks | Empty array |
+| `raw_feedbacks` | array[RawFeedback] | Matching raw feedbacks | Empty array |
+| `skills` | array[Skill] | Matching skills (empty if skill_generation disabled) | Empty array |
+| `rewritten_query` | string | The FTS query used after rewriting (None if rewrite disabled) | Optional |
+| `msg` | string | Additional message | Optional |
+
 ### AgentSuccessEvaluationResult
 
 Represents an agent performance evaluation result.

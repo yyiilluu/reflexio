@@ -318,3 +318,65 @@ class SearchSkillsResponse(BaseModel):
     success: bool
     skills: list[Skill] = []
     msg: Optional[str] = None
+
+
+# ===============================
+# Query Rewrite Models
+# ===============================
+
+
+class RewrittenQuery(BaseModel):
+    """LLM structured output for query rewriting.
+
+    Args:
+        fts_query (str): Expanded FTS query using websearch_to_tsquery syntax (supports OR, phrases, negation)
+    """
+
+    fts_query: str
+
+
+# ===============================
+# Unified Search Models
+# ===============================
+
+
+class UnifiedSearchRequest(BaseModel):
+    """Request for unified search across all entity types.
+
+    Args:
+        query (str): Search query text
+        top_k (int, optional): Maximum results per entity type. Defaults to 5
+        threshold (float, optional): Similarity threshold for vector search. Defaults to 0.3
+        agent_version (str, optional): Filter by agent version (feedbacks, raw_feedbacks, skills)
+        feedback_name (str, optional): Filter by feedback name (feedbacks, raw_feedbacks, skills)
+        user_id (str, optional): Filter by user ID (profiles, raw_feedbacks)
+    """
+
+    query: str
+    top_k: Optional[int] = 5
+    threshold: Optional[float] = 0.3
+    agent_version: Optional[str] = None
+    feedback_name: Optional[str] = None
+    user_id: Optional[str] = None
+
+
+class UnifiedSearchResponse(BaseModel):
+    """Response containing search results from all entity types.
+
+    Args:
+        success (bool): Whether the search was successful
+        profiles (list[UserProfile]): Matching user profiles
+        feedbacks (list[Feedback]): Matching aggregated feedbacks
+        raw_feedbacks (list[RawFeedback]): Matching raw feedbacks
+        skills (list[Skill]): Matching skills (empty if skill_generation disabled)
+        rewritten_query (str, optional): The FTS query used after rewriting (None if rewrite disabled)
+        msg (str, optional): Additional message
+    """
+
+    success: bool
+    profiles: list[UserProfile] = []
+    feedbacks: list[Feedback] = []
+    raw_feedbacks: list[RawFeedback] = []
+    skills: list[Skill] = []
+    rewritten_query: Optional[str] = None
+    msg: Optional[str] = None

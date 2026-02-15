@@ -1020,6 +1020,7 @@ class LocalJsonStorage(BaseStorage):
         self,
         search_user_profile_request: SearchUserProfileRequest,
         status_filter: Optional[list[Optional[Status]]] = None,
+        query_embedding: Optional[list[float]] = None,
     ) -> list[UserProfile]:
         """Search user profile from storage
 
@@ -1780,6 +1781,7 @@ class LocalJsonStorage(BaseStorage):
         status_filter: Optional[list[Optional[Status]]] = None,
         match_threshold: float = 0.5,
         match_count: int = 10,
+        query_embedding: Optional[list[float]] = None,
     ) -> list[RawFeedback]:
         """
         Search raw feedbacks with advanced filtering (local storage uses text matching, not vector search).
@@ -1880,6 +1882,7 @@ class LocalJsonStorage(BaseStorage):
         feedback_status_filter: Optional[FeedbackStatus] = None,
         match_threshold: float = 0.5,
         match_count: int = 10,
+        query_embedding: Optional[list[float]] = None,
     ) -> list[Feedback]:
         """
         Search feedbacks with advanced filtering (local storage uses text matching, not vector search).
@@ -2763,6 +2766,7 @@ class LocalJsonStorage(BaseStorage):
         skill_status: Optional[SkillStatus] = None,
         match_threshold: float = 0.5,
         match_count: int = 10,
+        query_embedding: Optional[list[float]] = None,
     ) -> list[Skill]:
         all_memories = self._load()
         if "skills" not in all_memories:

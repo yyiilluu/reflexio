@@ -130,8 +130,13 @@ class LiteLLMClient:
         model_to_check = model or self.config.model
         model_lower = model_to_check.lower()
 
+        # Gemini
+        if model_lower.startswith("gemini/"):
+            if self.config.api_key_config.gemini:
+                return self.config.api_key_config.gemini.api_key, None, None
+
         # OpenRouter
-        if model_lower.startswith("openrouter/"):
+        elif model_lower.startswith("openrouter/"):
             if self.config.api_key_config.openrouter:
                 return self.config.api_key_config.openrouter.api_key, None, None
 

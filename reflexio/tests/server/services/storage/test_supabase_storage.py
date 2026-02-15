@@ -592,6 +592,7 @@ def test_search_raw_feedbacks(
             "p_query_text": "helpful agent response",
             "p_match_threshold": 0.7,
             "p_match_count": 100,  # 10 * 10 for filtering overhead
+            "p_filter_user_id": None,
             "p_search_mode": "hybrid",
             "p_rrf_k": 60,
         },
@@ -648,6 +649,7 @@ def test_search_raw_feedbacks_with_default_parameters(
             "p_query_text": "helpful feedback",
             "p_match_threshold": 0.5,  # Default threshold
             "p_match_count": 100,  # Get more results for filtering
+            "p_filter_user_id": None,
             "p_search_mode": "hybrid",
             "p_rrf_k": 60,
         },
@@ -710,6 +712,7 @@ def test_search_raw_feedbacks_empty_results(
             "p_query_text": "completely unrelated query",
             "p_match_threshold": 0.95,
             "p_match_count": 30,  # 3 * 10 for filtering overhead
+            "p_filter_user_id": None,
             "p_search_mode": "hybrid",
             "p_rrf_k": 60,
         },
@@ -823,6 +826,7 @@ def test_search_raw_feedbacks_multiple_results(
             "p_query_text": "agent performance feedback",
             "p_match_threshold": 0.6,
             "p_match_count": 100,  # 10 * 10 for filtering overhead
+            "p_filter_user_id": None,
             "p_search_mode": "hybrid",
             "p_rrf_k": 60,
         },

@@ -5,6 +5,7 @@ from reflexio.server.site_var.feature_flags import (
     is_feature_enabled,
     get_all_feature_flags,
     is_skill_generation_enabled,
+    is_query_rewrite_enabled,
 )
 
 
@@ -19,6 +20,10 @@ MOCK_CONFIG = {
     },
     "beta_feature": {
         "enabled": False,
+        "enabled_org_ids": [],
+    },
+    "query_rewrite": {
+        "enabled": True,
         "enabled_org_ids": [],
     },
 }
@@ -81,6 +86,7 @@ class TestFeatureFlags(unittest.TestCase):
                 "skill_generation": True,
                 "analytics_v2": True,
                 "beta_feature": False,
+                "query_rewrite": True,
             },
         )
 
@@ -97,6 +103,7 @@ class TestFeatureFlags(unittest.TestCase):
                 "skill_generation": False,
                 "analytics_v2": True,
                 "beta_feature": False,
+                "query_rewrite": True,
             },
         )
 
@@ -108,6 +115,15 @@ class TestFeatureFlags(unittest.TestCase):
         """is_skill_generation_enabled should be a convenience wrapper."""
         self.assertTrue(is_skill_generation_enabled("org-123"))
         self.assertFalse(is_skill_generation_enabled("org-999"))
+
+    @patch(
+        "reflexio.server.site_var.feature_flags._get_feature_flags_config",
+        return_value=MOCK_CONFIG,
+    )
+    def test_is_query_rewrite_enabled_convenience(self, _mock):
+        """is_query_rewrite_enabled should be a convenience wrapper."""
+        self.assertTrue(is_query_rewrite_enabled("org-123"))
+        self.assertTrue(is_query_rewrite_enabled("org-999"))  # globally enabled
 
     @patch(
         "reflexio.server.site_var.feature_flags._get_feature_flags_config",

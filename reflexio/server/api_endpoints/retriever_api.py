@@ -17,6 +17,8 @@ from reflexio_commons.api_schema.retriever_schema import (
     SearchRawFeedbackResponse,
     SearchFeedbackRequest,
     SearchFeedbackResponse,
+    UnifiedSearchRequest,
+    UnifiedSearchResponse,
 )
 from reflexio_commons.api_schema.service_schemas import (
     ProfileChangeLogResponse,
@@ -225,3 +227,28 @@ def search_feedbacks(
     reflexio = get_reflexio(org_id=org_id)
     result = reflexio.search_feedbacks(request)
     return result
+
+
+# ==============================
+# Unified search
+# ==============================
+
+
+def unified_search(
+    org_id: str,
+    request: UnifiedSearchRequest,
+) -> UnifiedSearchResponse:
+    """Search across all entity types (profiles, feedbacks, raw_feedbacks, skills) in parallel.
+
+    Query rewriting is gated behind the query_rewrite feature flag.
+    Skills are only searched if the skill_generation feature flag is enabled.
+
+    Args:
+        org_id (str): Organization ID
+        request (UnifiedSearchRequest): The unified search request
+
+    Returns:
+        UnifiedSearchResponse: Combined search results from all entity types
+    """
+    reflexio = get_reflexio(org_id=org_id)
+    return reflexio.unified_search(request, org_id=org_id)

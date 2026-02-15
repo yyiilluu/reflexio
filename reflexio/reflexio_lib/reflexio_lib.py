@@ -77,6 +77,8 @@ from reflexio_commons.api_schema.retriever_schema import (
     DashboardStats,
     PeriodStats,
     TimeSeriesDataPoint,
+    UnifiedSearchRequest,
+    UnifiedSearchResponse,
 )
 from reflexio.server.llm.litellm_client import LiteLLMClient, LiteLLMConfig
 from reflexio.server.services.feedback.feedback_aggregator import FeedbackAggregator
@@ -151,6 +153,49 @@ class Reflexio:
         """
         return self.request_context.is_storage_configured()
 
+    def _get_query_rewriter(self):
+        """Lazily create and cache a QueryRewriter instance.
+
+        Returns:
+            QueryRewriter: Cached rewriter instance
+        """
+        if not hasattr(self, "_query_rewriter"):
+            from reflexio.server.services.query_rewriter import QueryRewriter
+
+            config = self.request_context.configurator.get_config()
+            api_key_config = config.api_key_config if config else None
+            self._query_rewriter = QueryRewriter(
+                api_key_config=api_key_config,
+                prompt_manager=self.request_context.prompt_manager,
+            )
+        return self._query_rewriter
+
+    def _rewrite_query(self, query: Optional[str]) -> Optional[str]:
+        """Rewrite a search query using the query rewriter if enabled.
+
+        Returns the rewritten FTS query, or None if rewriting is disabled,
+        the query is empty, or rewriting fails.
+
+        Args:
+            query (str, optional): The original search query
+
+        Returns:
+            str or None: Rewritten FTS query, or None to use original query
+        """
+        if not query:
+            return None
+        from reflexio.server.site_var.feature_flags import is_query_rewrite_enabled
+
+        if not is_query_rewrite_enabled(self.org_id):
+            return None
+
+        rewriter = self._get_query_rewriter()
+        result = rewriter.rewrite(query, enabled=True)
+        # Only return if different from original
+        if result.fts_query != query:
+            return result.fts_query
+        return None
+
     def publish_interaction(
         self,
         request: Union[PublishUserInteractionRequest, dict],
@@ -223,6 +268,9 @@ class Reflexio:
             request = SearchUserProfileRequest(**request)
         if status_filter is None:
             status_filter = [None]  # Default to current profiles
+        rewritten = self._rewrite_query(request.query)
+        if rewritten:
+            request = request.model_copy(update={"query": rewritten})
         profiles = self.request_context.storage.search_user_profile(
             request, status_filter=status_filter
         )
@@ -691,8 +739,9 @@ class Reflexio:
         """Search skills with hybrid search."""
         if not self._is_storage_configured():
             raise ValueError(STORAGE_NOT_CONFIGURED_MSG)
+        rewritten = self._rewrite_query(query)
         return self.request_context.storage.search_skills(
-            query=query,
+            query=rewritten or query,
             feedback_name=feedback_name,
             agent_version=agent_version,
             skill_status=skill_status,
@@ -946,8 +995,9 @@ class Reflexio:
             request = SearchRawFeedbackRequest(**request)
 
         try:
+            query = self._rewrite_query(request.query) or request.query
             raw_feedbacks = self.request_context.storage.search_raw_feedbacks(
-                query=request.query,
+                query=query,
                 user_id=request.user_id,
                 agent_version=request.agent_version,
                 feedback_name=request.feedback_name,
@@ -987,8 +1037,9 @@ class Reflexio:
             request = SearchFeedbackRequest(**request)
 
         try:
+            query = self._rewrite_query(request.query) or request.query
             feedbacks = self.request_context.storage.search_feedbacks(
-                query=request.query,
+                query=query,
                 agent_version=request.agent_version,
                 feedback_name=request.feedback_name,
                 start_time=int(request.start_time.timestamp())
@@ -1468,6 +1519,41 @@ class Reflexio:
             return CancelOperationResponse(
                 success=False, msg=f"Failed to cancel operation: {str(e)}"
             )
+
+    def unified_search(
+        self,
+        request: Union[UnifiedSearchRequest, dict],
+        org_id: str,
+    ) -> UnifiedSearchResponse:
+        """
+        Search across all entity types (profiles, feedbacks, raw_feedbacks, skills) in parallel.
+
+        Delegates to unified_search_service for the actual search logic.
+
+        Args:
+            request (Union[UnifiedSearchRequest, dict]): The unified search request
+            org_id (str): Organization ID (used for feature flag checks)
+
+        Returns:
+            UnifiedSearchResponse: Combined results from all entity types
+        """
+        if not self._is_storage_configured():
+            return UnifiedSearchResponse(success=True, msg=STORAGE_NOT_CONFIGURED_MSG)
+        if isinstance(request, dict):
+            request = UnifiedSearchRequest(**request)
+
+        from reflexio.server.services.unified_search_service import run_unified_search
+
+        config = self.request_context.configurator.get_config()
+        api_key_config = config.api_key_config if config else None
+
+        return run_unified_search(
+            request=request,
+            org_id=org_id,
+            storage=self.request_context.storage,
+            api_key_config=api_key_config,
+            prompt_manager=self.request_context.prompt_manager,
+        )
 
     def upgrade_all_raw_feedbacks(
         self,

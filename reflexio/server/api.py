@@ -120,6 +120,8 @@ from reflexio_commons.api_schema.retriever_schema import (
     GetSkillsResponse,
     SearchSkillsRequest,
     SearchSkillsResponse,
+    UnifiedSearchRequest,
+    UnifiedSearchResponse,
 )
 from reflexio.server.db.db_operations import get_db_session
 from reflexio.server.site_var.feature_flags import (
@@ -844,6 +846,43 @@ def search_feedbacks_endpoint(
     # Filter out embedding fields
     for feedback in response.feedbacks:
         feedback.embedding = []
+    return response
+
+
+@app.post(
+    "/api/search",
+    response_model=UnifiedSearchResponse,
+    response_model_exclude_none=True,
+)
+@limiter.limit("120/minute")
+def unified_search_endpoint(
+    request: Request,
+    payload: UnifiedSearchRequest,
+    org_id: str = Depends(get_org_id_for_self_host),
+):
+    """Search across all entity types (profiles, feedbacks, raw_feedbacks, skills).
+
+    Runs query rewriting and embedding generation in parallel, then searches
+    all entity types in parallel. Query rewriting is gated behind the
+    query_rewrite feature flag. Skills are only searched if the
+    skill_generation feature flag is enabled for the org.
+
+    Args:
+        request (Request): The HTTP request object (for rate limiting)
+        payload (UnifiedSearchRequest): The unified search request
+        org_id (str): Organization ID
+
+    Returns:
+        UnifiedSearchResponse: Combined search results
+    """
+    response = retriever_api.unified_search(org_id=org_id, request=payload)
+    # Filter out embedding fields
+    for profile in response.profiles:
+        profile.embedding = []
+    for feedback in response.feedbacks:
+        feedback.embedding = []
+    for raw_feedback in response.raw_feedbacks:
+        raw_feedback.embedding = []
     return response
 
 

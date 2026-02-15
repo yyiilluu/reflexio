@@ -13,6 +13,7 @@ Complete documentation for the Reflexio client class and its methods.
 - [Profile Management](#profile-management)
 - [Configuration Management](#configuration-management)
 - [Feedback Management](#feedback-management)
+- [Unified Search](#unified-search)
 - [Agent Evaluation](#agent-evaluation)
 - [Rerun and Manual Generation Operations](#rerun-and-manual-generation-operations)
 - [Enums Reference](#enums-reference)
@@ -1450,6 +1451,80 @@ feedbacks = client.get_feedbacks(force_refresh=True)
 # Compare feedbacks across types
 quality_feedbacks = client.get_feedbacks(feedback_name="quality_feedback")
 helpfulness_feedbacks = client.get_feedbacks(feedback_name="helpfulness_feedback")
+```
+
+---
+
+## Unified Search
+
+### `search`
+
+Search across all entity types (profiles, feedbacks, raw_feedbacks, skills) in a single call. The server runs query rewriting and searches all entity types in parallel.
+
+```python
+response = client.search(
+    query="user preferences",
+    top_k=5,
+    threshold=0.3
+)
+```
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `query` | str | Yes | - | Search query text |
+| `top_k` | int | No | `5` | Maximum results per entity type |
+| `threshold` | float | No | `0.3` | Similarity threshold for vector search |
+| `agent_version` | str | No | `None` | Filter by agent version (feedbacks, raw_feedbacks, skills) |
+| `feedback_name` | str | No | `None` | Filter by feedback name (feedbacks, raw_feedbacks, skills) |
+| `user_id` | str | No | `None` | Filter by user ID (profiles, raw_feedbacks) |
+
+#### UnifiedSearchResponse Schema
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `success` | bool | Whether the search was successful |
+| `profiles` | list[UserProfile] | Matching user profiles |
+| `feedbacks` | list[Feedback] | Matching aggregated feedbacks |
+| `raw_feedbacks` | list[RawFeedback] | Matching raw feedbacks |
+| `skills` | list[Skill] | Matching skills (empty if skill_generation disabled) |
+| `rewritten_query` | str | The FTS query used after rewriting (None if rewrite disabled) |
+| `msg` | str | Additional message (optional) |
+
+**Example:**
+
+```python
+# Basic unified search
+response = client.search(query="response quality issues")
+
+print(f"Profiles: {len(response.profiles)}")
+print(f"Feedbacks: {len(response.feedbacks)}")
+print(f"Raw Feedbacks: {len(response.raw_feedbacks)}")
+print(f"Skills: {len(response.skills)}")
+
+if response.rewritten_query:
+    print(f"Rewritten query: {response.rewritten_query}")
+
+for profile in response.profiles:
+    print(f"  Profile: {profile.profile_content[:80]}...")
+
+for feedback in response.feedbacks:
+    print(f"  Feedback: {feedback.feedback_content[:80]}...")
+
+# Search with filters
+response = client.search(
+    query="handling edge cases",
+    agent_version="v2.1.0",
+    feedback_name="quality_feedback",
+    top_k=10,
+    threshold=0.4
+)
+
+# Search filtered by user
+response = client.search(
+    query="product preferences",
+    user_id="user_123",
+    top_k=5
+)
 ```
 
 ---

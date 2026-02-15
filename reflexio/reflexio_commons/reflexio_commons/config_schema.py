@@ -70,17 +70,24 @@ class OpenRouterConfig(BaseModel):
     api_key: str
 
 
+class GeminiConfig(BaseModel):
+    """Google Gemini API configuration."""
+
+    api_key: str
+
+
 class APIKeyConfig(BaseModel):
     """
     API key configuration for LLM providers.
 
-    Supports OpenAI (direct and Azure), Anthropic, and OpenRouter API keys.
+    Supports OpenAI (direct and Azure), Anthropic, OpenRouter, and Google Gemini API keys.
     These keys are used by the LiteLLM client for multi-provider support.
     """
 
     openai: Optional[OpenAIConfig] = None
     anthropic: Optional[AnthropicConfig] = None
     openrouter: Optional[OpenRouterConfig] = None
+    gemini: Optional[GeminiConfig] = None
 
 
 class ProfileExtractorConfig(BaseModel):

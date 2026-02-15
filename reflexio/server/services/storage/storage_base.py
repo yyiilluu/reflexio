@@ -347,6 +347,7 @@ class BaseStorage(ABC):
         self,
         search_user_profile_request: SearchUserProfileRequest,
         status_filter: Optional[list[Optional[Status]]] = None,
+        query_embedding: Optional[list[float]] = None,
     ):
         raise NotImplementedError
 
@@ -462,6 +463,7 @@ class BaseStorage(ABC):
         status_filter: Optional[list[Optional[Status]]] = None,
         match_threshold: float = 0.5,
         match_count: int = 10,
+        query_embedding: Optional[list[float]] = None,
     ) -> list[RawFeedback]:
         """
         Search raw feedbacks with advanced filtering including semantic search.
@@ -476,6 +478,7 @@ class BaseStorage(ABC):
             status_filter (list[Optional[Status]], optional): List of status values to filter by
             match_threshold (float): Minimum similarity threshold (0.0 to 1.0)
             match_count (int): Maximum number of results to return
+            query_embedding (list[float], optional): Pre-computed query embedding. When provided, skips internal embedding generation.
 
         Returns:
             list[RawFeedback]: List of matching raw feedback objects
@@ -494,6 +497,7 @@ class BaseStorage(ABC):
         feedback_status_filter: Optional[FeedbackStatus] = None,
         match_threshold: float = 0.5,
         match_count: int = 10,
+        query_embedding: Optional[list[float]] = None,
     ) -> list[Feedback]:
         """
         Search aggregated feedbacks with advanced filtering including semantic search.
@@ -508,6 +512,7 @@ class BaseStorage(ABC):
             feedback_status_filter (FeedbackStatus, optional): Filter by FeedbackStatus (PENDING/APPROVED/REJECTED)
             match_threshold (float): Minimum similarity threshold (0.0 to 1.0)
             match_count (int): Maximum number of results to return
+            query_embedding (list[float], optional): Pre-computed query embedding. When provided, skips internal embedding generation.
 
         Returns:
             list[Feedback]: List of matching feedback objects
@@ -955,6 +960,7 @@ class BaseStorage(ABC):
         skill_status: Optional[SkillStatus] = None,
         match_threshold: float = 0.5,
         match_count: int = 10,
+        query_embedding: Optional[list[float]] = None,
     ) -> list[Skill]:
         """
         Search skills with hybrid search (vector + FTS).
@@ -966,6 +972,7 @@ class BaseStorage(ABC):
             skill_status (SkillStatus, optional): Filter by skill status
             match_threshold (float): Minimum similarity threshold
             match_count (int): Maximum number of results to return
+            query_embedding (list[float], optional): Pre-computed query embedding. When provided, skips internal embedding generation.
 
         Returns:
             list[Skill]: List of matching skill objects

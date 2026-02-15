@@ -2,5 +2,6 @@
     "should_run_model_name": "gpt-5-nano",
     "default_generation_model_name": "gpt-5-mini",
     "default_evaluate_model_name": "gpt-5-nano",
-    "embedding_model_name": "text-embedding-3-small"
+    "embedding_model_name": "text-embedding-3-small",
+    "query_rewrite_model_name": "gpt-5-nano"
 }

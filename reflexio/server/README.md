@@ -54,6 +54,7 @@ Description: FastAPI backend server that processes user interactions to generate
 - `POST /api/update_skill_status` - Update skill status (DRAFT → PUBLISHED → DEPRECATED) **[gated]**
 - `DELETE /api/delete_skill` - Delete a skill by ID **[gated]**
 - `POST /api/export_skills` - Export skills as SKILL.md markdown **[gated]**
+- `POST /api/search` - Unified search across profiles, feedbacks, raw_feedbacks, skills (parallel, with query rewriting) **[query rewrite gated by `query_rewrite` flag]**
 - `POST /api/upgrade_all_raw_feedbacks` - PENDING → CURRENT for raw feedbacks
 - `POST /api/downgrade_all_raw_feedbacks` - ARCHIVED → CURRENT for raw feedbacks
 - `DELETE /api/delete_feedback` - Delete feedback by ID
@@ -109,7 +110,8 @@ Key files:
 - `llm_utils.py`: Helper functions for Pydantic model conversion
 
 **Features**:
-- Uses LiteLLM for multi-provider support (OpenAI, Claude, Azure, OpenRouter, etc.)
+- Uses LiteLLM for multi-provider support (OpenAI, Claude, Azure, OpenRouter, Gemini, etc.)
+- **Gemini support**: Model names with `gemini/` prefix route through Google Gemini; API key from `api_key_config.gemini`
 - **OpenRouter support**: Model names with `openrouter/` prefix (e.g., `openrouter/openai/gpt-5-nano`) route through OpenRouter; API key from `api_key_config.openrouter`
 - API keys read from environment variables (OPENAI_API_KEY, ANTHROPIC_API_KEY) or `ApiKeyConfig`
 - Interface: `generate_response()`, `generate_chat_response()`, `get_embedding()`
@@ -159,7 +161,7 @@ See `site_var/README.md` for detailed documentation.
 | `site_var_manager.py` | SiteVarManager (singleton) - loads JSON/TXT configs |
 | `feature_flags.py` | Per-org feature gating (`is_feature_enabled()`, `get_all_feature_flags()`) |
 
-**Feature Flags**: Config in `site_var_sources/feature_flags.json`. Each flag has global `enabled` toggle and per-org `enabled_org_ids` allowlist. Unknown flags default to enabled (fail-open). Currently gates: `skill_generation` (all skill endpoints return 403 when disabled), `invitation_only` (global flag, gates registration to require invitation codes).
+**Feature Flags**: Config in `site_var_sources/feature_flags.json`. Each flag has global `enabled` toggle and per-org `enabled_org_ids` allowlist. Unknown flags default to enabled (fail-open). Currently gates: `skill_generation` (all skill endpoints return 403 when disabled), `invitation_only` (global flag, gates registration to require invitation codes), `query_rewrite` (LLM-based query expansion for search, disabled by default).
 
 Access: `SiteVarManager().get_site_var(key)` for raw values, `feature_flags.is_feature_enabled(org_id, name)` for flag checks
 
@@ -396,6 +398,28 @@ Key files:
 2. Evaluates regular version for success
 3. Compares regular vs shadow to determine which is better
 4. Returns `regular_vs_shadow` field with values: `REGULAR_IS_BETTER`, `REGULAR_IS_SLIGHTLY_BETTER`, `SHADOW_IS_BETTER`, `SHADOW_IS_SLIGHTLY_BETTER`, `TIED`
+
+### Query Rewriter
+
+**File**: `services/query_rewriter.py` - `QueryRewriter`
+
+Expands user search queries with synonyms via LLM for improved full-text search recall. Uses `websearch_to_tsquery` syntax (supports OR, phrases, negation). Gated behind the `query_rewrite` feature flag.
+
+- Uses `query_rewrite_model_name` from `llm_model_setting.json` (fast, cheap model)
+- Structured output via `RewrittenQuery` Pydantic model
+- Falls back to original query on any failure
+- Prompt: `prompt_bank/query_rewrite/`
+
+### Unified Search Service
+
+**File**: `services/unified_search_service.py` - `run_unified_search()`
+
+Searches across all entity types (profiles, feedbacks, raw_feedbacks, skills) in parallel via a two-phase approach:
+
+- **Phase A**: Query rewriting + embedding generation (parallel via ThreadPoolExecutor)
+- **Phase B**: Entity searches across all types (parallel via ThreadPoolExecutor, 4 workers)
+
+Skills search gated behind `skill_generation` feature flag. Pre-computed embeddings passed to storage methods via `query_embedding` parameter to avoid redundant embedding calls.
 
 ### Storage
 
