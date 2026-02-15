@@ -42,7 +42,6 @@ project_root = script_dir.parent.parent
 sys.path.insert(0, str(project_root))
 
 from dotenv import load_dotenv
-from urllib.parse import urlparse
 
 load_dotenv()
 
@@ -50,6 +49,11 @@ logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
+
+from reflexio.server.services.storage.supabase_storage_utils import (
+    is_localhost_url,
+    extract_db_url_from_config_json,
+)
 
 
 @dataclass
@@ -60,24 +64,6 @@ class MigrationResult:
     success: bool
     message: str
     skipped: bool = False
-
-
-def is_localhost_url(db_url: str) -> bool:
-    """
-    Check if the database URL points to localhost.
-
-    Args:
-        db_url: Database connection URL
-
-    Returns:
-        bool: True if the URL is localhost, False otherwise
-    """
-    try:
-        parsed = urlparse(db_url)
-        host = parsed.hostname or ""
-        return host in ("localhost", "127.0.0.1", "::1")
-    except Exception:
-        return False
 
 
 def get_self_host_mode() -> bool:
@@ -214,22 +200,14 @@ def get_all_organizations_with_db_url() -> list[tuple[str, str]]:
                             )
                             continue
 
-                    config_data = json.loads(str(config_json_str))
-                    storage_config = config_data.get("storage_config")
-
-                    if storage_config and "db_url" in storage_config:
-                        db_url = storage_config["db_url"]
-                        if db_url:
-                            organizations_with_db_url.append((org_id, db_url))
-                        else:
-                            logger.debug(f"Org {org_id} has empty db_url")
+                    db_url = extract_db_url_from_config_json(config_json_str)
+                    if db_url:
+                        organizations_with_db_url.append((org_id, db_url))
                     else:
                         logger.debug(
                             f"Org {org_id} has no db_url in storage_config (likely local storage)"
                         )
 
-                except json.JSONDecodeError as e:
-                    logger.warning(f"Failed to parse config for org {org_id}: {e}")
                 except Exception as e:
                     logger.warning(f"Error processing org {org_id}: {e}")
 

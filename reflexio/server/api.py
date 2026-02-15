@@ -374,6 +374,7 @@ def logout_endpoint(
 def login_for_access_token(
     request: Request,
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
+    background_tasks: BackgroundTasks,
     session: Session = Depends(get_db_session),
 ):
     logger.info(f"Logging in for access token for user: {form_data.username}")
@@ -401,6 +402,17 @@ def login_for_access_token(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Please verify your email address. Check your inbox for the verification link.",
+        )
+
+    # Schedule background migration check for self-managed orgs
+    if org.is_self_managed:
+        from reflexio.server.api_endpoints.self_managed_migration import (
+            check_and_migrate_self_managed_org,
+        )
+
+        background_tasks.add_task(
+            check_and_migrate_self_managed_org,
+            org_id=str(org.id),
         )
 
     feature_flags = get_all_feature_flags(str(org.id))

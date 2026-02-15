@@ -2,9 +2,13 @@
 Utility functions for Supabase storage operations
 """
 
+import json
+import logging
 import re
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Optional
+from urllib.parse import urlparse
+
 from reflexio_commons.api_schema.service_schemas import (
     UserProfile,
     Interaction,
@@ -22,6 +26,8 @@ from reflexio_commons.api_schema.service_schemas import (
     ToolUsed,
 )
 import psycopg2
+
+logger = logging.getLogger(__name__)
 
 
 def _parse_iso_timestamp(ts: str) -> int:
@@ -500,6 +506,106 @@ def response_to_skill(item: dict[str, Any]) -> Skill:
         created_at=created_at,
         updated_at=updated_at,
     )
+
+
+def is_localhost_url(db_url: str) -> bool:
+    """
+    Check if the database URL points to localhost.
+
+    Args:
+        db_url: Database connection URL
+
+    Returns:
+        bool: True if the URL is localhost, False otherwise
+    """
+    try:
+        parsed = urlparse(db_url)
+        host = parsed.hostname or ""
+        return host in ("localhost", "127.0.0.1", "::1")
+    except Exception:
+        return False
+
+
+def get_latest_migration_version() -> Optional[str]:
+    """
+    Get the version prefix of the latest migration file on disk.
+
+    Returns:
+        str | None: The version string of the latest migration, or None if no migrations found
+    """
+    import os
+    import glob
+    from pathlib import Path
+    import reflexio
+
+    migration_dir = (
+        Path(os.path.dirname(reflexio.__file__)).parent / "supabase" / "migrations"
+    )
+    migration_files = sorted(glob.glob(os.path.join(migration_dir, "*.sql")))
+    if not migration_files:
+        return None
+
+    filename = os.path.basename(migration_files[-1])
+    return filename.split("_")[0]
+
+
+def check_migration_needed(db_url: str) -> bool:
+    """
+    Quick check whether the latest migration has been applied to the given database.
+
+    Connects with a short timeout, queries the schema_migrations table, and returns
+    True if the latest migration version is NOT present (i.e. migration is needed).
+    Returns False on any error (fail-safe: skip migration on uncertainty).
+
+    Args:
+        db_url: PostgreSQL connection string
+
+    Returns:
+        bool: True if migration is needed, False if up-to-date or on error
+    """
+    latest_version = get_latest_migration_version()
+    if not latest_version:
+        return False
+
+    conn = None
+    try:
+        conn = psycopg2.connect(db_url, connect_timeout=5)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT 1 FROM supabase_migrations.schema_migrations WHERE version = %s",
+            (latest_version,),
+        )
+        row = cursor.fetchone()
+        cursor.close()
+        return row is None
+    except Exception as e:
+        logger.debug(f"check_migration_needed failed for {db_url}: {e}")
+        return False
+    finally:
+        if conn is not None:
+            conn.close()
+
+
+def extract_db_url_from_config_json(config_json_str: str) -> Optional[str]:
+    """
+    Parse a (already-decrypted) config JSON string and extract the database URL.
+
+    Args:
+        config_json_str: Decrypted JSON configuration string
+
+    Returns:
+        str | None: The db_url from storage_config, or None if not found
+    """
+    try:
+        config_data = json.loads(str(config_json_str))
+        storage_config = config_data.get("storage_config")
+        if storage_config and "db_url" in storage_config:
+            db_url = storage_config["db_url"]
+            return db_url if db_url else None
+        return None
+    except Exception as e:
+        logger.debug(f"extract_db_url_from_config_json failed: {e}")
+        return None
 
 
 def execute_sql_file_direct(db_url: str, file_path: str) -> list[Any]:

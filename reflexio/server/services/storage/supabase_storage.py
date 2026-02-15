@@ -184,6 +184,15 @@ class SupabaseStorage(BaseStorage):
     # CRUD methods
     # ==============================
 
+    def check_migration_needed(self) -> bool:
+        if not self.supabase_db_url:
+            return False
+        from reflexio.server.services.storage.supabase_storage_utils import (
+            check_migration_needed as _check_migration_needed,
+        )
+
+        return _check_migration_needed(self.supabase_db_url)
+
     @handle_exceptions
     def migrate(self) -> bool:
         if not self.supabase_db_url:

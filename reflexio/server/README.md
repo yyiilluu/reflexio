@@ -33,6 +33,7 @@ Description: FastAPI backend server that processes user interactions to generate
 | `retriever_api.py` | Retrieving profiles, interactions, requests |
 | `login.py` | Authentication with TTL-cached org lookups (5 min TTL), email verification, password reset |
 | `precondition_checks.py` | Request validation |
+| `self_managed_migration.py` | Background migration for self-managed orgs (triggered on login, TTL-throttled 10 min) |
 
 **Key Endpoints**:
 - `POST /api/publish_interaction` - Publish interactions (triggers profile/feedback/evaluation)
@@ -62,7 +63,7 @@ Description: FastAPI backend server that processes user interactions to generate
 - `GET /api/get_operation_status` - Get background operation status
 - `POST /api/cancel_operation` - Cancel an in-progress operation (rerun or manual generation)
 
-**Login Response**: `POST /token` now returns `feature_flags: dict[str, bool]` alongside `api_key` and `token_type`. Frontend stores these in localStorage to gate UI features.
+**Login Response**: `POST /token` now returns `feature_flags: dict[str, bool]` alongside `api_key` and `token_type`. Frontend stores these in localStorage to gate UI features. For self-managed orgs (`is_self_managed=True`), login also triggers a background migration check via `self_managed_migration.py`.
 
 **Authentication Endpoints**:
 - `POST /api/register` - Register new org (accepts optional `invitation_code` form field; when `invitation_only` flag enabled, code is required and org is auto-verified)
@@ -429,7 +430,7 @@ Skills search gated behind `skill_generation` feature flag. Pre-computed embeddi
 |------|---------|
 | `storage_base.py` | BaseStorage abstract class |
 | `supabase_storage.py` | Production storage with vector embeddings (parses `blocking_issue` JSONB for feedbacks) |
-| `supabase_storage_utils.py` | Helpers: data conversion (handles `tools_used`/`blocking_issue` JSONB serialization), SQL migration runner |
+| `supabase_storage_utils.py` | Helpers: data conversion (handles `tools_used`/`blocking_issue` JSONB serialization), SQL migration runner, migration check utilities (`check_migration_needed`, `is_localhost_url`, `extract_db_url_from_config_json`) |
 | `supabase_migrations.py` | Data migrations that run alongside SQL schema migrations |
 | `local_json_storage.py` | Local file-based for testing |
 

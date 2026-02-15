@@ -50,6 +50,15 @@ class BaseStorage(ABC):
         """
         return True
 
+    def check_migration_needed(self) -> bool:
+        """
+        Check if storage needs migration. Returns False by default (no migration needed).
+
+        Returns:
+            bool: True if migration is needed, False otherwise
+        """
+        return False
+
     # read methods
     @abstractmethod
     def get_all_profiles(
