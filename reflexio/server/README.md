@@ -55,7 +55,7 @@ Description: FastAPI backend server that processes user interactions to generate
 - `POST /api/update_skill_status` - Update skill status (DRAFT → PUBLISHED → DEPRECATED) **[gated]**
 - `DELETE /api/delete_skill` - Delete a skill by ID **[gated]**
 - `POST /api/export_skills` - Export skills as SKILL.md markdown **[gated]**
-- `POST /api/search` - Unified search across profiles, feedbacks, raw_feedbacks, skills (parallel, with query rewriting) **[query rewrite gated by `query_rewrite` flag]**
+- `POST /api/search` - Unified search across profiles, feedbacks, raw_feedbacks, skills (parallel, with optional query rewriting via `query_rewrite` request param)
 - `POST /api/upgrade_all_raw_feedbacks` - PENDING → CURRENT for raw feedbacks
 - `POST /api/downgrade_all_raw_feedbacks` - ARCHIVED → CURRENT for raw feedbacks
 - `DELETE /api/delete_feedback` - Delete feedback by ID
@@ -162,7 +162,7 @@ See `site_var/README.md` for detailed documentation.
 | `site_var_manager.py` | SiteVarManager (singleton) - loads JSON/TXT configs |
 | `feature_flags.py` | Per-org feature gating (`is_feature_enabled()`, `get_all_feature_flags()`) |
 
-**Feature Flags**: Config in `site_var_sources/feature_flags.json`. Each flag has global `enabled` toggle and per-org `enabled_org_ids` allowlist. Unknown flags default to enabled (fail-open). Currently gates: `skill_generation` (all skill endpoints return 403 when disabled), `invitation_only` (global flag, gates registration to require invitation codes), `query_rewrite` (LLM-based query expansion for search, disabled by default).
+**Feature Flags**: Config in `site_var_sources/feature_flags.json`. Each flag has global `enabled` toggle and per-org `enabled_org_ids` allowlist. Unknown flags default to enabled (fail-open). Currently gates: `skill_generation` (all skill endpoints return 403 when disabled), `invitation_only` (global flag, gates registration to require invitation codes).
 
 Access: `SiteVarManager().get_site_var(key)` for raw values, `feature_flags.is_feature_enabled(org_id, name)` for flag checks
 
@@ -218,6 +218,15 @@ Main orchestrator flow:
 **Stride Processing**: Each extractor independently checks if it should run based on its configured stride size and tracks its own operation state.
 
 Called by API endpoints via `Reflexio`
+
+**Profile Timeout Troubleshooting**:
+- Use `python -m reflexio.scripts.reproduce_profile_timeout --mode storage --org-id <org> --user-id <user>` to reproduce with real interactions.
+- Use `--mode log --log-path server_log.txt` to replay extraction prompts captured in logs.
+- Look for structured events in logs:
+  - `event=profile_extract_llm_start` / `event=profile_extract_llm_end`
+  - `event=llm_request_start` / `event=llm_request_end`
+  - `event=profile_extract_failed`
+- If all extractors fail for a user during rerun/manual operations, the user is now marked in `failed_user_ids` instead of silently completing with zero generated items.
 
 ### Base Infrastructure
 
@@ -404,10 +413,11 @@ Key files:
 
 **File**: `services/query_rewriter.py` - `QueryRewriter`
 
-Expands user search queries with synonyms via LLM for improved full-text search recall. Uses `websearch_to_tsquery` syntax (supports OR, phrases, negation). Gated behind the `query_rewrite` feature flag.
+Expands user search queries with synonyms via LLM for improved full-text search recall. Uses `websearch_to_tsquery` syntax (supports OR, phrases, negation). Enabled per-request via `query_rewrite` parameter.
 
 - Uses `query_rewrite_model_name` from `llm_model_setting.json` (fast, cheap model)
-- Structured output via `RewrittenQuery` Pydantic model
+- Supports conversation-aware rewriting via `conversation_history` (list of `ConversationTurn`)
+- Plain-text LLM output with robust extraction/validation (handles JSON wrappers, code blocks, prose)
 - Falls back to original query on any failure
 - Prompt: `prompt_bank/query_rewrite/`
 

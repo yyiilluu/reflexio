@@ -46,6 +46,7 @@ from reflexio_commons.api_schema.service_schemas import (
     ToolUsed,
 )
 from reflexio_commons.api_schema.retriever_schema import (
+    ConversationTurn,
     SearchInteractionRequest,
     SearchUserProfileRequest,
     SearchInteractionResponse,
@@ -110,6 +111,7 @@ __all__ = [
     "SearchSkillsRequest",
     "SearchSkillsResponse",
     "SkillGeneratorConfig",
+    "ConversationTurn",
     "SearchInteractionRequest",
     "SearchUserProfileRequest",
     "SearchInteractionResponse",

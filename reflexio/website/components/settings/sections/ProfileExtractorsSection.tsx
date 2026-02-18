@@ -73,7 +73,15 @@ export function ProfileExtractorsSection({
                   value={extractor.id}
                   className="border rounded-lg bg-muted/30 px-5 data-[state=open]:shadow-sm transition-shadow"
                 >
-                  <div className="flex items-center py-3 gap-3">
+                  <div
+                    className="flex items-center py-3 gap-3 cursor-pointer hover:bg-muted/50 transition-colors rounded-t-lg"
+                    onClick={(e) => {
+                      const trigger = (e.currentTarget as HTMLElement).querySelector('[data-radix-collection-item]') as HTMLElement
+                      if (trigger && !trigger.contains(e.target as Node)) {
+                        trigger.click()
+                      }
+                    }}
+                  >
                     <AccordionTrigger className="hover:no-underline py-0 gap-3 flex-1 min-w-0">
                       <span className="text-sm font-semibold text-slate-800 truncate">
                         {extractor.extractor_name || "Unnamed extractor"}
@@ -82,7 +90,7 @@ export function ProfileExtractorsSection({
                         Profile
                       </Badge>
                     </AccordionTrigger>
-                    <div className="flex items-center gap-1.5 shrink-0">
+                    <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
                       <span className={`text-xs font-medium ${extractor.manual_trigger ? "text-amber-600" : "text-emerald-600"}`}>
                         {extractor.manual_trigger ? "Manual" : "Auto"}
                       </span>
@@ -96,7 +104,10 @@ export function ProfileExtractorsSection({
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => setDeleteTarget({ id: extractor.id, name: extractor.extractor_name || "Unnamed extractor" })}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setDeleteTarget({ id: extractor.id, name: extractor.extractor_name || "Unnamed extractor" })
+                      }}
                       className="h-8 w-8 p-0 shrink-0"
                       aria-label={`Delete ${extractor.extractor_name}`}
                     >

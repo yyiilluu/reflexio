@@ -101,16 +101,3 @@ def is_skill_generation_enabled(org_id: str) -> bool:
         bool: True if skill generation is enabled
     """
     return is_feature_enabled(org_id, "skill_generation")
-
-
-def is_query_rewrite_enabled(org_id: str) -> bool:
-    """
-    Convenience check for whether query rewrite is enabled for an org.
-
-    Args:
-        org_id (str): The organization ID to check
-
-    Returns:
-        bool: True if query rewrite is enabled
-    """
-    return is_feature_enabled(org_id, "query_rewrite")

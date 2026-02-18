@@ -1,13 +1,16 @@
 """Unit tests for the QueryRewriter service.
 
 Tests the critical paths: feature-flag bypass, LLM failure fallback,
-and successful rewrite propagation.
+successful rewrite propagation, and conversation-aware rewriting.
 """
 
 import unittest
 from unittest.mock import MagicMock, patch
 
-from reflexio_commons.api_schema.retriever_schema import RewrittenQuery
+from reflexio_commons.api_schema.retriever_schema import (
+    ConversationTurn,
+    RewrittenQuery,
+)
 from reflexio.server.services.query_rewriter import QueryRewriter
 
 
@@ -57,10 +60,9 @@ class TestQueryRewriter(unittest.TestCase):
     def test_rewrite_success_returns_expanded_query(self):
         """When LLM succeeds, should return the expanded query."""
         rewriter = _make_rewriter()
-        expanded = RewrittenQuery(
-            fts_query="agent failed OR error to refund OR return OR reimburse"
+        rewriter.llm_client.generate_response.return_value = (
+            "agent failed OR error to refund OR return OR reimburse"
         )
-        rewriter.llm_client.generate_response.return_value = expanded
 
         result = rewriter.rewrite("agent failed to refund", enabled=True)
 
@@ -70,15 +72,157 @@ class TestQueryRewriter(unittest.TestCase):
             "agent failed OR error to refund OR return OR reimburse",
         )
 
-    def test_rewrite_non_structured_response_returns_fallback(self):
-        """When LLM returns a non-RewrittenQuery object, should fall back."""
+    def test_rewrite_empty_response_returns_fallback(self):
+        """When LLM returns an empty string, should fall back."""
         rewriter = _make_rewriter()
-        rewriter.llm_client.generate_response.return_value = "plain string"
+        rewriter.llm_client.generate_response.return_value = "  "
 
         result = rewriter.rewrite("test query", enabled=True)
 
         self.assertIsInstance(result, RewrittenQuery)
         self.assertEqual(result.fts_query, "test query")
+
+    def test_rewrite_strips_whitespace(self):
+        """Response should be stripped of leading/trailing whitespace."""
+        rewriter = _make_rewriter()
+        rewriter.llm_client.generate_response.return_value = (
+            "  slow OR sluggish response OR reply time  \n"
+        )
+
+        result = rewriter.rewrite("slow response time", enabled=True)
+
+        self.assertEqual(result.fts_query, "slow OR sluggish response OR reply time")
+
+    def test_rewrite_extracts_query_from_json_wrapper(self):
+        """When model returns a JSON wrapper, should extract and use fts_query."""
+        rewriter = _make_rewriter()
+        rewriter.llm_client.generate_response.return_value = (
+            '{"fts_query":"refund OR return OR reimburse"}'
+        )
+
+        result = rewriter.rewrite("refund", enabled=True)
+
+        self.assertEqual(result.fts_query, "refund OR return OR reimburse")
+
+    def test_rewrite_rejects_prose_response(self):
+        """When model returns explanatory prose, should fall back."""
+        rewriter = _make_rewriter()
+        rewriter.llm_client.generate_response.return_value = (
+            "Here is your expanded query: refund OR return OR reimburse"
+        )
+
+        result = rewriter.rewrite("refund", enabled=True)
+
+        self.assertEqual(result.fts_query, "refund")
+
+    def test_rewrite_extracts_query_from_code_block(self):
+        """When model returns fenced output, should extract query line."""
+        rewriter = _make_rewriter()
+        rewriter.llm_client.generate_response.return_value = (
+            "```text\nrefund OR return OR reimburse\n```"
+        )
+
+        result = rewriter.rewrite("refund", enabled=True)
+
+        self.assertEqual(result.fts_query, "refund OR return OR reimburse")
+
+    def test_rewrite_extracts_query_from_json_code_block(self):
+        """When model returns fenced JSON, should extract fts_query value."""
+        rewriter = _make_rewriter()
+        rewriter.llm_client.generate_response.return_value = (
+            '```json\n{"fts_query":"refund OR return OR reimburse"}\n```'
+        )
+
+        result = rewriter.rewrite("refund", enabled=True)
+
+        self.assertEqual(result.fts_query, "refund OR return OR reimburse")
+
+    def test_rewrite_with_conversation_history_passes_context_to_prompt(self):
+        """When conversation_history is provided, the formatted context should be passed to the prompt."""
+        rewriter = _make_rewriter()
+        rewriter.llm_client.generate_response.return_value = (
+            "backup OR sync failure S3 OR storage timeout"
+        )
+
+        history = [
+            ConversationTurn(
+                role="user", content="Hi, our nightly backup keeps failing"
+            ),
+            ConversationTurn(
+                role="agent", content="I can help with that. What error do you see?"
+            ),
+            ConversationTurn(
+                role="user", content="The error is S3 sync timeout after 900s"
+            ),
+        ]
+
+        result = rewriter.rewrite(
+            "what should I do", enabled=True, conversation_history=history
+        )
+
+        self.assertEqual(
+            result.fts_query, "backup OR sync failure S3 OR storage timeout"
+        )
+        # Verify the prompt was rendered with conversation_context_block
+        call_args = rewriter.prompt_manager.render_prompt.call_args
+        variables = call_args[0][1]
+        self.assertEqual(variables["query"], "what should I do")
+        self.assertIn(
+            "[user]: Hi, our nightly backup keeps failing",
+            variables["conversation_context_block"],
+        )
+        self.assertIn(
+            "[agent]: I can help with that.", variables["conversation_context_block"]
+        )
+        self.assertIn(
+            "[user]: The error is S3 sync timeout after 900s",
+            variables["conversation_context_block"],
+        )
+
+    def test_rewrite_without_conversation_history_passes_empty_context_block(self):
+        """When no conversation_history, the prompt should receive an empty conversation_context_block."""
+        rewriter = _make_rewriter()
+        rewriter.llm_client.generate_response.return_value = (
+            "agent failed OR error to refund OR return"
+        )
+
+        result = rewriter.rewrite("agent failed to refund", enabled=True)
+
+        call_args = rewriter.prompt_manager.render_prompt.call_args
+        variables = call_args[0][1]
+        self.assertEqual(variables["conversation_context_block"], "")
+
+
+class TestFormatConversationContext(unittest.TestCase):
+    """Unit tests for QueryRewriter._format_conversation_context."""
+
+    def test_none_returns_empty_string(self):
+        self.assertEqual(
+            QueryRewriter._format_conversation_context(None),
+            "",
+        )
+
+    def test_empty_list_returns_empty_string(self):
+        self.assertEqual(
+            QueryRewriter._format_conversation_context([]),
+            "",
+        )
+
+    def test_formats_conversation_turn_objects(self):
+        turns = [
+            ConversationTurn(role="user", content="Hello"),
+            ConversationTurn(role="agent", content="Hi there"),
+        ]
+        result = QueryRewriter._format_conversation_context(turns)
+        self.assertEqual(result, "[user]: Hello\n[agent]: Hi there")
+
+    def test_formats_dict_turns(self):
+        turns = [
+            {"role": "user", "content": "Hello"},
+            {"role": "agent", "content": "Hi there"},
+        ]
+        result = QueryRewriter._format_conversation_context(turns)
+        self.assertEqual(result, "[user]: Hello\n[agent]: Hi there")
 
 
 if __name__ == "__main__":

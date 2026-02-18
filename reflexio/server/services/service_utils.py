@@ -297,7 +297,15 @@ def construct_messages_from_interactions(
 
     # Add combined user message if there's any content
     if combined_content:
-        messages.append({"role": "user", "content": combined_content})
+        # Flatten to plain string when all blocks are text-only (no images).
+        # Content-block format combined with structured output (response_format)
+        # causes significantly slower OpenAI API responses and timeouts.
+        all_text = all(block.get("type") == "text" for block in combined_content)
+        if all_text:
+            content = "\n\n".join(block["text"] for block in combined_content)
+        else:
+            content = combined_content
+        messages.append({"role": "user", "content": content})
 
     return messages
 

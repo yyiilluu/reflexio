@@ -24,6 +24,10 @@ class StatusChangeOperation(str, enum.Enum):
     DOWNGRADE = "downgrade"
 
 
+class ExtractorExecutionError(RuntimeError):
+    """Raised when all extractors fail for a request/user context."""
+
+
 logger = logging.getLogger(__name__)
 
 # Timeout for individual extractor execution (safety net if LLM provider ignores its own timeout)
@@ -87,6 +91,11 @@ class BaseGenerationService(
         self.request_context = request_context
         self.service_config: Optional[TGenerationServiceConfig] = None
         self._is_batch_mode: bool = False
+        self._last_extractor_run_stats: dict[str, int] = {
+            "total": 0,
+            "failed": 0,
+            "timed_out": 0,
+        }
 
     @abstractmethod
     def _load_extractor_configs(self) -> list[TExtractorConfig]:
@@ -231,6 +240,11 @@ class BaseGenerationService(
             List of results from all successful extractor executions
         """
         results = []
+        run_stats = {
+            "total": len(extractors),
+            "failed": 0,
+            "timed_out": 0,
+        }
         executor = ThreadPoolExecutor(max_workers=5)
 
         try:
@@ -242,6 +256,8 @@ class BaseGenerationService(
                     if result:
                         results.append(result)
                 except FuturesTimeoutError:
+                    run_stats["failed"] += 1
+                    run_stats["timed_out"] += 1
                     logger.error(
                         "Extractor timed out after %d seconds for %s context %s",
                         EXTRACTOR_TIMEOUT_SECONDS,
@@ -250,6 +266,7 @@ class BaseGenerationService(
                     )
                     continue
                 except Exception as e:
+                    run_stats["failed"] += 1
                     logger.error(
                         "Failed to run %s for context %s due to %s, exception type: %s",
                         self._get_service_name(),
@@ -261,6 +278,7 @@ class BaseGenerationService(
         finally:
             executor.shutdown(wait=False, cancel_futures=True)
 
+        self._last_extractor_run_stats = run_stats
         return results
 
     # ===============================
@@ -407,6 +425,17 @@ class BaseGenerationService(
 
             # Process results
             if not results:
+                stats = self._last_extractor_run_stats
+                all_extractors_failed = len(extractors) > 0 and stats.get(
+                    "failed", 0
+                ) == len(extractors)
+                if all_extractors_failed:
+                    error_msg = (
+                        f"All extractors failed for {self._get_service_name()} "
+                        f"identifier={identifier} (timed_out={stats.get('timed_out', 0)})"
+                    )
+                    logger.error(error_msg)
+                    raise ExtractorExecutionError(error_msg)
                 logger.info(
                     "No results generated for %s identifier: %s",
                     self._get_service_name(),
@@ -417,12 +446,14 @@ class BaseGenerationService(
             self._process_results(results)
 
         except Exception as e:
-            logger.warning(
+            logger.error(
                 "Failed to run %s due to %s, exception type: %s",
                 self._get_service_name(),
                 str(e),
                 type(e).__name__,
             )
+            if isinstance(e, ExtractorExecutionError):
+                raise
 
     # ===============================
     # Batch with progress (shared by rerun + manual)

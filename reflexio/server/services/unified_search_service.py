@@ -11,6 +11,7 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeou
 from typing import Optional
 
 from reflexio_commons.api_schema.retriever_schema import (
+    ConversationTurn,
     RewrittenQuery,
     SearchUserProfileRequest,
     UnifiedSearchRequest,
@@ -26,10 +27,7 @@ from reflexio_commons.config_schema import APIKeyConfig
 from reflexio.server.prompt.prompt_manager import PromptManager
 from reflexio.server.services.query_rewriter import QueryRewriter
 from reflexio.server.services.storage.storage_base import BaseStorage
-from reflexio.server.site_var.feature_flags import (
-    is_query_rewrite_enabled,
-    is_skill_generation_enabled,
-)
+from reflexio.server.site_var.feature_flags import is_skill_generation_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +71,8 @@ def run_unified_search(
         api_key_config=api_key_config,
         prompt_manager=prompt_manager,
         supports_embedding=supports_embedding,
+        conversation_history=request.conversation_history,
+        query_rewrite=bool(request.query_rewrite),
     )
 
     rewritten_query_text = rewritten_query.fts_query
@@ -110,6 +110,8 @@ def _run_phase_a(
     api_key_config: APIKeyConfig,
     prompt_manager: PromptManager,
     supports_embedding: bool = True,
+    conversation_history: Optional[list[ConversationTurn]] = None,
+    query_rewrite: bool = False,
 ) -> tuple[RewrittenQuery, Optional[list[float]]]:
     """Run query rewriting and embedding generation in parallel.
 
@@ -121,6 +123,8 @@ def _run_phase_a(
         prompt_manager (PromptManager): Prompt manager instance
         supports_embedding (bool): Whether the storage backend supports embedding generation.
             When False, skips embedding and returns None (local/self-host storage).
+        conversation_history (list, optional): Prior conversation turns for context-aware query rewriting
+        query_rewrite (bool): Whether query rewriting is enabled for this request
 
     Returns:
         tuple[RewrittenQuery, Optional[list[float]]]: (RewrittenQuery, embedding_vector) — embedding is None when unsupported or on failure
@@ -138,7 +142,8 @@ def _run_phase_a(
         rewrite_future = executor.submit(
             query_rewriter.rewrite,
             query,
-            is_query_rewrite_enabled(org_id),
+            query_rewrite,
+            conversation_history,
         )
 
         embedding_future = None

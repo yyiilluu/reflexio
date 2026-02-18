@@ -7,7 +7,7 @@
     "versions": {
         "1.0.0": {
             "created_at": 1739523600,
-            "variables": ["query"]
+            "variables": ["query", "conversation_context_block"]
         }
     }
 }

@@ -1,3 +1,4 @@
+import logging
 from typing import Optional, Union
 
 from reflexio_commons.api_schema.service_schemas import (
@@ -39,6 +40,7 @@ from reflexio_commons.api_schema.service_schemas import (
     DowngradeRawFeedbacksRequest,
     DowngradeRawFeedbacksResponse,
     Status,
+    OperationStatus,
     OperationStatusInfo,
     GetOperationStatusRequest,
     GetOperationStatusResponse,
@@ -98,6 +100,8 @@ from reflexio_commons.config_schema import Config
 
 from reflexio.server.services.operation_state_utils import OperationStateManager
 from reflexio.server.site_var.site_var_manager import SiteVarManager
+
+logger = logging.getLogger(__name__)
 
 # Error message for when storage is not configured
 STORAGE_NOT_CONFIGURED_MSG = (
@@ -170,7 +174,9 @@ class Reflexio:
             )
         return self._query_rewriter
 
-    def _rewrite_query(self, query: Optional[str]) -> Optional[str]:
+    def _rewrite_query(
+        self, query: Optional[str], enabled: bool = False
+    ) -> Optional[str]:
         """Rewrite a search query using the query rewriter if enabled.
 
         Returns the rewritten FTS query, or None if rewriting is disabled,
@@ -178,15 +184,12 @@ class Reflexio:
 
         Args:
             query (str, optional): The original search query
+            enabled (bool): Whether query rewriting is enabled for this request
 
         Returns:
             str or None: Rewritten FTS query, or None to use original query
         """
-        if not query:
-            return None
-        from reflexio.server.site_var.feature_flags import is_query_rewrite_enabled
-
-        if not is_query_rewrite_enabled(self.org_id):
+        if not query or not enabled:
             return None
 
         rewriter = self._get_query_rewriter()
@@ -268,7 +271,9 @@ class Reflexio:
             request = SearchUserProfileRequest(**request)
         if status_filter is None:
             status_filter = [None]  # Default to current profiles
-        rewritten = self._rewrite_query(request.query)
+        rewritten = self._rewrite_query(
+            request.query, enabled=bool(request.query_rewrite)
+        )
         if rewritten:
             request = request.model_copy(update={"query": rewritten})
         profiles = self.request_context.storage.search_user_profile(
@@ -995,7 +1000,10 @@ class Reflexio:
             request = SearchRawFeedbackRequest(**request)
 
         try:
-            query = self._rewrite_query(request.query) or request.query
+            query = (
+                self._rewrite_query(request.query, enabled=bool(request.query_rewrite))
+                or request.query
+            )
             raw_feedbacks = self.request_context.storage.search_raw_feedbacks(
                 query=query,
                 user_id=request.user_id,
@@ -1037,7 +1045,10 @@ class Reflexio:
             request = SearchFeedbackRequest(**request)
 
         try:
-            query = self._rewrite_query(request.query) or request.query
+            query = (
+                self._rewrite_query(request.query, enabled=bool(request.query_rewrite))
+                or request.query
+            )
             feedbacks = self.request_context.storage.search_feedbacks(
                 query=query,
                 agent_version=request.agent_version,
@@ -1450,6 +1461,35 @@ class Reflexio:
             # Extract the actual operation_state from the storage wrapper
             # Storage returns: {"service_name": "...", "operation_state": {...}, "updated_at": "..."}
             operation_state = state_entry.get("operation_state", state_entry)
+
+            # Auto-recover stale IN_PROGRESS operations so the frontend
+            # doesn't show "in progress" forever after a crash/restart
+            if operation_state.get("status") == OperationStatus.IN_PROGRESS.value:
+                from reflexio.server.services.operation_state_utils import (
+                    BATCH_STALE_PROGRESS_SECONDS,
+                )
+                from datetime import datetime, timezone
+
+                started_at = operation_state.get("started_at")
+                if started_at is not None:
+                    current_time = int(datetime.now(timezone.utc).timestamp())
+                    elapsed = current_time - started_at
+                    if elapsed > BATCH_STALE_PROGRESS_SECONDS:
+                        logger.warning(
+                            "Stale %s operation detected during status poll "
+                            "(started %d seconds ago), auto-marking as FAILED",
+                            request.service_name,
+                            elapsed,
+                        )
+                        operation_state["status"] = OperationStatus.FAILED.value
+                        operation_state["completed_at"] = current_time
+                        operation_state["error_message"] = (
+                            f"Auto-recovered: operation was stuck for {elapsed}s "
+                            f"(threshold: {BATCH_STALE_PROGRESS_SECONDS}s)"
+                        )
+                        self.request_context.storage.update_operation_state(
+                            progress_key, operation_state
+                        )
 
             # Convert to OperationStatusInfo
             operation_status_info = OperationStatusInfo(**operation_state)

@@ -5,9 +5,5 @@
     },
     "invitation_only": {
         "enabled": true
-    },
-    "query_rewrite": {
-        "enabled": false,
-        "enabled_org_ids": []
     }
 }

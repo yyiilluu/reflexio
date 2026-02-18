@@ -33,14 +33,10 @@ class TestRunUnifiedSearch(unittest.TestCase):
     """Tests for the top-level run_unified_search function."""
 
     @patch(
-        "reflexio.server.services.unified_search_service.is_query_rewrite_enabled",
-        return_value=False,
-    )
-    @patch(
         "reflexio.server.services.unified_search_service.is_skill_generation_enabled",
         return_value=False,
     )
-    def test_empty_query_returns_success_with_no_results(self, _flag1, _flag2):
+    def test_empty_query_returns_success_with_no_results(self, _flag1):
         """Empty query should return immediately with success=True."""
         request = UnifiedSearchRequest(query="")
         result = run_unified_search(
@@ -57,16 +53,10 @@ class TestRunUnifiedSearch(unittest.TestCase):
 
     @patch("reflexio.server.services.unified_search_service.QueryRewriter")
     @patch(
-        "reflexio.server.services.unified_search_service.is_query_rewrite_enabled",
-        return_value=False,
-    )
-    @patch(
         "reflexio.server.services.unified_search_service.is_skill_generation_enabled",
         return_value=False,
     )
-    def test_embedding_failure_degrades_to_text_search(
-        self, _flag1, _flag2, _rewriter_cls
-    ):
+    def test_embedding_failure_degrades_to_text_search(self, _flag1, _rewriter_cls):
         """When embedding generation fails, should degrade to text-only search (not crash)."""
         storage = _mock_storage()
         storage._get_embedding.side_effect = RuntimeError("Embedding API down")
@@ -89,14 +79,10 @@ class TestRunUnifiedSearch(unittest.TestCase):
 
     @patch("reflexio.server.services.unified_search_service.QueryRewriter")
     @patch(
-        "reflexio.server.services.unified_search_service.is_query_rewrite_enabled",
-        return_value=False,
-    )
-    @patch(
         "reflexio.server.services.unified_search_service.is_skill_generation_enabled",
         return_value=False,
     )
-    def test_local_storage_without_get_embedding(self, _flag1, _flag2, _rewriter_cls):
+    def test_local_storage_without_get_embedding(self, _flag1, _rewriter_cls):
         """LocalJsonStorage (no _get_embedding) should not crash and should use text-only search."""
         storage = _mock_storage()
         del storage._get_embedding  # Simulate LocalJsonStorage which lacks this method
@@ -119,22 +105,18 @@ class TestRunUnifiedSearch(unittest.TestCase):
 
     @patch("reflexio.server.services.unified_search_service.QueryRewriter")
     @patch(
-        "reflexio.server.services.unified_search_service.is_query_rewrite_enabled",
-        return_value=True,
-    )
-    @patch(
         "reflexio.server.services.unified_search_service.is_skill_generation_enabled",
         return_value=False,
     )
-    def test_rewritten_query_populated_when_changed(
-        self, _flag1, _flag2, _rewriter_cls
-    ):
+    def test_rewritten_query_populated_when_changed(self, _flag1, _rewriter_cls):
         """rewritten_query field should only be set when query was actually rewritten."""
         expanded = RewrittenQuery(fts_query="agent failed OR error to refund OR return")
         _rewriter_cls.return_value.rewrite.return_value = expanded
 
         storage = _mock_storage()
-        request = UnifiedSearchRequest(query="agent failed to refund")
+        request = UnifiedSearchRequest(
+            query="agent failed to refund", query_rewrite=True
+        )
         result = run_unified_search(
             request=request,
             org_id="test-org",
@@ -151,14 +133,10 @@ class TestRunUnifiedSearch(unittest.TestCase):
 
     @patch("reflexio.server.services.unified_search_service.QueryRewriter")
     @patch(
-        "reflexio.server.services.unified_search_service.is_query_rewrite_enabled",
-        return_value=False,
-    )
-    @patch(
         "reflexio.server.services.unified_search_service.is_skill_generation_enabled",
         return_value=False,
     )
-    def test_rewritten_query_none_when_unchanged(self, _flag1, _flag2, _rewriter_cls):
+    def test_rewritten_query_none_when_unchanged(self, _flag1, _rewriter_cls):
         """rewritten_query should be None when query was not rewritten."""
         _rewriter_cls.return_value.rewrite.return_value = RewrittenQuery(
             fts_query="same query"

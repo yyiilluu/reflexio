@@ -253,6 +253,13 @@ $function$;
 -- ========================================================
 -- 3) hybrid_match_feedbacks
 -- ========================================================
+-- Drop the existing function because the return type (OUT parameters) changed:
+-- added do_action, do_not_action, when_condition, blocking_issue, status columns.
+-- PostgreSQL does not allow CREATE OR REPLACE to change return types.
+DROP FUNCTION IF EXISTS public.hybrid_match_feedbacks(
+    public.vector, text, double precision, integer, text, integer
+);
+
 CREATE OR REPLACE FUNCTION public.hybrid_match_feedbacks(
     p_query_embedding public.vector,
     p_query_text text,
@@ -388,6 +395,13 @@ $function$;
 -- ========================================================
 -- 4) hybrid_match_raw_feedbacks
 -- ========================================================
+-- Drop the old 6-param overload (without p_filter_user_id) so CREATE OR REPLACE
+-- can install the new 7-param version. Without this DROP, PostgreSQL treats the
+-- different parameter list as a separate overload and keeps the old one.
+DROP FUNCTION IF EXISTS public.hybrid_match_raw_feedbacks(
+    public.vector, text, double precision, integer, text, integer
+);
+
 CREATE OR REPLACE FUNCTION public.hybrid_match_raw_feedbacks(
     p_query_embedding public.vector,
     p_query_text text,

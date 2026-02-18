@@ -70,7 +70,15 @@ export function AgentFeedbackSection({
                   value={feedback.id}
                   className="border rounded-lg bg-muted/30 px-5 data-[state=open]:shadow-sm transition-shadow"
                 >
-                  <div className="flex items-center py-3 gap-3">
+                  <div
+                    className="flex items-center py-3 gap-3 cursor-pointer hover:bg-muted/50 transition-colors rounded-t-lg"
+                    onClick={(e) => {
+                      const trigger = (e.currentTarget as HTMLElement).querySelector('[data-radix-collection-item]') as HTMLElement
+                      if (trigger && !trigger.contains(e.target as Node)) {
+                        trigger.click()
+                      }
+                    }}
+                  >
                     <AccordionTrigger className="hover:no-underline py-0 gap-3 flex-1 min-w-0">
                       <span className="text-sm font-semibold text-slate-800 truncate">
                         {feedback.feedback_name || "Unnamed feedback"}
@@ -82,7 +90,10 @@ export function AgentFeedbackSection({
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => setDeleteTarget({ id: feedback.id, name: feedback.feedback_name || "Unnamed feedback" })}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setDeleteTarget({ id: feedback.id, name: feedback.feedback_name || "Unnamed feedback" })
+                      }}
                       className="h-8 w-8 p-0 shrink-0"
                       aria-label={`Delete ${feedback.feedback_name}`}
                     >

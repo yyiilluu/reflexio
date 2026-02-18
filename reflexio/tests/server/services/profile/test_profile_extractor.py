@@ -487,6 +487,41 @@ class TestRun:
 
         assert result is None
 
+    def test_run_does_not_update_bookmark_when_extraction_fails(
+        self,
+        request_context,
+        mock_llm_client,
+        service_config,
+        sample_request_interaction_models,
+    ):
+        """Run should raise and leave bookmark unchanged when extraction fails."""
+        config = ProfileExtractorConfig(
+            extractor_name="test_extractor",
+            profile_content_definition_prompt="Extract user preferences",
+            extraction_window_stride_override=1,
+        )
+        request_context.storage.get_operation_state_with_new_request_interaction.return_value = (
+            {},
+            sample_request_interaction_models,
+        )
+        request_context.storage.get_user_profile.return_value = []
+
+        extractor = ProfileExtractor(
+            request_context=request_context,
+            llm_client=mock_llm_client,
+            extractor_config=config,
+            service_config=service_config,
+            agent_context="Test agent",
+        )
+        extractor._generate_raw_updates_from_request_groups = MagicMock(
+            side_effect=RuntimeError("llm timeout")
+        )
+
+        with pytest.raises(RuntimeError):
+            extractor.run()
+
+        request_context.storage.upsert_operation_state.assert_not_called()
+
     def test_run_updates_operation_state_on_success(
         self,
         request_context,

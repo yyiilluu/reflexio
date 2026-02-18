@@ -9,6 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from typing import Optional, TypeVar, Union
 from reflexio_commons.api_schema.retriever_schema import (
+    ConversationTurn,
     SearchInteractionRequest,
     SearchInteractionResponse,
     SearchUserProfileRequest,
@@ -374,6 +375,7 @@ class ReflexioClient:
         custom_feature: Optional[str] = None,
         extractor_name: Optional[str] = None,
         threshold: Optional[float] = None,
+        query_rewrite: Optional[bool] = None,
     ) -> SearchUserProfileResponse:
         """Search for user profiles.
 
@@ -389,6 +391,7 @@ class ReflexioClient:
             custom_feature (Optional[str]): Filter by custom feature
             extractor_name (Optional[str]): Filter by extractor name
             threshold (Optional[float]): Similarity threshold (default: 0.7)
+            query_rewrite (Optional[bool]): Enable LLM query rewriting (default: False)
 
         Returns:
             SearchUserProfileResponse: Response containing matching profiles
@@ -406,6 +409,7 @@ class ReflexioClient:
             custom_feature=custom_feature,
             extractor_name=extractor_name,
             threshold=threshold,
+            query_rewrite=query_rewrite,
         )
         response = self._make_request(
             "POST", "/api/search_profiles", json=req.model_dump()
@@ -425,6 +429,7 @@ class ReflexioClient:
         status_filter: Optional[list[Optional[Status]]] = None,
         top_k: Optional[int] = None,
         threshold: Optional[float] = None,
+        query_rewrite: Optional[bool] = None,
     ) -> SearchRawFeedbackResponse:
         """Search for raw feedbacks with semantic/text search and filtering.
 
@@ -439,6 +444,7 @@ class ReflexioClient:
             status_filter (Optional[list[Optional[Status]]]): Filter by status (None for CURRENT, PENDING, ARCHIVED)
             top_k (Optional[int]): Maximum number of results to return (default: 10)
             threshold (Optional[float]): Similarity threshold for vector search (default: 0.5)
+            query_rewrite (Optional[bool]): Enable LLM query rewriting (default: False)
 
         Returns:
             SearchRawFeedbackResponse: Response containing matching raw feedbacks
@@ -455,6 +461,7 @@ class ReflexioClient:
             status_filter=status_filter,
             top_k=top_k,
             threshold=threshold,
+            query_rewrite=query_rewrite,
         )
         response = self._make_request(
             "POST", "/api/search_raw_feedbacks", json=req.model_dump()
@@ -474,6 +481,7 @@ class ReflexioClient:
         feedback_status_filter: Optional[FeedbackStatus] = None,
         top_k: Optional[int] = None,
         threshold: Optional[float] = None,
+        query_rewrite: Optional[bool] = None,
     ) -> SearchFeedbackResponse:
         """Search for aggregated feedbacks with semantic/text search and filtering.
 
@@ -488,6 +496,7 @@ class ReflexioClient:
             feedback_status_filter (Optional[FeedbackStatus]): Filter by feedback status (PENDING, APPROVED, REJECTED)
             top_k (Optional[int]): Maximum number of results to return (default: 10)
             threshold (Optional[float]): Similarity threshold for vector search (default: 0.5)
+            query_rewrite (Optional[bool]): Enable LLM query rewriting (default: False)
 
         Returns:
             SearchFeedbackResponse: Response containing matching feedbacks
@@ -504,6 +513,7 @@ class ReflexioClient:
             feedback_status_filter=feedback_status_filter,
             top_k=top_k,
             threshold=threshold,
+            query_rewrite=query_rewrite,
         )
         response = self._make_request(
             "POST", "/api/search_feedbacks", json=req.model_dump()
@@ -1725,11 +1735,13 @@ class ReflexioClient:
         agent_version: Optional[str] = None,
         feedback_name: Optional[str] = None,
         user_id: Optional[str] = None,
+        query_rewrite: Optional[bool] = None,
+        conversation_history: Optional[list[ConversationTurn]] = None,
     ) -> UnifiedSearchResponse:
         """Search across all entity types (profiles, feedbacks, raw_feedbacks, skills).
 
         Runs query rewriting and searches all entity types in parallel.
-        Query rewriting is gated behind the query_rewrite feature flag on the server.
+        Query rewriting is controlled per-request via the query_rewrite parameter.
         Skills are only searched if the skill_generation feature flag is enabled.
 
         Args:
@@ -1740,6 +1752,8 @@ class ReflexioClient:
             agent_version (Optional[str]): Filter by agent version (feedbacks, raw_feedbacks, skills)
             feedback_name (Optional[str]): Filter by feedback name (feedbacks, raw_feedbacks, skills)
             user_id (Optional[str]): Filter by user ID (profiles, raw_feedbacks)
+            query_rewrite (Optional[bool]): Enable LLM query rewriting (default: False)
+            conversation_history (Optional[list[ConversationTurn]]): Prior conversation turns for context-aware query rewriting
 
         Returns:
             UnifiedSearchResponse: Combined search results from all entity types
@@ -1753,6 +1767,8 @@ class ReflexioClient:
             agent_version=agent_version,
             feedback_name=feedback_name,
             user_id=user_id,
+            query_rewrite=query_rewrite,
+            conversation_history=conversation_history,
         )
         response = self._make_request("POST", "/api/search", json=req.model_dump())
         return UnifiedSearchResponse(**response)

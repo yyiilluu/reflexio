@@ -14,6 +14,7 @@ from reflexio.server.api_endpoints.request_context import RequestContext
 from reflexio.server.llm.litellm_client import LiteLLMClient, LiteLLMConfig
 from reflexio.server.services.base_generation_service import (
     BaseGenerationService,
+    ExtractorExecutionError,
     StatusChangeOperation,
 )
 from reflexio_commons.api_schema.service_schemas import (
@@ -550,6 +551,60 @@ class TestRun:
         assert len(service._processed_results) == 1
         assert service._processed_results[0]["extractor_name"] == "extractor1"
 
+    def test_run_raises_when_all_extractors_fail(self, llm_client, request_context):
+        """Test that run() raises when all extractors fail."""
+        service = ConcreteGenerationService(
+            llm_client,
+            request_context,
+            extractor_configs=[
+                MockExtractorConfig(extractor_name="extractor1"),
+                MockExtractorConfig(extractor_name="extractor2"),
+            ],
+        )
+        service._create_extractor = MagicMock(
+            side_effect=lambda extractor_config, service_config: MockExtractor(
+                should_raise=True
+            )
+        )
+
+        request = MockServiceConfig(
+            user_id="test_user",
+            request_id="test_request",
+            request_interaction_data_models=[MagicMock()],
+        )
+
+        with pytest.raises(ExtractorExecutionError):
+            service.run(request)
+
+    def test_run_partial_success_when_some_extractors_fail(
+        self, llm_client, request_context
+    ):
+        """Test that run() succeeds when at least one extractor returns a result."""
+        service = ConcreteGenerationService(
+            llm_client,
+            request_context,
+            extractor_configs=[
+                MockExtractorConfig(extractor_name="extractor1"),
+                MockExtractorConfig(extractor_name="extractor2"),
+            ],
+        )
+        service._create_extractor = MagicMock(
+            side_effect=lambda extractor_config, service_config: MockExtractor(
+                result={"extractor_name": extractor_config.extractor_name},
+                should_raise=extractor_config.extractor_name == "extractor1",
+            )
+        )
+
+        request = MockServiceConfig(
+            user_id="test_user",
+            request_id="test_request",
+            request_interaction_data_models=[MagicMock()],
+        )
+
+        service.run(request)
+        assert len(service._processed_results) == 1
+        assert service._processed_results[0]["extractor_name"] == "extractor2"
+
 
 # ===============================
 # Test: _count_interactions()
@@ -933,7 +988,7 @@ class TestErrorHandling:
         assert len(service._processed_results) == 0
 
     def test_run_handles_exception_in_extractor(self, llm_client, request_context):
-        """Test that run() handles exceptions from extractors."""
+        """Test that run() raises ExtractorExecutionError when all extractors fail."""
 
         class FailingExtractorService(ConcreteGenerationService):
             def _create_extractor(self, extractor_config, service_config):
@@ -946,7 +1001,8 @@ class TestErrorHandling:
         )
         request = MockServiceConfig(request_interaction_data_models=[MagicMock()])
 
-        service.run(request)
+        with pytest.raises(ExtractorExecutionError):
+            service.run(request)
         assert len(service._processed_results) == 0
 
     def test_rerun_handles_item_processing_exception(self, llm_client, request_context):

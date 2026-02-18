@@ -37,6 +37,7 @@ class SearchUserProfileRequest(BaseModel):
     custom_feature: Optional[str] = None
     extractor_name: Optional[str] = None
     threshold: Optional[float] = 0.5
+    query_rewrite: Optional[bool] = False
 
 
 class SearchInteractionResponse(BaseModel):
@@ -141,6 +142,7 @@ class SearchRawFeedbackRequest(BaseModel):
     status_filter: Optional[list[Optional[Status]]] = None
     top_k: Optional[int] = 10
     threshold: Optional[float] = 0.5
+    query_rewrite: Optional[bool] = False
 
 
 class SearchRawFeedbackResponse(BaseModel):
@@ -181,6 +183,7 @@ class SearchFeedbackRequest(BaseModel):
     feedback_status_filter: Optional[FeedbackStatus] = None
     top_k: Optional[int] = 10
     threshold: Optional[float] = 0.5
+    query_rewrite: Optional[bool] = False
 
 
 class SearchFeedbackResponse(BaseModel):
@@ -325,6 +328,18 @@ class SearchSkillsResponse(BaseModel):
 # ===============================
 
 
+class ConversationTurn(BaseModel):
+    """A single turn in a conversation history.
+
+    Args:
+        role (str): The role of the speaker (e.g., "user", "agent")
+        content (str): The message content
+    """
+
+    role: str
+    content: str
+
+
 class RewrittenQuery(BaseModel):
     """LLM structured output for query rewriting.
 
@@ -350,6 +365,7 @@ class UnifiedSearchRequest(BaseModel):
         agent_version (str, optional): Filter by agent version (feedbacks, raw_feedbacks, skills)
         feedback_name (str, optional): Filter by feedback name (feedbacks, raw_feedbacks, skills)
         user_id (str, optional): Filter by user ID (profiles, raw_feedbacks)
+        conversation_history (list[ConversationTurn], optional): Prior conversation turns for context-aware query rewriting
     """
 
     query: str
@@ -358,6 +374,8 @@ class UnifiedSearchRequest(BaseModel):
     agent_version: Optional[str] = None
     feedback_name: Optional[str] = None
     user_id: Optional[str] = None
+    conversation_history: Optional[list[ConversationTurn]] = None
+    query_rewrite: Optional[bool] = False
 
 
 class UnifiedSearchResponse(BaseModel):

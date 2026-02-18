@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 import logging
+import time
 from typing import Any, Optional, TYPE_CHECKING
 import uuid
 import os
@@ -44,6 +45,8 @@ from reflexio.server.services.profile.profile_generation_service_utils import (
 from reflexio.server.site_var.site_var_manager import SiteVarManager
 
 logger = logging.getLogger(__name__)
+PROFILE_EXTRACTION_TIMEOUT_SECONDS = 300
+PROFILE_EXTRACTION_MAX_RETRIES = 2
 
 
 class ProfileExtractor:
@@ -260,6 +263,16 @@ class ProfileExtractor:
             return True
 
         try:
+            should_timeout_seconds = self.client.get_config().timeout
+            should_start = time.perf_counter()
+            logger.info(
+                "event=profile_should_llm_start user_id=%s extractor_name=%s model=%s timeout=%s prompt_chars=%d",
+                self.service_config.user_id,
+                self.config.extractor_name,
+                self.should_run_model_name,
+                should_timeout_seconds,
+                len(prompt),
+            )
             content = self.client.generate_chat_response(
                 messages=[
                     {
@@ -271,9 +284,17 @@ class ProfileExtractor:
             )
             log_model_response(logger, "Should extract profile response", content)
 
-            if content and "true" in content.lower():
-                return True
-            return False
+            decision = bool(content and "true" in content.lower())
+            logger.info(
+                "event=profile_should_llm_end user_id=%s extractor_name=%s model=%s timeout=%s elapsed_seconds=%.3f decision=%s",
+                self.service_config.user_id,
+                self.config.extractor_name,
+                self.should_run_model_name,
+                should_timeout_seconds,
+                time.perf_counter() - should_start,
+                decision,
+            )
+            return decision
         except Exception as exc:
             logger.error(
                 "Failed to determine profile extraction need due to %s, "
@@ -307,10 +328,26 @@ class ProfileExtractor:
             logger.info("No profile updates to extract")
             return None
 
-        raw_updates = self._generate_raw_updates_from_request_groups(
-            request_interaction_data_models=request_interaction_data_models,
-            existing_profiles=existing_profiles,
-        )
+        try:
+            raw_updates = self._generate_raw_updates_from_request_groups(
+                request_interaction_data_models=request_interaction_data_models,
+                existing_profiles=existing_profiles,
+            )
+        except Exception as e:
+            logger.error(
+                "event=profile_extract_failed user_id=%s extractor_name=%s error_type=%s error=%s",
+                self.service_config.user_id,
+                self.config.extractor_name,
+                type(e).__name__,
+                str(e),
+            )
+            # Do not advance bookmark on extraction failure.
+            # Keeping the bookmark unchanged allows the same interactions to be
+            # retried on subsequent runs after transient LLM/provider issues.
+            raise RuntimeError(
+                f"Profile extraction failed for user {self.service_config.user_id}"
+            ) from e
+
         logger.info("Generated raw updates: %s", raw_updates)
         if raw_updates:
             profile_updates = self._get_profile_updates_from_existing_profiles(
@@ -484,6 +521,27 @@ class ProfileExtractor:
         )
         # Messages are already in dict format from construct_messages_from_interactions
         messages_dict = messages
+        request_group_count = len(request_interaction_data_models)
+        interaction_count = sum(
+            len(request_group.interactions)
+            for request_group in request_interaction_data_models
+        )
+        history_chars = len(
+            format_request_groups_to_history_string(request_interaction_data_models)
+        )
+        logger.info(
+            "event=profile_extract_llm_start user_id=%s extractor_name=%s request_groups=%d interactions=%d history_chars=%d existing_profiles=%d model=%s timeout=%d max_retries=%d response_format=%s",
+            self.service_config.user_id,
+            self.config.extractor_name,
+            request_group_count,
+            interaction_count,
+            history_chars,
+            len(existing_profiles),
+            self.default_generation_model_name,
+            PROFILE_EXTRACTION_TIMEOUT_SECONDS,
+            PROFILE_EXTRACTION_MAX_RETRIES,
+            True,
+        )
 
         logger.info(
             "Profile extraction messages: %s",
@@ -491,14 +549,65 @@ class ProfileExtractor:
         )
 
         # Use ProfileUpdateOutput schema for structured output
-        update_response = self.client.generate_chat_response(
-            messages=messages_dict,
-            model=self.default_generation_model_name,
-            response_format=ProfileUpdateOutput,
-        )
+        extract_start = time.perf_counter()
+        try:
+            update_response = self.client.generate_chat_response(
+                messages=messages_dict,
+                model=self.default_generation_model_name,
+                response_format=ProfileUpdateOutput,
+                timeout=PROFILE_EXTRACTION_TIMEOUT_SECONDS,
+                max_retries=PROFILE_EXTRACTION_MAX_RETRIES,
+            )
+        except Exception as exc:
+            elapsed_seconds = time.perf_counter() - extract_start
+            logger.error(
+                "event=profile_extract_llm_end user_id=%s extractor_name=%s model=%s timeout=%d max_retries=%d elapsed_seconds=%.3f success=%s error_type=%s error=%s",
+                self.service_config.user_id,
+                self.config.extractor_name,
+                self.default_generation_model_name,
+                PROFILE_EXTRACTION_TIMEOUT_SECONDS,
+                PROFILE_EXTRACTION_MAX_RETRIES,
+                elapsed_seconds,
+                False,
+                type(exc).__name__,
+                str(exc),
+            )
+            raise
+
         log_model_response(logger, "Profile updates model response", update_response)
         if not update_response or not isinstance(update_response, ProfileUpdateOutput):
+            elapsed_seconds = time.perf_counter() - extract_start
+            logger.info(
+                "event=profile_extract_llm_end user_id=%s extractor_name=%s model=%s timeout=%d max_retries=%d elapsed_seconds=%.3f success=%s response_type=%s add_count=%d delete_count=%d mention_count=%d",
+                self.service_config.user_id,
+                self.config.extractor_name,
+                self.default_generation_model_name,
+                PROFILE_EXTRACTION_TIMEOUT_SECONDS,
+                PROFILE_EXTRACTION_MAX_RETRIES,
+                elapsed_seconds,
+                False,
+                type(update_response).__name__,
+                0,
+                0,
+                0,
+            )
             return {}
+
+        elapsed_seconds = time.perf_counter() - extract_start
+        logger.info(
+            "event=profile_extract_llm_end user_id=%s extractor_name=%s model=%s timeout=%d max_retries=%d elapsed_seconds=%.3f success=%s response_type=%s add_count=%d delete_count=%d mention_count=%d",
+            self.service_config.user_id,
+            self.config.extractor_name,
+            self.default_generation_model_name,
+            PROFILE_EXTRACTION_TIMEOUT_SECONDS,
+            PROFILE_EXTRACTION_MAX_RETRIES,
+            elapsed_seconds,
+            True,
+            type(update_response).__name__,
+            len(update_response.add or []),
+            len(update_response.delete or []),
+            len(update_response.mention or []),
+        )
 
         # Convert Pydantic model to dict for downstream processing
         update_response = update_response.model_dump()
