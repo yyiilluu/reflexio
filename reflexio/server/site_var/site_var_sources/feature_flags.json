@@ -5,5 +5,9 @@
     },
     "invitation_only": {
         "enabled": true
+    },
+    "deduplicator": {
+        "enabled": false,
+        "enabled_org_ids": []
     }
 }

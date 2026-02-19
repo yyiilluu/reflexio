@@ -26,7 +26,6 @@ if TYPE_CHECKING:
         ProfileGenerationServiceConfig,
     )
 from reflexio.server.services.profile.profile_generation_service_utils import (
-    ProfileGenerationServiceConstants,
     ProfileUpdates,
     ProfileUpdateOutput,
     construct_profile_extraction_messages_from_request_groups,
@@ -221,88 +220,6 @@ class ProfileExtractor:
             user_id=self.service_config.user_id,
         )
 
-    def should_extract_profile(
-        self, request_interaction_data_models: list[RequestInteractionDataModel]
-    ) -> bool:
-        """
-        Determine if profile extraction should be performed on the given interactions.
-
-        Args:
-            request_interaction_data_models: List of request interaction groups to analyze
-
-        Returns:
-            bool: True if profile extraction should proceed, False otherwise
-        """
-        new_interactions = format_request_groups_to_history_string(
-            request_interaction_data_models
-        )
-
-        if self.config.should_extract_profile_prompt_override:
-            prompt = self.request_context.prompt_manager.render_prompt(
-                ProfileGenerationServiceConstants.PROFILE_SHOULD_GENERATE_OVERRIDE_PROMPT_ID,
-                {
-                    "instruction_override": self.config.should_extract_profile_prompt_override.strip(),
-                    "new_interactions": new_interactions,
-                },
-            )
-        else:
-            prompt = self.request_context.prompt_manager.render_prompt(
-                ProfileGenerationServiceConstants.PROFILE_SHOULD_GENERATE_PROMPT_ID,
-                {
-                    "agent_context_prompt": self.agent_context,
-                    "should_extract_profile_prompt": self.config.profile_content_definition_prompt.strip(),
-                    "new_interactions": new_interactions,
-                },
-            )
-
-        # Check if mock mode is enabled
-        mock_env = os.getenv("MOCK_LLM_RESPONSE", "")
-        if mock_env.lower() == "true":
-            # Return mock response based on prompt analysis
-            # For testing, return True if interactions contain substantial content
-            return True
-
-        try:
-            should_timeout_seconds = self.client.get_config().timeout
-            should_start = time.perf_counter()
-            logger.info(
-                "event=profile_should_llm_start user_id=%s extractor_name=%s model=%s timeout=%s prompt_chars=%d",
-                self.service_config.user_id,
-                self.config.extractor_name,
-                self.should_run_model_name,
-                should_timeout_seconds,
-                len(prompt),
-            )
-            content = self.client.generate_chat_response(
-                messages=[
-                    {
-                        "role": "user",
-                        "content": prompt,
-                    }
-                ],
-                model=self.should_run_model_name,
-            )
-            log_model_response(logger, "Should extract profile response", content)
-
-            decision = bool(content and "true" in content.lower())
-            logger.info(
-                "event=profile_should_llm_end user_id=%s extractor_name=%s model=%s timeout=%s elapsed_seconds=%.3f decision=%s",
-                self.service_config.user_id,
-                self.config.extractor_name,
-                self.should_run_model_name,
-                should_timeout_seconds,
-                time.perf_counter() - should_start,
-                decision,
-            )
-            return decision
-        except Exception as exc:
-            logger.error(
-                "Failed to determine profile extraction need due to %s, "
-                "defaulting to extract profile.",
-                str(exc),
-            )
-            return True
-
     def run(self) -> Optional[ProfileUpdates]:
         """
         Extract profile updates from request interaction groups.
@@ -324,9 +241,7 @@ class ProfileExtractor:
 
         existing_profiles = self.service_config.existing_data
 
-        if not self.should_extract_profile(request_interaction_data_models):
-            logger.info("No profile updates to extract")
-            return None
+        # should_extract check is handled at the service level (consolidated across all extractors)
 
         try:
             raw_updates = self._generate_raw_updates_from_request_groups(
@@ -504,21 +419,47 @@ class ProfileExtractor:
             )
 
         # get user profile prompt from configurator or use the default prompt
-        messages = construct_profile_extraction_messages_from_request_groups(
-            prompt_manager=self.request_context.prompt_manager,
-            request_interaction_data_models=request_interaction_data_models,
-            agent_context_prompt=self.agent_context,
-            context_prompt=(
-                self.config.context_prompt.strip() if self.config.context_prompt else ""
-            ),
-            profile_content_definition_prompt=self.config.profile_content_definition_prompt.strip(),
-            metadata_definition_prompt=(
-                self.config.metadata_definition_prompt.strip()
-                if self.config.metadata_definition_prompt
-                else None
-            ),
-            existing_profiles=existing_profiles,
-        )
+        if self.service_config.is_incremental:
+            from reflexio.server.services.profile.profile_generation_service_utils import (
+                construct_incremental_profile_extraction_messages,
+            )
+
+            messages = construct_incremental_profile_extraction_messages(
+                prompt_manager=self.request_context.prompt_manager,
+                request_interaction_data_models=request_interaction_data_models,
+                existing_profiles=existing_profiles,
+                agent_context_prompt=self.agent_context,
+                context_prompt=(
+                    self.config.context_prompt.strip()
+                    if self.config.context_prompt
+                    else ""
+                ),
+                profile_content_definition_prompt=self.config.profile_content_definition_prompt.strip(),
+                previously_extracted=self.service_config.previously_extracted,
+                metadata_definition_prompt=(
+                    self.config.metadata_definition_prompt.strip()
+                    if self.config.metadata_definition_prompt
+                    else None
+                ),
+            )
+        else:
+            messages = construct_profile_extraction_messages_from_request_groups(
+                prompt_manager=self.request_context.prompt_manager,
+                request_interaction_data_models=request_interaction_data_models,
+                agent_context_prompt=self.agent_context,
+                context_prompt=(
+                    self.config.context_prompt.strip()
+                    if self.config.context_prompt
+                    else ""
+                ),
+                profile_content_definition_prompt=self.config.profile_content_definition_prompt.strip(),
+                metadata_definition_prompt=(
+                    self.config.metadata_definition_prompt.strip()
+                    if self.config.metadata_definition_prompt
+                    else None
+                ),
+                existing_profiles=existing_profiles,
+            )
         # Messages are already in dict format from construct_messages_from_interactions
         messages_dict = messages
         request_group_count = len(request_interaction_data_models)

@@ -202,8 +202,8 @@ python -m reflexio.scripts.snapshot_manager create --name before_reset
 # Reset the DB (re-applies all schema migrations, empties tables)
 supabase db reset
 
-# Restore the snapshot
-python -m reflexio.scripts.snapshot_manager restore reflexio/data/snapshots/before_reset_20260207_120000
+# Restore the snapshot (by name)
+python -m reflexio.scripts.snapshot_manager restore before_reset_20260207_120000
 
 # List available snapshots
 python -m reflexio.scripts.snapshot_manager list
@@ -211,6 +211,7 @@ python -m reflexio.scripts.snapshot_manager list
 
 **Options**:
 - `create --name NAME`: Name prefix for the snapshot directory (default: `snapshot`)
+- `restore NAME`: Snapshot name to restore (e.g. `before_reset_20260207_120000`)
 - `restore --force`: Skip the empty-tables safety check
 - `--db-url URL`: Override the default local PostgreSQL URL
 

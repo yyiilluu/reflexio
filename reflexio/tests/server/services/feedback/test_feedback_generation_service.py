@@ -2,7 +2,7 @@ import datetime
 from datetime import timezone
 import pytest
 import tempfile
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 from reflexio.server.api_endpoints.request_context import RequestContext
 from reflexio.server.llm.litellm_client import LiteLLMClient, LiteLLMConfig
 from reflexio.server.services.feedback.feedback_generation_service import (
@@ -753,28 +753,101 @@ class TestGetRerunItems:
             assert user_id_a in result
             assert user_id_b not in result
 
-    def test_get_rerun_user_ids_returns_empty_when_no_matches(self):
-        """Test that _get_rerun_user_ids returns empty list when no items match."""
-        org_id = "0"
 
-        with tempfile.TemporaryDirectory() as temp_dir:
-            llm_config = LiteLLMConfig(model="gpt-4o-mini")
-            llm_client = LiteLLMClient(llm_config)
-            service = FeedbackGenerationService(
-                llm_client=llm_client,
-                request_context=RequestContext(
-                    org_id=org_id, storage_base_dir=temp_dir
+def test_get_rerun_user_ids_returns_empty_when_no_matches():
+    """Test that _get_rerun_user_ids returns empty list when no items match."""
+    org_id = "0"
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        llm_config = LiteLLMConfig(model="gpt-4o-mini")
+        llm_client = LiteLLMClient(llm_config)
+        service = FeedbackGenerationService(
+            llm_client=llm_client,
+            request_context=RequestContext(org_id=org_id, storage_base_dir=temp_dir),
+        )
+
+        from reflexio_commons.api_schema.service_schemas import (
+            RerunFeedbackGenerationRequest,
+        )
+
+        request = RerunFeedbackGenerationRequest(agent_version="1.0")
+        result = service._get_rerun_user_ids(request)
+
+        assert result == []
+
+
+def test_collect_scoped_interactions_for_precheck_uses_extractor_scope():
+    """Pre-check should use extractor-specific window and source filters."""
+    org_id = "0"
+    user_id = "test_user"
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        service = FeedbackGenerationService(
+            llm_client=LiteLLMClient(LiteLLMConfig(model="gpt-4o-mini")),
+            request_context=RequestContext(org_id=org_id, storage_base_dir=temp_dir),
+        )
+
+        service.configurator.set_config_by_name("extraction_window_size", 200)
+        service.service_config = service._load_generation_service_config(
+            FeedbackGenerationRequest(
+                request_id="request-1",
+                agent_version="1.0",
+                user_id=user_id,
+                source="api",
+                auto_run=True,
+            )
+        )
+
+        interaction = Interaction(
+            interaction_id=1,
+            user_id=user_id,
+            request_id="request-1",
+            content="user corrected the agent behavior",
+            role="user",
+            created_at=int(datetime.datetime.now(timezone.utc).timestamp()),
+        )
+        request_group = create_request_interaction_data_model(
+            user_id=user_id,
+            request_id="request-1",
+            interactions=[interaction],
+        )
+
+        service.storage.get_last_k_interactions_grouped = MagicMock(
+            return_value=([request_group], [])
+        )
+
+        extractor_configs = [
+            AgentFeedbackConfig(
+                feedback_name="api_feedback",
+                feedback_definition_prompt="extract api-related feedback",
+                request_sources_enabled=["api"],
+                extraction_window_size_override=120,
+                feedback_aggregator_config=FeedbackAggregatorConfig(
+                    min_feedback_threshold=2
                 ),
-            )
+            ),
+            AgentFeedbackConfig(
+                feedback_name="web_feedback",
+                feedback_definition_prompt="extract web-related feedback",
+                request_sources_enabled=["web"],
+                extraction_window_size_override=80,
+                feedback_aggregator_config=FeedbackAggregatorConfig(
+                    min_feedback_threshold=2
+                ),
+            ),
+        ]
 
-            from reflexio_commons.api_schema.service_schemas import (
-                RerunFeedbackGenerationRequest,
-            )
+        (
+            scoped_groups,
+            scoped_configs,
+        ) = service._collect_scoped_interactions_for_precheck(extractor_configs)
 
-            request = RerunFeedbackGenerationRequest(agent_version="1.0")
-            result = service._get_rerun_user_ids(request)
-
-            assert result == []
+        assert len(scoped_groups) == 1
+        assert [c.feedback_name for c in scoped_configs] == ["api_feedback"]
+        service.storage.get_last_k_interactions_grouped.assert_called_once()
+        _, kwargs = service.storage.get_last_k_interactions_grouped.call_args
+        assert kwargs["k"] == 120
+        assert kwargs["sources"] == ["api"]
 
 
 if __name__ == "__main__":

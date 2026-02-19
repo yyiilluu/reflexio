@@ -10,6 +10,12 @@ class FeedbackServiceConstants:
     RAW_FEEDBACK_SHOULD_GENERATE_PROMPT_ID = "raw_feedback_should_generate"
     RAW_FEEDBACK_EXTRACTION_CONTEXT_PROMPT_ID = "raw_feedback_extraction_context"
     RAW_FEEDBACK_EXTRACTION_PROMPT_ID = "raw_feedback_extraction_main"
+    RAW_FEEDBACK_EXTRACTION_CONTEXT_INCREMENTAL_PROMPT_ID = (
+        "raw_feedback_extraction_context_incremental"
+    )
+    RAW_FEEDBACK_EXTRACTION_INCREMENTAL_PROMPT_ID = (
+        "raw_feedback_extraction_main_incremental"
+    )
     FEEDBACK_GENERATION_PROMPT_ID = "feedback_generation"
 
     # ===============================

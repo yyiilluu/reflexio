@@ -117,14 +117,31 @@ Go beyond checking whether tests exist for the *changed* code. Proactively ident
 
 For each gap found, suggest specific test cases with descriptive names (e.g., `test_get_conversation_rejects_path_traversal`) and briefly describe what the test should verify. Group suggestions by priority (security first, then correctness, then edge cases).
 
-#### 3.10 Code Clarity & Maintainability
+#### 3.10 Code Duplication & DRY Violations
+Duplicated code is one of the biggest threats to long-term maintainability. When the same logic exists in multiple places, bug fixes and feature changes must be applied everywhere — and inevitably some copies get missed, creating inconsistencies and regressions.
+
+**Actively search for duplication.** Do not limit yourself to the diff — when you see a pattern in the changed code, search the broader codebase for similar implementations. Use grep/search to find:
+
+- **Copy-pasted functions or methods** — Functions in different files/classes that do the same thing with minor variations (different variable names, slightly different parameters, same core logic). Flag these even if only one copy is in the diff.
+- **Repeated code blocks within a file** — Multiple places in the same file that perform the same sequence of operations (e.g., identical error handling, identical data transformation steps, identical validation logic).
+- **Parallel class hierarchies or services** — Multiple services/extractors/handlers that implement near-identical workflows with only the "content" differing. These should typically share a base class or utility.
+- **Duplicated constants, prompts, or configuration** — The same string literals, magic numbers, or config structures defined in multiple places. A change to one copy without updating the others causes silent divergence.
+- **Near-duplicate data models or schemas** — Pydantic models, TypeScript interfaces, or database schemas that represent the same concept with slightly different field names or types.
+- **Repeated conditional logic** — The same `if`/`else` decision tree appearing in multiple places, especially feature-flag checks or permission checks.
+
+For each duplication found:
+1. Identify **all** copies (not just the two most obvious ones).
+2. Note the **differences** between copies — are they meaningful or accidental?
+3. Suggest a concrete consolidation strategy: extract a shared function, create a base class, use a configuration-driven approach, etc.
+4. Classify as **Significant** if the duplication spans multiple files or involves logic that is likely to change together. Classify as **Minor** if it is localized and low-risk.
+
+#### 3.11 Code Clarity & Maintainability
 - Are variable and function names descriptive and consistent with codebase conventions?
 - Is complex logic explained with a comment about *why* (not *what*)?
 - Are there dead code paths, unreachable branches, or leftover debug code?
 - Are magic numbers or strings extracted into named constants?
-- Is duplication introduced that should be extracted into a shared utility?
 
-#### 3.11 Frontend (when applicable)
+#### 3.12 Frontend (when applicable)
 - Are components following the project's ShadCN + Tailwind patterns?
 - Is state management appropriate (server state vs. client state)?
 - Are loading and error states handled in the UI?
@@ -164,6 +181,10 @@ Items that degrade code quality, violate architecture, or hurt maintainability.
 ### Minor Issues (nice to fix)
 Items that are low-risk but would improve the code.
 - [ ] **[FILE:LINE]** — Description and suggestion.
+
+### Duplication Issues
+Code that is duplicated across files or within files, hurting maintainability.
+- [ ] **[FILE1:LINE] ↔ [FILE2:LINE]** — Description of what is duplicated and suggested consolidation approach.
 
 ### Missing Critical Test Cases
 Core logic that lacks test coverage. Prioritized by risk (security > correctness > edge cases).

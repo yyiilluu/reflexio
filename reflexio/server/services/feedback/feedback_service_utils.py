@@ -227,3 +227,85 @@ def construct_feedback_extraction_messages_from_request_groups(
     )
 
     return construct_messages_from_interactions(interactions, config)
+
+
+def construct_incremental_feedback_extraction_messages(
+    prompt_manager: PromptManager,
+    request_interaction_data_models: list[RequestInteractionDataModel],
+    agent_context_prompt: str,
+    feedback_definition_prompt: str,
+    existing_raw_feedbacks: Optional[list[RawFeedback]] = None,
+    previously_extracted: Optional[list[RawFeedback]] = None,
+    tool_can_use: Optional[str] = None,
+) -> list[dict]:
+    """
+    Construct LLM messages for incremental feedback extraction.
+
+    Uses incremental prompts that show what previous extractors already found,
+    so this extractor focuses on finding additional policies not already covered.
+
+    Args:
+        prompt_manager: The prompt manager for rendering prompt templates
+        request_interaction_data_models: List of request interaction groups to extract feedback from
+        agent_context_prompt: Context about the agent for system message
+        feedback_definition_prompt: Definition of what feedback should contain
+        existing_raw_feedbacks: Optional list of existing raw feedbacks from past 7 days
+        previously_extracted: Flattened list of all RawFeedback from previous extractors
+        tool_can_use: Optional formatted string of tools available to the agent
+
+    Returns:
+        list[dict]: List of messages ready for incremental feedback extraction
+    """
+    # Configure system message with incremental prompt
+    system_config = PromptConfig(
+        prompt_id=FeedbackServiceConstants.RAW_FEEDBACK_EXTRACTION_CONTEXT_INCREMENTAL_PROMPT_ID,
+        variables={
+            "agent_context_prompt": agent_context_prompt,
+            "feedback_definition_prompt": feedback_definition_prompt,
+            "tool_can_use": tool_can_use or "",
+        },
+    )
+
+    # Format existing feedbacks for context
+    formatted_existing_feedbacks = ""
+    if existing_raw_feedbacks:
+        formatted_existing_feedbacks = "\n".join(
+            [f"- {feedback.feedback_content}" for feedback in existing_raw_feedbacks]
+        )
+    else:
+        formatted_existing_feedbacks = "(No existing feedbacks)"
+
+    # Format previously extracted feedbacks
+    formatted_previously_extracted = ""
+    if previously_extracted:
+        formatted_previously_extracted = "\n".join(
+            [f"- {feedback.feedback_content}" for feedback in previously_extracted]
+        )
+    else:
+        formatted_previously_extracted = "(None)"
+
+    # Configure final user message with incremental prompt
+    user_config = PromptConfig(
+        prompt_id=FeedbackServiceConstants.RAW_FEEDBACK_EXTRACTION_INCREMENTAL_PROMPT_ID,
+        variables={
+            "existing_feedbacks": formatted_existing_feedbacks,
+            "previously_extracted_feedbacks": formatted_previously_extracted,
+            "interactions": format_request_groups_to_history_string(
+                request_interaction_data_models
+            ),
+        },
+    )
+
+    # Extract flat interactions for message construction
+    interactions = extract_interactions_from_request_interaction_data_models(
+        request_interaction_data_models
+    )
+
+    # Use shared message construction
+    config = MessageConstructionConfig(
+        prompt_manager=prompt_manager,
+        system_prompt_config=system_config,
+        user_prompt_config=user_config,
+    )
+
+    return construct_messages_from_interactions(interactions, config)

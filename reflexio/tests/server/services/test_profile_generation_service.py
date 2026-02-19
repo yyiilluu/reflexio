@@ -4,7 +4,7 @@ import inspect
 import pytest
 import os
 import tempfile
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from pydantic import BaseModel
 from reflexio.server.api_endpoints.request_context import RequestContext
@@ -26,6 +26,7 @@ from reflexio.server.services.profile.profile_generation_service_utils import (
     ProfileUpdateOutput,
     ProfileAddItem,
 )
+from reflexio_commons.api_schema.internal_schema import RequestInteractionDataModel
 from reflexio_commons.api_schema.service_schemas import (
     InteractionData,
     PublishUserInteractionRequest,
@@ -1029,28 +1030,173 @@ class TestGetRerunItems:
             assert len(result) == 1
             assert user_id in result
 
-    def test_get_rerun_user_ids_returns_empty_when_no_matches(self):
-        """Test that _get_rerun_user_ids returns empty list when no items match."""
-        org_id = "0"
 
-        with tempfile.TemporaryDirectory() as temp_dir:
-            llm_config = LiteLLMConfig(model="gpt-4o-mini")
-            llm_client = LiteLLMClient(llm_config)
-            service = ProfileGenerationService(
-                llm_client=llm_client,
-                request_context=RequestContext(
-                    org_id=org_id, storage_base_dir=temp_dir
+def test_get_rerun_user_ids_returns_empty_when_no_matches():
+    """Test that _get_rerun_user_ids returns empty list when no items match."""
+    org_id = "0"
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        llm_config = LiteLLMConfig(model="gpt-4o-mini")
+        llm_client = LiteLLMClient(llm_config)
+        service = ProfileGenerationService(
+            llm_client=llm_client,
+            request_context=RequestContext(org_id=org_id, storage_base_dir=temp_dir),
+        )
+
+        from reflexio_commons.api_schema.service_schemas import (
+            RerunProfileGenerationRequest,
+        )
+
+        request = RerunProfileGenerationRequest(user_id="nonexistent_user")
+        result = service._get_rerun_user_ids(request)
+
+        assert result == []
+
+
+def test_collect_scoped_interactions_for_precheck_uses_extractor_scope():
+    """Pre-check should use extractor-specific window and source filters."""
+    org_id = "0"
+    user_id = "test_user"
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        service = ProfileGenerationService(
+            llm_client=LiteLLMClient(LiteLLMConfig(model="gpt-4o-mini")),
+            request_context=RequestContext(org_id=org_id, storage_base_dir=temp_dir),
+        )
+
+        service.configurator.set_config_by_name("extraction_window_size", 240)
+        service.service_config = service._load_generation_service_config(
+            ProfileGenerationRequest(
+                user_id=user_id,
+                request_id="request-1",
+                source="api",
+                auto_run=True,
+            )
+        )
+
+        interaction = Interaction(
+            interaction_id=1,
+            user_id=user_id,
+            request_id="request-1",
+            content="I prefer concise summaries",
+            role="user",
+            created_at=int(datetime.datetime.now(timezone.utc).timestamp()),
+        )
+        request_obj = Request(
+            request_id="request-1",
+            user_id=user_id,
+            source="api",
+            request_group="group-1",
+        )
+        request_group = RequestInteractionDataModel(
+            request_group="group-1",
+            request=request_obj,
+            interactions=[interaction],
+        )
+
+        service.storage.get_last_k_interactions_grouped = MagicMock(
+            return_value=([request_group], [])
+        )
+
+        extractor_configs = [
+            ProfileExtractorConfig(
+                extractor_name="api_profiles",
+                profile_content_definition_prompt="communication preferences",
+                request_sources_enabled=["api"],
+                extraction_window_size_override=150,
+            ),
+            ProfileExtractorConfig(
+                extractor_name="web_profiles",
+                profile_content_definition_prompt="shopping preferences",
+                request_sources_enabled=["web"],
+                extraction_window_size_override=90,
+            ),
+        ]
+
+        (
+            scoped_groups,
+            scoped_configs,
+        ) = service._collect_scoped_interactions_for_precheck(extractor_configs)
+
+        assert len(scoped_groups) == 1
+        assert [c.extractor_name for c in scoped_configs] == ["api_profiles"]
+        service.storage.get_last_k_interactions_grouped.assert_called_once()
+        _, kwargs = service.storage.get_last_k_interactions_grouped.call_args
+        assert kwargs["k"] == 150
+        assert kwargs["sources"] == ["api"]
+
+
+def test_should_run_before_extraction_combines_all_extractor_criteria():
+    """Consolidated pre-check should include all enabled extractor definitions and override conditions."""
+    org_id = "0"
+    user_id = "test_user"
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        service = ProfileGenerationService(
+            llm_client=LiteLLMClient(LiteLLMConfig(model="gpt-4o-mini")),
+            request_context=RequestContext(org_id=org_id, storage_base_dir=temp_dir),
+        )
+
+        service.service_config = service._load_generation_service_config(
+            ProfileGenerationRequest(
+                user_id=user_id,
+                request_id="request-1",
+                source="api",
+                auto_run=True,
+            )
+        )
+
+        interaction = Interaction(
+            interaction_id=1,
+            user_id=user_id,
+            request_id="request-1",
+            content="I am leading a migration project and prefer concise updates.",
+            role="user",
+            created_at=int(datetime.datetime.now(timezone.utc).timestamp()),
+        )
+        request_obj = Request(
+            request_id="request-1",
+            user_id=user_id,
+            source="api",
+            request_group="group-1",
+        )
+        request_group = RequestInteractionDataModel(
+            request_group="group-1",
+            request=request_obj,
+            interactions=[interaction],
+        )
+
+        extractor_configs = [
+            ProfileExtractorConfig(
+                extractor_name="comm_profiles",
+                profile_content_definition_prompt="communication preferences",
+            ),
+            ProfileExtractorConfig(
+                extractor_name="work_profiles",
+                profile_content_definition_prompt="career goals and projects",
+                should_extract_profile_prompt_override=(
+                    "when user mentions work projects, deadlines, or role changes"
                 ),
-            )
+            ),
+        ]
 
-            from reflexio_commons.api_schema.service_schemas import (
-                RerunProfileGenerationRequest,
-            )
+        with patch.object(
+            service,
+            "_collect_scoped_interactions_for_precheck",
+            return_value=([request_group], extractor_configs),
+        ), patch.object(
+            service.client,
+            "generate_chat_response",
+            return_value="true",
+        ) as mock_generate:
+            should_run = service._should_run_before_extraction(extractor_configs)
 
-            request = RerunProfileGenerationRequest(user_id="nonexistent_user")
-            result = service._get_rerun_user_ids(request)
-
-            assert result == []
+        assert should_run is True
+        mock_generate.assert_called_once()
+        prompt = mock_generate.call_args.kwargs["messages"][0]["content"]
+        assert "communication preferences" in prompt
+        assert "career goals and projects" in prompt
+        assert "work projects, deadlines, or role changes" in prompt
 
 
 if __name__ == "__main__":

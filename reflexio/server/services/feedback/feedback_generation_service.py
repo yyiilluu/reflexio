@@ -3,6 +3,7 @@ import logging
 import uuid
 from typing import Optional, Union
 
+from reflexio_commons.api_schema.internal_schema import RequestInteractionDataModel
 from reflexio_commons.api_schema.service_schemas import (
     RawFeedback,
     RerunFeedbackGenerationRequest,
@@ -19,11 +20,17 @@ from reflexio.server.services.feedback.feedback_service_utils import (
     FeedbackGenerationRequest,
     FeedbackAggregatorRequest,
 )
+from reflexio.server.services.feedback.feedback_service_constants import (
+    FeedbackServiceConstants,
+)
 from reflexio.server.services.base_generation_service import (
     BaseGenerationService,
     StatusChangeOperation,
 )
 from reflexio.server.services.feedback.feedback_aggregator import FeedbackAggregator
+from reflexio.server.services.service_utils import (
+    format_request_groups_to_history_string,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +62,8 @@ class FeedbackGenerationServiceConfig:
     rerun_end_time: Optional[int] = None
     auto_run: bool = True
     extractor_names: Optional[list[str]] = None
+    is_incremental: bool = False
+    previously_extracted: list[list[RawFeedback]] = field(default_factory=list)
 
 
 class FeedbackGenerationService(
@@ -67,7 +76,7 @@ class FeedbackGenerationService(
 ):
     """
     Service for generating feedback from user interactions.
-    Runs multiple FeedbackExtractor instances in parallel for efficiency.
+    Runs multiple FeedbackExtractor instances sequentially with incremental context.
     """
 
     def __init__(
@@ -164,12 +173,79 @@ class FeedbackGenerationService(
             agent_context=self.configurator.get_agent_context(),
         )
 
-    def _process_results(self, results: list[list[RawFeedback]]) -> None:
+    def _build_should_run_prompt(
+        self,
+        scoped_configs: list[AgentFeedbackConfig],
+        request_groups: list[RequestInteractionDataModel],
+    ) -> str | None:
         """
-        Process and save feedback results.
+        Build prompt for consolidated should_generate feedback check.
+
+        Combines all feedback_definition_prompt values into a single definition
+        for one LLM call.
 
         Args:
-            results: List of RawFeedback results from extractors
+            scoped_configs: Feedback extractor configs that had scoped interactions
+            request_groups: Deduplicated request interaction groups
+
+        Returns:
+            str | None: The rendered prompt, or None if no definitions to check
+        """
+        new_interactions = format_request_groups_to_history_string(request_groups)
+
+        # Combine all feedback definitions into a numbered list
+        definitions = []
+        for i, config in enumerate(scoped_configs, 1):
+            if config.feedback_definition_prompt:
+                definitions.append(f"{i}. {config.feedback_definition_prompt.strip()}")
+        combined_definition = "\n".join(definitions) if definitions else ""
+
+        if not combined_definition:
+            return None
+
+        # Get tool_can_use from root config
+        root_config = self.request_context.configurator.get_config()
+        tool_can_use_str = ""
+        if root_config and root_config.tool_can_use:
+            tool_can_use_str = "\n".join(
+                f"{tool.tool_name}: {tool.tool_description}"
+                for tool in root_config.tool_can_use
+            )
+
+        agent_context = self.configurator.get_agent_context()
+        prompt_manager = self.request_context.prompt_manager
+
+        return prompt_manager.render_prompt(
+            FeedbackServiceConstants.RAW_FEEDBACK_SHOULD_GENERATE_PROMPT_ID,
+            {
+                "agent_context_prompt": agent_context,
+                "feedback_definition_prompt": combined_definition,
+                "new_interactions": new_interactions,
+                "tool_can_use": tool_can_use_str,
+            },
+        )
+
+    def _get_precheck_interaction_query_kwargs(self) -> dict:
+        """Return agent_version filter for non-auto runs."""
+        return {
+            "agent_version": (
+                self.service_config.agent_version
+                if not self.service_config.auto_run
+                else None
+            ),
+        }
+
+    def _update_config_for_incremental(self, previously_extracted: list) -> None:
+        """Update service_config for incremental feedback extraction."""
+        self.service_config.is_incremental = True
+        self.service_config.previously_extracted = list(previously_extracted)
+
+    def _process_results(self, results: list[list[RawFeedback]]) -> None:
+        """
+        Process, deduplicate, and save all feedback results. Called once after all extractors complete.
+
+        Args:
+            results: List of RawFeedback results from extractors (one list per extractor)
         """
         # Flatten results (each extractor returns list[RawFeedback])
         all_feedbacks = []
@@ -177,29 +253,34 @@ class FeedbackGenerationService(
             if isinstance(result, list):
                 all_feedbacks.extend(result)
 
+        # Deduplicate if multiple extractors returned results and deduplicator is enabled
+        if len(results) > 1:
+            from reflexio.server.site_var.feature_flags import is_deduplicator_enabled
+
+            if is_deduplicator_enabled(self.org_id):
+                from reflexio.server.services.feedback.feedback_deduplicator import (
+                    FeedbackDeduplicator,
+                )
+
+                deduplicator = FeedbackDeduplicator(
+                    request_context=self.request_context,
+                    llm_client=self.client,
+                )
+                deduplicated_feedbacks = deduplicator.deduplicate(
+                    results,
+                    self.service_config.request_id,
+                    self.service_config.agent_version,
+                )
+                logger.info("Feedbacks after deduplication: %s", deduplicated_feedbacks)
+                if deduplicated_feedbacks:
+                    all_feedbacks = deduplicated_feedbacks
+
         # Set status and source for all feedbacks
         for feedback in all_feedbacks:
-            # Set status to PENDING if output_pending_status is True, otherwise None
             feedback.status = Status.PENDING if self.output_pending_status else None
             feedback.source = self.service_config.source
 
         logger.info("All feedbacks: %s", all_feedbacks)
-        # Deduplicate if multiple extractors returned results
-        if len(results) > 1:
-            from reflexio.server.services.feedback.feedback_deduplicator import (
-                FeedbackDeduplicator,
-            )
-
-            deduplicator = FeedbackDeduplicator(
-                request_context=self.request_context,
-                llm_client=self.client,
-            )
-            all_feedbacks = deduplicator.deduplicate(
-                results,
-                self.service_config.request_id,
-                self.service_config.agent_version,
-            )
-            logger.info("All feedbacks after deduplication: %s", all_feedbacks)
 
         logger.info(
             "Successfully completed %d %s feedback generation for request id: %s",
@@ -221,7 +302,7 @@ class FeedbackGenerationService(
                     type(e).__name__,
                 )
 
-            # Trigger feedback aggregation for feedback types with aggregator config
+            # Trigger feedback aggregation
             if not self.output_pending_status:
                 logger.info("Trigger feedback aggregation")
                 self._trigger_feedback_aggregation()

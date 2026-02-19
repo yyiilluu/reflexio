@@ -9,7 +9,7 @@ managed by the Supabase CLI and left untouched.
 
 Usage:
     python -m reflexio.scripts.snapshot_manager create [--name NAME]
-    python -m reflexio.scripts.snapshot_manager restore <snapshot_dir>
+    python -m reflexio.scripts.snapshot_manager restore <name>
     python -m reflexio.scripts.snapshot_manager list
 """
 
@@ -200,16 +200,21 @@ def cmd_restore(args: argparse.Namespace) -> int:
     pg_restore, then runs any DATA_MIGRATIONS added after the snapshot.
 
     Args:
-        args: Parsed CLI arguments (snapshot_dir, db_url, force)
+        args: Parsed CLI arguments (name, db_url, force)
 
     Returns:
         int: 0 on success, 1 on failure
     """
     db_url = args.db_url
-    snapshot_path = Path(args.snapshot_dir).resolve()
+    snapshot_path = SNAPSHOTS_DIR / args.name
 
     if not snapshot_path.is_dir():
-        logger.error("Snapshot directory not found: %s", snapshot_path)
+        logger.error("Snapshot not found: %s", snapshot_path)
+        logger.info("Available snapshots:")
+        if SNAPSHOTS_DIR.exists():
+            for d in sorted(SNAPSHOTS_DIR.iterdir()):
+                if d.is_dir():
+                    logger.info("  %s", d.name)
         return 1
 
     dump_file = snapshot_path / "data.dump"
@@ -412,9 +417,7 @@ def cmd_list(args: argparse.Namespace) -> int:
         print()
 
     print("-" * 70)
-    print(
-        f"Restore with: python -m reflexio.scripts.snapshot_manager restore <snapshot_dir>"
-    )
+    print(f"Restore with: python -m reflexio.scripts.snapshot_manager restore <name>")
     return 0
 
 
@@ -431,7 +434,7 @@ def main() -> int:
             "Examples:\n"
             "  python -m reflexio.scripts.snapshot_manager create --name before_reset\n"
             "  python -m reflexio.scripts.snapshot_manager list\n"
-            "  python -m reflexio.scripts.snapshot_manager restore reflexio/data/snapshots/before_reset_20260207_120000\n"
+            "  python -m reflexio.scripts.snapshot_manager restore before_reset_20260207_120000\n"
         ),
     )
 
@@ -454,8 +457,8 @@ def main() -> int:
     # restore
     restore_parser = subparsers.add_parser("restore", help="Restore a snapshot")
     restore_parser.add_argument(
-        "snapshot_dir",
-        help="Path to the snapshot directory to restore",
+        "name",
+        help="Name of the snapshot to restore (e.g. demo_with_login_20260214_020834)",
     )
     restore_parser.add_argument(
         "--force",

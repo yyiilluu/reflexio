@@ -14,16 +14,12 @@ from reflexio.server.services.extractor_interaction_utils import (
     should_extractor_run_by_stride,
 )
 from reflexio.server.services.operation_state_utils import OperationStateManager
-from reflexio.server.services.feedback.feedback_service_constants import (
-    FeedbackServiceConstants,
-)
 from reflexio.server.services.feedback.feedback_service_utils import (
     construct_feedback_extraction_messages_from_request_groups,
     StructuredFeedbackContent,
 )
 from reflexio.server.services.service_utils import (
     format_messages_for_logging,
-    format_request_groups_to_history_string,
     extract_interactions_from_request_interaction_data_models,
     log_model_response,
 )
@@ -247,9 +243,7 @@ class FeedbackExtractor:
             # No interactions or stride not met
             return []
 
-        if not self.should_generate_feedback(request_interaction_data_models):
-            logger.info("No feedback should be generated for the given interactions")
-            return []
+        # should_generate check is handled at the service level (consolidated across all extractors)
 
         feedbacks = self.extract_feedbacks(request_interaction_data_models)
 
@@ -258,75 +252,6 @@ class FeedbackExtractor:
             self._update_operation_state(request_interaction_data_models)
 
         return feedbacks
-
-    def should_generate_feedback(
-        self, request_interaction_data_models: list[RequestInteractionDataModel]
-    ) -> bool:
-        """
-        Determine if feedback should be generated from the given request interaction groups.
-
-        Args:
-            request_interaction_data_models: List of request interaction groups to analyze
-
-        Returns:
-            bool: True if feedback should be generated, False otherwise
-        """
-        # Check if mock mode is enabled
-        if os.getenv("MOCK_LLM_RESPONSE", "").lower() == "true":
-            # Return True for testing if interactions contain substantial content
-            logger.info(
-                "Mock mode: should_generate_feedback returning True for testing"
-            )
-            return True
-
-        new_interactions = format_request_groups_to_history_string(
-            request_interaction_data_models
-        )
-
-        # Get tool_can_use from root config (same pattern as extract_feedbacks)
-        root_config = self.request_context.configurator.get_config()
-        tool_can_use_str = ""
-        if root_config and root_config.tool_can_use:
-            tool_can_use_str = "\n".join(
-                [
-                    f"{tool.tool_name}: {tool.tool_description}"
-                    for tool in root_config.tool_can_use
-                ]
-            )
-
-        prompt_manager = self.request_context.prompt_manager
-        should_generate_feedback_prompt = prompt_manager.render_prompt(
-            FeedbackServiceConstants.RAW_FEEDBACK_SHOULD_GENERATE_PROMPT_ID,
-            {
-                "agent_context_prompt": self.agent_context,
-                "feedback_definition_prompt": self.config.feedback_definition_prompt.strip(),
-                "new_interactions": new_interactions,
-                "tool_can_use": tool_can_use_str,
-            },
-        )
-
-        try:
-            content = self.client.generate_chat_response(
-                messages=[
-                    {
-                        "role": "user",
-                        "content": should_generate_feedback_prompt,
-                    }
-                ],
-                model=self.should_run_model_name,
-            )
-            logger.info("should run prompt %s", should_generate_feedback_prompt)
-            log_model_response(logger, "Should generate feedback response", content)
-            if content and "true" in content.lower():
-                return True
-            return False
-        except Exception as exc:
-            logger.error(
-                "Failed to determine feedback generation need due to %s, "
-                "defaulting to generate feedback.",
-                str(exc),
-            )
-            return True
 
     def extract_feedbacks(
         self, request_interaction_data_models: list[RequestInteractionDataModel]
@@ -376,18 +301,43 @@ class FeedbackExtractor:
                 ]
             )
 
-        messages = construct_feedback_extraction_messages_from_request_groups(
-            prompt_manager=self.request_context.prompt_manager,
-            request_interaction_data_models=request_interaction_data_models,
-            agent_context_prompt=self.agent_context,
-            feedback_definition_prompt=(
-                self.config.feedback_definition_prompt.strip()
-                if self.config.feedback_definition_prompt
-                else ""
-            ),
-            existing_raw_feedbacks=existing_feedbacks,
-            tool_can_use=tool_can_use_str,
-        )
+        if self.service_config.is_incremental:
+            from reflexio.server.services.feedback.feedback_service_utils import (
+                construct_incremental_feedback_extraction_messages,
+            )
+
+            # Flatten previously_extracted (list of list[RawFeedback]) into single list
+            previously_extracted_flat = []
+            for feedback_list in self.service_config.previously_extracted:
+                if isinstance(feedback_list, list):
+                    previously_extracted_flat.extend(feedback_list)
+
+            messages = construct_incremental_feedback_extraction_messages(
+                prompt_manager=self.request_context.prompt_manager,
+                request_interaction_data_models=request_interaction_data_models,
+                agent_context_prompt=self.agent_context,
+                feedback_definition_prompt=(
+                    self.config.feedback_definition_prompt.strip()
+                    if self.config.feedback_definition_prompt
+                    else ""
+                ),
+                existing_raw_feedbacks=existing_feedbacks,
+                previously_extracted=previously_extracted_flat,
+                tool_can_use=tool_can_use_str,
+            )
+        else:
+            messages = construct_feedback_extraction_messages_from_request_groups(
+                prompt_manager=self.request_context.prompt_manager,
+                request_interaction_data_models=request_interaction_data_models,
+                agent_context_prompt=self.agent_context,
+                feedback_definition_prompt=(
+                    self.config.feedback_definition_prompt.strip()
+                    if self.config.feedback_definition_prompt
+                    else ""
+                ),
+                existing_raw_feedbacks=existing_feedbacks,
+                tool_can_use=tool_can_use_str,
+            )
         logger.info(
             "Feedback extraction messages: %s",
             format_messages_for_logging(messages),

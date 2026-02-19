@@ -4,17 +4,25 @@ Base class for generation services
 
 import enum
 import logging
+import os
+import time
 import uuid
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from typing import Any, Generic, Optional, TypeVar
 
+from reflexio_commons.api_schema.internal_schema import RequestInteractionDataModel
 from reflexio_commons.api_schema.service_schemas import Status
 
 from reflexio.server.api_endpoints.request_context import RequestContext
 from reflexio.server.llm.litellm_client import LiteLLMClient
 from reflexio.server.services.extractor_config_utils import filter_extractor_configs
+from reflexio.server.services.extractor_interaction_utils import (
+    get_effective_source_filter,
+    get_extractor_window_params,
+)
 from reflexio.server.services.operation_state_utils import OperationStateManager
+from reflexio.server.services.service_utils import log_model_response
 
 
 class StatusChangeOperation(str, enum.Enum):
@@ -54,7 +62,7 @@ class BaseGenerationService(
     ABC, Generic[TExtractorConfig, TExtractor, TGenerationServiceConfig, TRequest]
 ):
     """
-    Base class for generation services that run multiple extractors in parallel.
+    Base class for generation services that run multiple extractors sequentially.
 
     This unified class supports two types of services:
     1. Evaluation services (feedback, agent success) - process interactions and save RawFeedback
@@ -161,10 +169,13 @@ class BaseGenerationService(
     @abstractmethod
     def _process_results(self, results: list) -> None:
         """
-        Process and save results. Can access self.service_config for context.
+        Process and save all results from extractors. Called once after all extractors complete.
+
+        Responsible for flattening, deduplication (if applicable), and saving results.
+        Can access self.service_config for context.
 
         Args:
-            results: List of results from extractors
+            results: List of all results from extractors (one per successful extractor)
         """
 
     @abstractmethod
@@ -221,66 +232,6 @@ class BaseGenerationService(
             extractor_names=extractor_names,
         )
 
-    def _run_extractors_in_parallel(
-        self,
-        extractors: list[TExtractor],
-        error_context: str = "unknown",
-    ) -> list:
-        """
-        Run extractors in parallel with error handling and timeout protection.
-
-        Uses manual executor management instead of context manager to avoid blocking
-        on shutdown(wait=True) when threads are hung on LLM calls.
-
-        Args:
-            extractors: List of extractor instances (each with parameterless run() method)
-            error_context: Context string for error logging (e.g., request_id)
-
-        Returns:
-            List of results from all successful extractor executions
-        """
-        results = []
-        run_stats = {
-            "total": len(extractors),
-            "failed": 0,
-            "timed_out": 0,
-        }
-        executor = ThreadPoolExecutor(max_workers=5)
-
-        try:
-            futures = [executor.submit(extractor.run) for extractor in extractors]
-
-            for future in futures:
-                try:
-                    result = future.result(timeout=EXTRACTOR_TIMEOUT_SECONDS)
-                    if result:
-                        results.append(result)
-                except FuturesTimeoutError:
-                    run_stats["failed"] += 1
-                    run_stats["timed_out"] += 1
-                    logger.error(
-                        "Extractor timed out after %d seconds for %s context %s",
-                        EXTRACTOR_TIMEOUT_SECONDS,
-                        self._get_service_name(),
-                        error_context,
-                    )
-                    continue
-                except Exception as e:
-                    run_stats["failed"] += 1
-                    logger.error(
-                        "Failed to run %s for context %s due to %s, exception type: %s",
-                        self._get_service_name(),
-                        error_context,
-                        str(e),
-                        type(e).__name__,
-                    )
-                    continue
-        finally:
-            executor.shutdown(wait=False, cancel_futures=True)
-
-        self._last_extractor_run_stats = run_stats
-        return results
-
     # ===============================
     # In-progress state management via OperationStateManager
     # ===============================
@@ -302,7 +253,7 @@ class BaseGenerationService(
         This is the main entry point that:
         1. If in-progress tracking is enabled, handles lock acquisition/release
         2. Validates and extracts parameters from the request into GenerationServiceConfig
-        3. Runs extractors in parallel (each extractor handles its own data collection)
+        3. Runs extractors sequentially (each extractor handles its own data collection)
         4. Processes results
         5. Re-runs if new requests came in during generation
 
@@ -369,7 +320,7 @@ class BaseGenerationService(
         This method contains the core generation logic extracted from the original run() method.
         It handles:
         1. Validating and extracting parameters from the request
-        2. Running extractors in parallel
+        2. Running extractors sequentially
         3. Processing results
 
         Args:
@@ -407,32 +358,78 @@ class BaseGenerationService(
                 )
                 return
 
-            # Create extractors with extractor config and service config
-            # Each extractor handles its own data collection and stride checking
-            extractors = [
-                self._create_extractor(extractor_config, self.service_config)
-                for extractor_config in extractor_configs
-            ]
-
             # Get identifier for error context
             identifier = getattr(self.service_config, "user_id", None) or getattr(
                 self.service_config, "request_id", "unknown"
             )
 
-            # Run extractors in parallel (each extractor has parameterless run() method)
-            # Extractors that don't meet stride or have no interactions will return None
-            results = self._run_extractors_in_parallel(extractors, identifier)
+            # Pre-extraction check (e.g., consolidated should_generate)
+            if not self._should_run_before_extraction(extractor_configs):
+                logger.info(
+                    "Pre-extraction check returned False for %s identifier=%s, skipping",
+                    self._get_service_name(),
+                    identifier,
+                )
+                return
 
-            # Process results
-            if not results:
-                stats = self._last_extractor_run_stats
-                all_extractors_failed = len(extractors) > 0 and stats.get(
-                    "failed", 0
-                ) == len(extractors)
+            # Run extractors sequentially: each extractor runs independently,
+            # then existing_data is refreshed so the next extractor sees updated state.
+            # Results are collected and processed once after all extractors complete.
+            all_results = []
+            previously_extracted = []
+            run_stats = {"total": len(extractor_configs), "failed": 0, "timed_out": 0}
+
+            for i, config in enumerate(extractor_configs):
+                if i > 0 and previously_extracted:
+                    # Re-fetch existing_data from storage (picks up saved results from previous extractor)
+                    self.service_config = self._load_generation_service_config(request)
+                    # Let subclass update config for incremental mode
+                    self._update_config_for_incremental(previously_extracted)
+
+                extractor = self._create_extractor(config, self.service_config)
+                executor: Optional[ThreadPoolExecutor] = None
+                try:
+                    executor = ThreadPoolExecutor(max_workers=1)
+                    future = executor.submit(extractor.run)
+                    result = future.result(timeout=EXTRACTOR_TIMEOUT_SECONDS)
+                    if result:
+                        all_results.append(result)
+                        previously_extracted.append(result)
+                except FuturesTimeoutError:
+                    run_stats["failed"] += 1
+                    run_stats["timed_out"] += 1
+                    logger.error(
+                        "Extractor timed out after %d seconds for %s identifier=%s",
+                        EXTRACTOR_TIMEOUT_SECONDS,
+                        self._get_service_name(),
+                        identifier,
+                    )
+                    continue
+                except Exception as e:
+                    run_stats["failed"] += 1
+                    logger.error(
+                        "Extractor failed for %s identifier=%s: %s (type=%s)",
+                        self._get_service_name(),
+                        identifier,
+                        str(e),
+                        type(e).__name__,
+                    )
+                    continue
+                finally:
+                    if executor is not None:
+                        executor.shutdown(wait=False, cancel_futures=True)
+
+            self._last_extractor_run_stats = run_stats
+
+            # Check if all extractors failed
+            if not all_results:
+                all_extractors_failed = (
+                    run_stats["total"] > 0 and run_stats["failed"] == run_stats["total"]
+                )
                 if all_extractors_failed:
                     error_msg = (
                         f"All extractors failed for {self._get_service_name()} "
-                        f"identifier={identifier} (timed_out={stats.get('timed_out', 0)})"
+                        f"identifier={identifier}"
                     )
                     logger.error(error_msg)
                     raise ExtractorExecutionError(error_msg)
@@ -443,7 +440,8 @@ class BaseGenerationService(
                 )
                 return
 
-            self._process_results(results)
+            # Process all results once after all extractors complete
+            self._process_results(all_results)
 
         except Exception as e:
             logger.error(
@@ -454,6 +452,222 @@ class BaseGenerationService(
             )
             if isinstance(e, ExtractorExecutionError):
                 raise
+
+    def _should_run_before_extraction(
+        self, extractor_configs: list[TExtractorConfig]
+    ) -> bool:
+        """
+        Pre-extraction check called before the sequential extraction loop.
+
+        Template method that:
+        1. Skips for non-auto runs and mock mode
+        2. Collects scoped interactions via _collect_scoped_interactions_for_precheck
+        3. Delegates prompt building to _build_should_run_prompt (subclass hook)
+        4. Makes a single LLM call to determine if extraction should proceed
+
+        Override _build_should_run_prompt in subclasses to provide service-specific
+        criteria and prompt construction. Default returns True (always run) when
+        no prompt hook is provided.
+
+        Args:
+            extractor_configs: List of enabled extractor configs that will be run
+
+        Returns:
+            bool: True if extraction should proceed, False to skip
+        """
+        # Skip for non-auto runs (rerun/manual flows always run)
+        if not getattr(self.service_config, "auto_run", True):
+            return True
+
+        # Skip for mock mode
+        if os.getenv("MOCK_LLM_RESPONSE", "").lower() == "true":
+            return True
+
+        # Collect scoped interactions
+        request_groups, scoped_configs = self._collect_scoped_interactions_for_precheck(
+            extractor_configs
+        )
+        if not request_groups:
+            logger.info(
+                "No interactions found for consolidated should_generate check for %s",
+                self._get_service_name(),
+            )
+            return False
+
+        # Build prompt via subclass hook
+        prompt = self._build_should_run_prompt(scoped_configs, request_groups)
+        if not prompt:
+            return True  # No prompt means no check needed, proceed
+
+        # Resolve model and make LLM call
+        should_run_model = self._resolve_should_run_model()
+        identifier = getattr(self.service_config, "user_id", None) or "unknown"
+        try:
+            should_start = time.perf_counter()
+            logger.info(
+                "event=consolidated_should_run_start service=%s identifier=%s model=%s extractors=%d",
+                self._get_service_name(),
+                identifier,
+                should_run_model,
+                len(extractor_configs),
+            )
+            logger.info("Should extract prompt: %s", prompt)
+
+            content = self.client.generate_chat_response(
+                messages=[{"role": "user", "content": prompt}],
+                model=should_run_model,
+            )
+            log_model_response(
+                logger,
+                f"Consolidated {self._get_service_name()} should_run response",
+                content,
+            )
+            decision = bool(content and "true" in content.lower())
+            logger.info(
+                "event=consolidated_should_run_end service=%s identifier=%s elapsed_seconds=%.3f decision=%s",
+                self._get_service_name(),
+                identifier,
+                time.perf_counter() - should_start,
+                decision,
+            )
+            return decision
+        except Exception as exc:
+            logger.error(
+                "Consolidated should_generate check failed for %s: %s, defaulting to run",
+                self._get_service_name(),
+                str(exc),
+            )
+            return True
+
+    def _build_should_run_prompt(
+        self,
+        scoped_configs: list[TExtractorConfig],
+        request_groups: list[RequestInteractionDataModel],
+    ) -> Optional[str]:
+        """
+        Build the prompt for the consolidated should_run LLM check.
+
+        Override in subclasses to provide service-specific criteria building
+        and prompt rendering. Return None if no check is needed (always proceed).
+
+        Args:
+            scoped_configs: Extractor configs that had scoped interactions
+            request_groups: Deduplicated request interaction groups
+
+        Returns:
+            Optional[str]: The rendered prompt string, or None to skip the check
+        """
+        return None
+
+    def _collect_scoped_interactions_for_precheck(
+        self, extractor_configs: list[TExtractorConfig]
+    ) -> tuple[list[RequestInteractionDataModel], list[TExtractorConfig]]:
+        """
+        Collect interactions for consolidated pre-check using extractor-scoped filters.
+
+        Mirrors each extractor's source/window scope so the consolidated gate
+        does not skip valid extraction because of an unrelated fixed interaction slice.
+
+        Args:
+            extractor_configs: Enabled extractor configs after request-level filtering
+
+        Returns:
+            tuple: (deduplicated request groups, extractor configs that had scoped interactions)
+        """
+        root_config = self.request_context.configurator.get_config()
+        global_window_size = (
+            getattr(root_config, "extraction_window_size", None)
+            if root_config
+            else None
+        )
+        global_stride = (
+            getattr(root_config, "extraction_window_stride", None)
+            if root_config
+            else None
+        )
+
+        deduped_request_groups: dict[str, RequestInteractionDataModel] = {}
+        scoped_configs: list[TExtractorConfig] = []
+        extra_kwargs = self._get_precheck_interaction_query_kwargs()
+
+        for config in extractor_configs:
+            should_skip, effective_source = get_effective_source_filter(
+                config, getattr(self.service_config, "source", None)
+            )
+            if should_skip:
+                continue
+
+            window_size, _ = get_extractor_window_params(
+                config, global_window_size, global_stride
+            )
+            fetch_k = window_size if window_size and window_size > 0 else 1000
+            request_groups, _ = self.storage.get_last_k_interactions_grouped(
+                user_id=getattr(self.service_config, "user_id", None),
+                k=fetch_k,
+                sources=effective_source,
+                start_time=getattr(self.service_config, "rerun_start_time", None),
+                end_time=getattr(self.service_config, "rerun_end_time", None),
+                **extra_kwargs,
+            )
+            if not request_groups:
+                continue
+
+            scoped_configs.append(config)
+            for request_group in request_groups:
+                request_id = getattr(request_group.request, "request_id", None)
+                dedupe_key = (
+                    request_id
+                    or request_group.request_group
+                    or f"scoped_group_{len(deduped_request_groups)}"
+                )
+                if dedupe_key not in deduped_request_groups:
+                    deduped_request_groups[dedupe_key] = request_group
+
+        return list(deduped_request_groups.values()), scoped_configs
+
+    def _get_precheck_interaction_query_kwargs(self) -> dict:
+        """
+        Return extra keyword arguments for get_last_k_interactions_grouped in precheck.
+
+        Override in subclasses that need additional query parameters
+        (e.g., agent_version for feedback services).
+
+        Returns:
+            dict: Extra kwargs to pass to get_last_k_interactions_grouped
+        """
+        return {}
+
+    def _resolve_should_run_model(self) -> str:
+        """
+        Resolve the model name for should_run/should_generate LLM checks.
+
+        Uses LLM config override if available, falls back to site var setting.
+
+        Returns:
+            str: Model name for the should_run check
+        """
+        root_config = self.request_context.configurator.get_config()
+        llm_config = root_config.llm_config if root_config else None
+        from reflexio.server.site_var.site_var_manager import SiteVarManager
+
+        model_setting = SiteVarManager().get_site_var("llm_model_setting")
+        return (
+            llm_config.should_run_model_name
+            if llm_config and llm_config.should_run_model_name
+            else model_setting.get("should_run_model_name", "gpt-5-nano")
+        )
+
+    def _update_config_for_incremental(self, previously_extracted: list) -> None:
+        """
+        Update service_config for incremental extraction after the first extractor.
+
+        Override in subclasses that support incremental extraction to set
+        is_incremental and previously_extracted on the service config.
+        Default implementation does nothing.
+
+        Args:
+            previously_extracted: List of results from previous extractors
+        """
 
     # ===============================
     # Batch with progress (shared by rerun + manual)

@@ -43,7 +43,7 @@ class AgentSuccessEvaluationService(
 ):
     """
     Service for evaluating agent success across multiple evaluation criteria.
-    Runs multiple AgentSuccessEvaluator instances in parallel for efficiency.
+    Runs multiple AgentSuccessEvaluator instances sequentially.
     """
 
     def _load_generation_service_config(

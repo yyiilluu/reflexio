@@ -368,9 +368,10 @@ class LiteLLMClient:
         except (TypeError, ValueError):
             max_retries = max(1, int(self.config.max_retries))
 
-        # Build request parameters
+        # Build request parameters — resolve the actual model first (kwargs may override config)
+        actual_model = kwargs.pop("model", self.config.model)
         params = {
-            "model": self.config.model,
+            "model": actual_model,
             "messages": messages,
             "timeout": kwargs.pop("timeout", self.config.timeout),
             # Disable OpenAI SDK internal retries — we handle retries ourselves
@@ -381,7 +382,7 @@ class LiteLLMClient:
 
         # Handle temperature - GPT-5 models only support temperature=1.0
         temperature = kwargs.pop("temperature", self.config.temperature)
-        if not self._is_temperature_restricted_model(self.config.model):
+        if not self._is_temperature_restricted_model(actual_model):
             params["temperature"] = temperature
         # For temperature-restricted models, we simply don't pass temperature
         # (LiteLLM/OpenAI will use default of 1.0)
@@ -399,13 +400,22 @@ class LiteLLMClient:
         if response_format:
             params["response_format"] = response_format
 
-        # Add cached API key configuration if provided (overrides env vars)
-        if self._api_key:
-            params["api_key"] = self._api_key
-        if self._api_base:
-            params["api_base"] = self._api_base
-        if self._api_version:
-            params["api_version"] = self._api_version
+        # Add API key configuration if provided (overrides env vars)
+        # Re-resolve if actual model differs from configured model (different provider)
+        if actual_model != self.config.model:
+            api_key, api_base, api_version = self._resolve_api_key(actual_model)
+        else:
+            api_key, api_base, api_version = (
+                self._api_key,
+                self._api_base,
+                self._api_version,
+            )
+        if api_key:
+            params["api_key"] = api_key
+        if api_base:
+            params["api_base"] = api_base
+        if api_version:
+            params["api_version"] = api_version
 
         # Add any remaining kwargs
         params.update(kwargs)

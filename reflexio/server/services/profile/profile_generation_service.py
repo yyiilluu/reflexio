@@ -1,10 +1,11 @@
 """Service to generate user profiles from interactions"""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import logging
 import uuid
 from typing import Any, Optional, Union
 
+from reflexio_commons.api_schema.internal_schema import RequestInteractionDataModel
 from reflexio_commons.api_schema.service_schemas import (
     DeleteUserProfileRequest,
     RerunProfileGenerationRequest,
@@ -20,11 +21,15 @@ from reflexio_commons.config_schema import ProfileExtractorConfig
 from reflexio.server.services.profile.profile_extractor import ProfileExtractor
 from reflexio.server.services.profile.profile_generation_service_utils import (
     ProfileGenerationRequest,
+    ProfileGenerationServiceConstants,
     ProfileUpdates,
 )
 from reflexio.server.services.base_generation_service import (
     BaseGenerationService,
     StatusChangeOperation,
+)
+from reflexio.server.services.service_utils import (
+    format_request_groups_to_history_string,
 )
 
 
@@ -58,6 +63,8 @@ class ProfileGenerationServiceConfig:
     rerun_start_time: Optional[int] = None
     rerun_end_time: Optional[int] = None
     auto_run: bool = True
+    is_incremental: bool = False
+    previously_extracted: list[ProfileUpdates] = field(default_factory=list)
 
 
 class ProfileGenerationService(
@@ -127,36 +134,45 @@ class ProfileGenerationService(
 
     def _process_results(self, results: list[ProfileUpdates]) -> None:
         """
-        Process and apply profile updates.
+        Process, deduplicate, and apply all profile updates. Called once after all extractors complete.
 
         Args:
-            results: List of ProfileUpdates from extractors
+            results: List of ProfileUpdates from extractors (one per successful extractor)
         """
         user_id = self.service_config.user_id
         source = self.service_config.source
         request_id = self.service_config.request_id
+
+        # Deduplicate if multiple extractors returned results and deduplicator is enabled
+        if len(results) > 1:
+            from reflexio.server.site_var.feature_flags import is_deduplicator_enabled
+
+            if is_deduplicator_enabled(self.org_id):
+                from reflexio.server.services.profile.profile_deduplicator import (
+                    ProfileDeduplicator,
+                )
+
+                deduplicator = ProfileDeduplicator(
+                    request_context=self.request_context,
+                    llm_client=self.client,
+                )
+                deduplicated_results = deduplicator.deduplicate(
+                    results, user_id, request_id
+                )
+                logger.info(
+                    "Profile updates after deduplication: %s", deduplicated_results
+                )
+                if deduplicated_results:
+                    results = deduplicated_results
 
         # Set source and status for all profiles
         for update in results:
             if update and update.add_profiles:
                 for profile in update.add_profiles:
                     profile.source = source
-                    # Set status to Status.PENDING if output_pending_status is True, otherwise None
                     profile.status = (
                         Status.PENDING if self.output_pending_status else None
                     )
-
-        # Deduplicate if multiple extractors were enabled
-        if len(results) > 1:
-            from reflexio.server.services.profile.profile_deduplicator import (
-                ProfileDeduplicator,
-            )
-
-            deduplicator = ProfileDeduplicator(
-                request_context=self.request_context,
-                llm_client=self.client,
-            )
-            results = deduplicator.deduplicate(results, user_id, request_id)
 
         # Apply updates
         for profile_update in results:
@@ -232,6 +248,68 @@ class ProfileGenerationService(
             service_config=service_config,
             agent_context=self.configurator.get_agent_context(),
         )
+
+    def _build_should_run_prompt(
+        self,
+        scoped_configs: list[ProfileExtractorConfig],
+        request_groups: list[RequestInteractionDataModel],
+    ) -> str | None:
+        """
+        Build prompt for consolidated should_extract_profile check.
+
+        Combines all enabled extractors' profile definitions and override conditions
+        into a single criteria block for one LLM call.
+
+        Args:
+            scoped_configs: Profile extractor configs that had scoped interactions
+            request_groups: Deduplicated request interaction groups
+
+        Returns:
+            str | None: The rendered prompt, or None if no criteria to check
+        """
+        new_interactions = format_request_groups_to_history_string(request_groups)
+        agent_context = self.configurator.get_agent_context()
+        prompt_manager = self.request_context.prompt_manager
+
+        # Combine all extractor criteria into a numbered list.
+        # Each extractor can contribute:
+        # 1) profile_content_definition_prompt (what to extract)
+        # 2) should_extract_profile_prompt_override (custom extraction condition)
+        combined_criteria_items = []
+        for i, config in enumerate(scoped_configs, 1):
+            criteria_parts = []
+            if config.profile_content_definition_prompt:
+                criteria_parts.append(
+                    f"definition: {config.profile_content_definition_prompt.strip()}"
+                )
+            if config.should_extract_profile_prompt_override:
+                criteria_parts.append(
+                    "condition: "
+                    f"{config.should_extract_profile_prompt_override.strip()}"
+                )
+
+            if criteria_parts:
+                combined_criteria_items.append(f"{i}. {'; '.join(criteria_parts)}")
+
+        combined_criteria = (
+            "\n".join(combined_criteria_items) if combined_criteria_items else ""
+        )
+        if not combined_criteria:
+            return None
+
+        return prompt_manager.render_prompt(
+            ProfileGenerationServiceConstants.PROFILE_SHOULD_GENERATE_PROMPT_ID,
+            {
+                "agent_context_prompt": agent_context,
+                "should_extract_profile_prompt": combined_criteria,
+                "new_interactions": new_interactions,
+            },
+        )
+
+    def _update_config_for_incremental(self, previously_extracted: list) -> None:
+        """Update service_config for incremental profile extraction."""
+        self.service_config.is_incremental = True
+        self.service_config.previously_extracted = list(previously_extracted)
 
     def _get_service_name(self) -> str:
         """

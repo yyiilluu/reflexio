@@ -6,7 +6,8 @@ Tests the abstract base class by creating a concrete implementation for testing.
 
 import pytest
 import tempfile
-from dataclasses import dataclass
+import time
+from dataclasses import dataclass, field
 from typing import Optional
 from unittest.mock import MagicMock
 
@@ -47,10 +48,12 @@ class MockServiceConfig:
     source: Optional[str] = None
     allow_manual_trigger: bool = False
     extractor_names: Optional[list[str]] = None
+    is_incremental: bool = False
+    previously_extracted: list = field(default_factory=list)
 
 
 class MockExtractor:
-    """Mock extractor for testing parallel execution."""
+    """Mock extractor for testing sequential execution."""
 
     def __init__(self, result=None, should_raise=False, exception_message="Test error"):
         self.result = result
@@ -146,6 +149,10 @@ class ConcreteGenerationService(BaseGenerationService):
             self._updated_count = len(items)
             return len(items)
         return 0
+
+    def _update_config_for_incremental(self, previously_extracted):
+        self.service_config.is_incremental = True
+        self.service_config.previously_extracted = list(previously_extracted)
 
     def _create_status_change_response(self, operation, success, counts, msg):
         return {
@@ -366,71 +373,6 @@ class TestFilterExtractorConfigsByServiceConfig:
 
 
 # ===============================
-# Test: _run_extractors_in_parallel
-# ===============================
-
-
-class TestRunExtractorsInParallel:
-    """Tests for the _run_extractors_in_parallel method."""
-
-    def test_successful_parallel_execution(self, base_service):
-        """Test that all extractors run successfully in parallel."""
-        extractors = [
-            MockExtractor(result={"id": 1}),
-            MockExtractor(result={"id": 2}),
-            MockExtractor(result={"id": 3}),
-        ]
-
-        results = base_service._run_extractors_in_parallel(extractors, "test_context")
-
-        assert len(results) == 3
-        assert all(e.run_called for e in extractors)
-
-    def test_handles_exceptions_gracefully(self, base_service):
-        """Test that exceptions in one extractor don't stop others."""
-        extractors = [
-            MockExtractor(result={"id": 1}),
-            MockExtractor(should_raise=True, exception_message="Failed extractor"),
-            MockExtractor(result={"id": 3}),
-        ]
-
-        results = base_service._run_extractors_in_parallel(extractors, "test_context")
-
-        # Should have 2 results (excluding failed one)
-        assert len(results) == 2
-        assert all(e.run_called for e in extractors)
-
-    def test_filters_none_results(self, base_service):
-        """Test that None results are filtered out."""
-        extractors = [
-            MockExtractor(result={"id": 1}),
-            MockExtractor(result=None),
-            MockExtractor(result={"id": 3}),
-        ]
-
-        results = base_service._run_extractors_in_parallel(extractors, "test_context")
-
-        assert len(results) == 2
-
-    def test_empty_extractors_list(self, base_service):
-        """Test with empty extractors list."""
-        results = base_service._run_extractors_in_parallel([], "test_context")
-        assert len(results) == 0
-
-    def test_all_extractors_fail(self, base_service):
-        """Test when all extractors raise exceptions."""
-        extractors = [
-            MockExtractor(should_raise=True),
-            MockExtractor(should_raise=True),
-        ]
-
-        results = base_service._run_extractors_in_parallel(extractors, "test_context")
-
-        assert len(results) == 0
-        assert all(e.run_called for e in extractors)
-
-
-# ===============================
 # Test: run()
 # ===============================
 
@@ -457,7 +399,7 @@ class TestRun:
 
         service.run(request)
 
-        # Results should be processed
+        # _process_results called once with all results after all extractors complete
         assert len(service._processed_results) == 2
 
     def test_run_with_none_request(self, base_service):
@@ -1490,6 +1432,318 @@ class TestCancellationInBatch:
         assert service._is_batch_mode is False
         service.run_rerun(request)
         assert service._is_batch_mode is False  # Reset after batch finishes
+
+
+# ===============================
+# Test: Sequential Execution
+# ===============================
+
+
+class TestSequentialExecution:
+    """Tests for the sequential extractor execution in _run_generation."""
+
+    def test_sequential_single_extractor(self, llm_client, request_context):
+        """Test sequential execution with a single extractor."""
+        service = ConcreteGenerationService(
+            llm_client,
+            request_context,
+            extractor_configs=[MockExtractorConfig(extractor_name="extractor1")],
+        )
+
+        request = MockServiceConfig(
+            user_id="test_user",
+            request_id="test_request",
+            request_interaction_data_models=[MagicMock()],
+        )
+
+        service.run(request)
+
+        # Single extractor should produce one result
+        assert len(service._processed_results) == 1
+
+    def test_sequential_multiple_extractors_all_succeed(
+        self, llm_client, request_context
+    ):
+        """Test that all extractors run sequentially and each result is saved."""
+        call_order = []
+
+        class TrackingExtractor:
+            def __init__(self, name, result):
+                self.name = name
+                self.result = result
+
+            def run(self):
+                call_order.append(self.name)
+                return self.result
+
+        class TrackingService(ConcreteGenerationService):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self._process_calls = []
+
+            def _create_extractor(self, extractor_config, service_config):
+                return TrackingExtractor(
+                    extractor_config.extractor_name,
+                    {"name": extractor_config.extractor_name},
+                )
+
+            def _process_results(self, results):
+                self._process_calls.append(list(results))
+
+        service = TrackingService(
+            llm_client,
+            request_context,
+            extractor_configs=[
+                MockExtractorConfig(extractor_name="ext1"),
+                MockExtractorConfig(extractor_name="ext2"),
+                MockExtractorConfig(extractor_name="ext3"),
+            ],
+        )
+
+        request = MockServiceConfig(
+            user_id="test_user",
+            request_id="test_request",
+        )
+
+        service.run(request)
+
+        # Extractors ran sequentially
+        assert call_order == ["ext1", "ext2", "ext3"]
+        # _process_results called once with all 3 results
+        assert len(service._process_calls) == 1
+        assert len(service._process_calls[0]) == 3
+
+    def test_sequential_partial_failure(self, llm_client, request_context):
+        """Test that failure in one extractor doesn't stop others."""
+
+        class PartialService(ConcreteGenerationService):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self._process_calls = []
+
+            def _create_extractor(self, extractor_config, service_config):
+                should_raise = extractor_config.extractor_name == "failing"
+                return MockExtractor(
+                    result={"name": extractor_config.extractor_name},
+                    should_raise=should_raise,
+                )
+
+            def _process_results(self, results):
+                self._process_calls.append(list(results))
+
+        service = PartialService(
+            llm_client,
+            request_context,
+            extractor_configs=[
+                MockExtractorConfig(extractor_name="ext1"),
+                MockExtractorConfig(extractor_name="failing"),
+                MockExtractorConfig(extractor_name="ext3"),
+            ],
+        )
+
+        request = MockServiceConfig(user_id="test_user", request_id="test_request")
+        service.run(request)
+
+        # _process_results called once with the 2 successful results
+        assert len(service._process_calls) == 1
+        assert len(service._process_calls[0]) == 2
+
+    def test_sequential_all_fail_raises(self, llm_client, request_context):
+        """Test that all extractors failing raises ExtractorExecutionError."""
+        service = ConcreteGenerationService(
+            llm_client,
+            request_context,
+            extractor_configs=[
+                MockExtractorConfig(extractor_name="ext1"),
+                MockExtractorConfig(extractor_name="ext2"),
+            ],
+        )
+        service._create_extractor = MagicMock(
+            side_effect=lambda ec, sc: MockExtractor(should_raise=True)
+        )
+
+        request = MockServiceConfig(user_id="test_user", request_id="test_request")
+
+        with pytest.raises(ExtractorExecutionError):
+            service.run(request)
+
+    def test_sequential_refetches_config_for_subsequent_extractors(
+        self, llm_client, request_context
+    ):
+        """Test that service_config is refetched after the first extractor."""
+        load_config_calls = []
+
+        class RefetchService(ConcreteGenerationService):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self._process_calls = []
+
+            def _load_generation_service_config(self, request):
+                config = super()._load_generation_service_config(request)
+                load_config_calls.append(config)
+                return config
+
+            def _create_extractor(self, extractor_config, service_config):
+                return MockExtractor(result={"name": extractor_config.extractor_name})
+
+            def _process_results(self, results):
+                self._process_calls.append(list(results))
+
+        service = RefetchService(
+            llm_client,
+            request_context,
+            extractor_configs=[
+                MockExtractorConfig(extractor_name="ext1"),
+                MockExtractorConfig(extractor_name="ext2"),
+            ],
+        )
+
+        request = MockServiceConfig(user_id="test_user", request_id="test_request")
+        service.run(request)
+
+        # Config loaded once initially, then re-loaded before ext2
+        assert len(load_config_calls) == 2
+
+    def test_sequential_sets_incremental_flag(self, llm_client, request_context):
+        """Test that is_incremental is set on service_config for subsequent extractors."""
+        observed_incremental = []
+
+        class IncrementalTracker(ConcreteGenerationService):
+            def _create_extractor(self, extractor_config, service_config):
+                observed_incremental.append(
+                    getattr(service_config, "is_incremental", False)
+                )
+                return MockExtractor(result={"name": extractor_config.extractor_name})
+
+            def _process_results(self, results):
+                pass
+
+        service = IncrementalTracker(
+            llm_client,
+            request_context,
+            extractor_configs=[
+                MockExtractorConfig(extractor_name="ext1"),
+                MockExtractorConfig(extractor_name="ext2"),
+                MockExtractorConfig(extractor_name="ext3"),
+            ],
+        )
+
+        request = MockServiceConfig(user_id="test_user", request_id="test_request")
+        service.run(request)
+
+        # First extractor: not incremental. Subsequent: incremental
+        assert observed_incremental == [False, True, True]
+
+    def test_sequential_passes_previously_extracted(self, llm_client, request_context):
+        """Test that previously_extracted accumulates results across extractors."""
+        observed_previously = []
+
+        class PreviousTracker(ConcreteGenerationService):
+            def _create_extractor(self, extractor_config, service_config):
+                observed_previously.append(
+                    list(getattr(service_config, "previously_extracted", []))
+                )
+                return MockExtractor(result={"name": extractor_config.extractor_name})
+
+            def _process_results(self, results):
+                pass
+
+        service = PreviousTracker(
+            llm_client,
+            request_context,
+            extractor_configs=[
+                MockExtractorConfig(extractor_name="ext1"),
+                MockExtractorConfig(extractor_name="ext2"),
+                MockExtractorConfig(extractor_name="ext3"),
+            ],
+        )
+
+        request = MockServiceConfig(user_id="test_user", request_id="test_request")
+        service.run(request)
+
+        # First: empty, second: 1 result, third: 2 results
+        assert len(observed_previously[0]) == 0
+        assert len(observed_previously[1]) == 1
+        assert len(observed_previously[2]) == 2
+
+    def test_sequential_none_results_not_accumulated(self, llm_client, request_context):
+        """Test that None results from extractors are not added to previously_extracted."""
+        observed_previously = []
+
+        class NoneResultTracker(ConcreteGenerationService):
+            def _create_extractor(self, extractor_config, service_config):
+                observed_previously.append(
+                    list(getattr(service_config, "previously_extracted", []))
+                )
+                # ext2 returns None
+                if extractor_config.extractor_name == "ext2":
+                    return MockExtractor(result=None)
+                return MockExtractor(result={"name": extractor_config.extractor_name})
+
+            def _process_results(self, results):
+                pass
+
+        service = NoneResultTracker(
+            llm_client,
+            request_context,
+            extractor_configs=[
+                MockExtractorConfig(extractor_name="ext1"),
+                MockExtractorConfig(extractor_name="ext2"),
+                MockExtractorConfig(extractor_name="ext3"),
+            ],
+        )
+
+        request = MockServiceConfig(user_id="test_user", request_id="test_request")
+        service.run(request)
+
+        # ext1: empty, ext2: 1 (from ext1), ext3: 1 (ext2 returned None, not accumulated)
+        assert len(observed_previously[0]) == 0
+        assert len(observed_previously[1]) == 1
+        assert len(observed_previously[2]) == 1
+
+    def test_sequential_timeout_does_not_block_following_extractors(
+        self, llm_client, request_context, monkeypatch
+    ):
+        """Test that timed-out extractors are skipped and later extractors still run."""
+        monkeypatch.setattr(
+            "reflexio.server.services.base_generation_service.EXTRACTOR_TIMEOUT_SECONDS",
+            0.01,
+        )
+
+        class SlowExtractor:
+            def run(self):
+                time.sleep(0.1)
+                return {"name": "slow"}
+
+        class TimeoutService(ConcreteGenerationService):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self._process_calls = []
+
+            def _create_extractor(self, extractor_config, service_config):
+                if extractor_config.extractor_name == "slow":
+                    return SlowExtractor()
+                return MockExtractor(result={"name": extractor_config.extractor_name})
+
+            def _process_results(self, results):
+                self._process_calls.append(list(results))
+
+        service = TimeoutService(
+            llm_client,
+            request_context,
+            extractor_configs=[
+                MockExtractorConfig(extractor_name="slow"),
+                MockExtractorConfig(extractor_name="fast"),
+            ],
+        )
+
+        request = MockServiceConfig(user_id="test_user", request_id="test_request")
+        service.run(request)
+
+        assert len(service._process_calls) == 1
+        assert service._process_calls[0] == [{"name": "fast"}]
+        assert service._last_extractor_run_stats["failed"] == 1
+        assert service._last_extractor_run_stats["timed_out"] == 1
 
 
 if __name__ == "__main__":
