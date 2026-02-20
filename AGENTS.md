@@ -3,7 +3,6 @@
 - frontend website is also already started and running on http://localhost:8080 (or custom port — check `run_services.sh`)
 - You can test your changes by sending api request to above endpoints
 - run command in poetry env
-- all command should be run from `user_profiler` level
 
 # Test account for API
 To test all the API, login with username "local_supabase" with password "s" to test the api end to end.

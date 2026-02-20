@@ -16,10 +16,14 @@ from reflexio_commons.api_schema.service_schemas import Status
 
 from reflexio.server.api_endpoints.request_context import RequestContext
 from reflexio.server.llm.litellm_client import LiteLLMClient
-from reflexio.server.services.extractor_config_utils import filter_extractor_configs
+from reflexio.server.services.extractor_config_utils import (
+    filter_extractor_configs,
+    get_extractor_name,
+)
 from reflexio.server.services.extractor_interaction_utils import (
     get_effective_source_filter,
     get_extractor_window_params,
+    should_extractor_run_by_stride,
 )
 from reflexio.server.services.operation_state_utils import OperationStateManager
 from reflexio.server.services.service_utils import log_model_response
@@ -232,6 +236,97 @@ class BaseGenerationService(
             extractor_names=extractor_names,
         )
 
+    def _get_extractor_state_service_name(self) -> Optional[str]:
+        """
+        Get the service name used for extractor state (stride bookmark) lookups.
+
+        Override in subclasses that support stride-based pre-filtering to return
+        the OperationStateManager service name (e.g., "profile_extractor", "feedback_extractor").
+        Returns None by default, meaning stride pre-filtering is skipped.
+
+        Returns:
+            Optional[str]: Service name for OperationStateManager, or None to skip stride pre-filtering
+        """
+        return None
+
+    def _filter_configs_by_stride(
+        self, extractor_configs: list[TExtractorConfig]
+    ) -> list[TExtractorConfig]:
+        """
+        Filter extractor configs by stride check before the should_run LLM call.
+
+        Skips filtering when:
+        - _get_extractor_state_service_name() returns None (service doesn't support stride)
+        - auto_run is False (rerun/manual flows skip stride)
+
+        For each config, resolves window/stride params and checks if enough new
+        interactions exist since the last run. Only configs that pass stride are returned.
+
+        Args:
+            extractor_configs: List of extractor configs after source/manual_trigger filtering
+
+        Returns:
+            List of extractor configs that pass the stride check
+        """
+        state_service_name = self._get_extractor_state_service_name()
+        if state_service_name is None:
+            return extractor_configs
+
+        if not getattr(self.service_config, "auto_run", True):
+            return extractor_configs
+
+        root_config = self.request_context.configurator.get_config()
+        global_window_size = (
+            getattr(root_config, "extraction_window_size", None)
+            if root_config
+            else None
+        )
+        global_stride = (
+            getattr(root_config, "extraction_window_stride", None)
+            if root_config
+            else None
+        )
+
+        state_manager = OperationStateManager(
+            self.storage, self.org_id, state_service_name
+        )
+
+        passing_configs: list[TExtractorConfig] = []
+        for config in extractor_configs:
+            name = get_extractor_name(config)
+            _, stride_size = get_extractor_window_params(
+                config, global_window_size, global_stride
+            )
+
+            # Resolve effective source filter for this extractor
+            should_skip, effective_source = get_effective_source_filter(
+                config, getattr(self.service_config, "source", None)
+            )
+            if should_skip:
+                continue
+
+            (
+                _,
+                new_interactions,
+            ) = state_manager.get_extractor_state_with_new_interactions(
+                extractor_name=name,
+                user_id=getattr(self.service_config, "user_id", None),
+                sources=effective_source,
+            )
+            new_count = sum(len(ri.interactions) for ri in new_interactions)
+
+            if should_extractor_run_by_stride(new_count, stride_size):
+                passing_configs.append(config)
+            else:
+                logger.info(
+                    "Stride pre-filter: skipping extractor '%s' (new=%d, stride=%s)",
+                    name,
+                    new_count,
+                    stride_size,
+                )
+
+        return passing_configs
+
     # ===============================
     # In-progress state management via OperationStateManager
     # ===============================
@@ -355,6 +450,15 @@ class BaseGenerationService(
                     "No %s extractor configs enabled for source: %s",
                     self._get_service_name(),
                     source_display,
+                )
+                return
+
+            # Filter by stride before the should_run LLM call
+            extractor_configs = self._filter_configs_by_stride(extractor_configs)
+            if not extractor_configs:
+                logger.info(
+                    "No extractor configs passed stride check for %s",
+                    self._get_service_name(),
                 )
                 return
 

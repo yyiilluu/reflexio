@@ -11,7 +11,6 @@ from reflexio_commons.api_schema.internal_schema import RequestInteractionDataMo
 from reflexio.server.services.extractor_interaction_utils import (
     get_extractor_window_params,
     get_effective_source_filter,
-    should_extractor_run_by_stride,
 )
 from reflexio.server.services.operation_state_utils import OperationStateManager
 from reflexio.server.services.feedback.feedback_service_utils import (
@@ -108,13 +107,15 @@ class FeedbackExtractor:
         Get interactions for this extractor based on its config.
 
         Handles:
-        - Getting window/stride parameters (extractor override or global fallback)
+        - Getting window parameters (extractor override or global fallback)
         - Source filtering based on extractor config
-        - Stride checking to determine if extractor should run (only for auto_run=True)
         - Time range filtering for rerun flows
 
+        Note: Stride checking is handled upstream by BaseGenerationService._filter_configs_by_stride()
+        before the extractor is created.
+
         Returns:
-            List of request interaction data models if stride is met (or auto_run=False), None otherwise
+            List of request interaction data models, or None if source filter skips this extractor
         """
         # Get global config values
         config = self.request_context.configurator.get_config()
@@ -125,8 +126,8 @@ class FeedbackExtractor:
             getattr(config, "extraction_window_stride", None) if config else None
         )
 
-        # Get effective window/stride for this extractor
-        window_size, stride_size = get_extractor_window_params(
+        # Get effective window size for this extractor
+        window_size, _ = get_extractor_window_params(
             self.config,
             global_window_size,
             global_stride,
@@ -140,31 +141,7 @@ class FeedbackExtractor:
         if should_skip:
             return None
 
-        mgr = self._create_state_manager()
         storage = self.request_context.storage
-
-        # Stride check only for auto_run=True (regular flow)
-        if self.service_config.auto_run:
-            # Get new interactions since last run for stride check
-            # Use user_id from service_config for per-user feedback extraction
-            (
-                state,
-                new_interactions,
-            ) = mgr.get_extractor_state_with_new_interactions(
-                extractor_name=self.config.feedback_name,
-                user_id=self.service_config.user_id,
-                sources=effective_source,
-            )
-            new_count = sum(len(ri.interactions) for ri in new_interactions)
-
-            # Check stride
-            if not should_extractor_run_by_stride(new_count, stride_size):
-                logger.info(
-                    "Skipping feedback extraction - stride not met (new=%d, stride=%s)",
-                    new_count,
-                    stride_size,
-                )
-                return None
 
         # Only filter by agent_version during rerun (non-auto_run) mode
         rerun_agent_version = (
@@ -213,9 +190,8 @@ class FeedbackExtractor:
 
         This extractor handles its own data collection:
         1. Gets interactions based on its config (window size, source filtering)
-        2. Checks stride to determine if extraction should run (only for auto_run=True)
-        3. Applies time range filter for rerun flows
-        4. Updates operation state after processing
+        2. Applies time range filter for rerun flows
+        3. Updates operation state after processing
 
         Returns:
             list[RawFeedback]: List of extracted feedback

@@ -194,61 +194,25 @@ class TestOperationStateKey:
 
 
 class TestGetInteractions:
-    """Tests for interaction collection logic."""
+    """Tests for interaction collection logic.
 
-    def test_returns_none_when_stride_not_met(
+    Note: Stride checking is handled upstream by BaseGenerationService._filter_configs_by_stride()
+    before the extractor is created, so stride tests are at the service level.
+    """
+
+    def test_returns_interactions(
         self,
         request_context,
         mock_llm_client,
         service_config,
         sample_request_interaction_models,
     ):
-        """Test that None is returned when stride threshold is not met."""
-        # Configure extractor with stride of 10
+        """Test that interactions are returned from storage."""
         config = ProfileExtractorConfig(
             extractor_name="test_extractor",
             profile_content_definition_prompt="Extract user preferences",
-            extraction_window_stride_override=10,
         )
 
-        # Mock storage to return only 2 interactions (below stride)
-        request_context.storage.get_operation_state_with_new_request_interaction.return_value = (
-            {},
-            sample_request_interaction_models,  # 2 interactions
-        )
-
-        extractor = ProfileExtractor(
-            request_context=request_context,
-            llm_client=mock_llm_client,
-            extractor_config=config,
-            service_config=service_config,
-            agent_context="Test agent",
-        )
-
-        result = extractor._get_interactions()
-
-        assert result is None
-
-    def test_returns_interactions_when_stride_met(
-        self,
-        request_context,
-        mock_llm_client,
-        service_config,
-        sample_request_interaction_models,
-    ):
-        """Test that interactions are returned when stride is met."""
-        # Configure extractor with stride of 2
-        config = ProfileExtractorConfig(
-            extractor_name="test_extractor",
-            profile_content_definition_prompt="Extract user preferences",
-            extraction_window_stride_override=2,
-        )
-
-        # Mock storage to return 2 interactions (meets stride)
-        request_context.storage.get_operation_state_with_new_request_interaction.return_value = (
-            {},
-            sample_request_interaction_models,
-        )
         request_context.storage.get_last_k_interactions_grouped.return_value = (
             sample_request_interaction_models,
             [],
@@ -280,14 +244,9 @@ class TestGetInteractions:
             extractor_name="test_extractor",
             profile_content_definition_prompt="Extract user preferences",
             extraction_window_size_override=50,
-            extraction_window_stride_override=1,
         )
 
         # Mock storage
-        request_context.storage.get_operation_state_with_new_request_interaction.return_value = (
-            {},
-            sample_request_interaction_models,
-        )
         request_context.storage.get_last_k_interactions_grouped.return_value = (
             sample_request_interaction_models,
             [],
@@ -352,13 +311,8 @@ class TestGetInteractions:
         config = ProfileExtractorConfig(
             extractor_name="test_extractor",
             profile_content_definition_prompt="Extract user preferences",
-            extraction_window_stride_override=1,
         )
 
-        request_context.storage.get_operation_state_with_new_request_interaction.return_value = (
-            {},
-            sample_request_interaction_models,
-        )
         request_context.storage.get_last_k_interactions_grouped.return_value = (
             sample_request_interaction_models,
             [],
@@ -374,11 +328,11 @@ class TestGetInteractions:
 
         extractor._get_interactions()
 
-        # Verify user_id was passed to storage
-        call_args = (
-            request_context.storage.get_operation_state_with_new_request_interaction.call_args
-        )
-        assert call_args[0][1] == "test_user"  # user_id is second positional arg
+        # Verify user_id was passed to get_last_k_interactions_grouped
+        call_kwargs = request_context.storage.get_last_k_interactions_grouped.call_args[
+            1
+        ]
+        assert call_kwargs["user_id"] == "test_user"
 
 
 # ===============================
@@ -441,13 +395,8 @@ class TestRun:
         config = ProfileExtractorConfig(
             extractor_name="test_extractor",
             profile_content_definition_prompt="Extract user preferences",
-            extraction_window_stride_override=1,
         )
 
-        request_context.storage.get_operation_state_with_new_request_interaction.return_value = (
-            {},
-            sample_request_interaction_models,
-        )
         request_context.storage.get_last_k_interactions_grouped.return_value = (
             sample_request_interaction_models,
             [],
@@ -466,7 +415,7 @@ class TestRun:
             extractor.run()
 
         # Verify storage was queried for interactions
-        request_context.storage.get_operation_state_with_new_request_interaction.assert_called()
+        request_context.storage.get_last_k_interactions_grouped.assert_called()
 
     def test_run_returns_empty_when_no_interactions(
         self,
@@ -478,12 +427,11 @@ class TestRun:
         config = ProfileExtractorConfig(
             extractor_name="test_extractor",
             profile_content_definition_prompt="Extract user preferences",
-            extraction_window_stride_override=10,  # High stride
         )
 
         # Return empty interactions
-        request_context.storage.get_operation_state_with_new_request_interaction.return_value = (
-            {},
+        request_context.storage.get_last_k_interactions_grouped.return_value = (
+            [],
             [],
         )
 
@@ -510,11 +458,6 @@ class TestRun:
         config = ProfileExtractorConfig(
             extractor_name="test_extractor",
             profile_content_definition_prompt="Extract user preferences",
-            extraction_window_stride_override=1,
-        )
-        request_context.storage.get_operation_state_with_new_request_interaction.return_value = (
-            {},
-            sample_request_interaction_models,
         )
         request_context.storage.get_last_k_interactions_grouped.return_value = (
             sample_request_interaction_models,
@@ -549,13 +492,8 @@ class TestRun:
         config = ProfileExtractorConfig(
             extractor_name="test_extractor",
             profile_content_definition_prompt="Extract user preferences",
-            extraction_window_stride_override=1,
         )
 
-        request_context.storage.get_operation_state_with_new_request_interaction.return_value = (
-            {},
-            sample_request_interaction_models,
-        )
         request_context.storage.get_last_k_interactions_grouped.return_value = (
             sample_request_interaction_models,
             [],

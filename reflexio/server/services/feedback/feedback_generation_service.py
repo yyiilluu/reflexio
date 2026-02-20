@@ -307,6 +307,15 @@ class FeedbackGenerationService(
                 logger.info("Trigger feedback aggregation")
                 self._trigger_feedback_aggregation()
 
+    def _get_extractor_state_service_name(self) -> str:
+        """
+        Get the service name for stride bookmark lookups.
+
+        Returns:
+            str: "feedback_extractor" for OperationStateManager stride checks
+        """
+        return "feedback_extractor"
+
     def _get_service_name(self) -> str:
         """
         Get the name of the service for logging and operation state tracking.

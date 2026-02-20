@@ -214,7 +214,11 @@ class TestOperationStateKey:
 
 
 class TestGetInteractions:
-    """Tests for interaction collection logic (not user-scoped)."""
+    """Tests for interaction collection logic (not user-scoped).
+
+    Note: Stride checking is handled upstream by BaseGenerationService._filter_configs_by_stride()
+    before the extractor is created, so stride tests are at the service level.
+    """
 
     def test_passes_none_user_id_to_storage(
         self,
@@ -223,17 +227,12 @@ class TestGetInteractions:
         service_config,
         sample_request_interaction_models,
     ):
-        """Test that None is passed as user_id to get interactions from all users."""
+        """Test that user_id from service_config is passed to get_last_k_interactions_grouped."""
         config = AgentFeedbackConfig(
             feedback_name="quality_feedback",
             feedback_definition_prompt="Evaluate agent quality",
-            extraction_window_stride_override=1,
         )
 
-        request_context.storage.get_operation_state_with_new_request_interaction.return_value = (
-            {},
-            sample_request_interaction_models,
-        )
         request_context.storage.get_last_k_interactions_grouped.return_value = (
             sample_request_interaction_models,
             [],
@@ -249,61 +248,25 @@ class TestGetInteractions:
 
         extractor._get_interactions()
 
-        # Verify user_id=None was passed to storage
-        call_args = (
-            request_context.storage.get_operation_state_with_new_request_interaction.call_args
-        )
-        assert call_args[0][1] is None  # user_id is second positional arg
+        # Verify user_id from service_config was passed to storage
+        call_kwargs = request_context.storage.get_last_k_interactions_grouped.call_args[
+            1
+        ]
+        assert call_kwargs["user_id"] is None  # service_config.user_id is None
 
-    def test_returns_none_when_stride_not_met(
+    def test_returns_interactions(
         self,
         request_context,
         mock_llm_client,
         service_config,
         sample_request_interaction_models,
     ):
-        """Test that None is returned when stride threshold is not met."""
+        """Test that interactions are returned from storage."""
         config = AgentFeedbackConfig(
             feedback_name="quality_feedback",
             feedback_definition_prompt="Evaluate agent quality",
-            extraction_window_stride_override=100,  # High stride
         )
 
-        request_context.storage.get_operation_state_with_new_request_interaction.return_value = (
-            {},
-            sample_request_interaction_models,  # Only 3 interactions
-        )
-
-        extractor = FeedbackExtractor(
-            request_context=request_context,
-            llm_client=mock_llm_client,
-            extractor_config=config,
-            service_config=service_config,
-            agent_context="Test agent",
-        )
-
-        result = extractor._get_interactions()
-
-        assert result is None
-
-    def test_returns_interactions_when_stride_met(
-        self,
-        request_context,
-        mock_llm_client,
-        service_config,
-        sample_request_interaction_models,
-    ):
-        """Test that interactions are returned when stride is met."""
-        config = AgentFeedbackConfig(
-            feedback_name="quality_feedback",
-            feedback_definition_prompt="Evaluate agent quality",
-            extraction_window_stride_override=3,  # Exactly 3 interactions
-        )
-
-        request_context.storage.get_operation_state_with_new_request_interaction.return_value = (
-            {},
-            sample_request_interaction_models,
-        )
         request_context.storage.get_last_k_interactions_grouped.return_value = (
             sample_request_interaction_models,
             [],
@@ -334,13 +297,8 @@ class TestGetInteractions:
             feedback_name="quality_feedback",
             feedback_definition_prompt="Evaluate agent quality",
             extraction_window_size_override=50,
-            extraction_window_stride_override=1,
         )
 
-        request_context.storage.get_operation_state_with_new_request_interaction.return_value = (
-            {},
-            sample_request_interaction_models,
-        )
         request_context.storage.get_last_k_interactions_grouped.return_value = (
             sample_request_interaction_models,
             [],
@@ -376,13 +334,8 @@ class TestGetInteractions:
             feedback_name="quality_feedback",
             feedback_definition_prompt="Evaluate quality",
             request_sources_enabled=None,  # Get all sources
-            extraction_window_stride_override=1,
         )
 
-        request_context.storage.get_operation_state_with_new_request_interaction.return_value = (
-            {},
-            sample_request_interaction_models,
-        )
         request_context.storage.get_last_k_interactions_grouped.return_value = (
             sample_request_interaction_models,
             [],
@@ -398,11 +351,11 @@ class TestGetInteractions:
 
         extractor._get_interactions()
 
-        # Verify source filter is None (get all sources)
-        call_args = (
-            request_context.storage.get_operation_state_with_new_request_interaction.call_args
-        )
-        assert call_args[0][2] is None  # source is third positional arg
+        # Verify sources filter is None (get all sources) in get_last_k_interactions_grouped
+        call_kwargs = request_context.storage.get_last_k_interactions_grouped.call_args[
+            1
+        ]
+        assert call_kwargs["sources"] is None
 
 
 # ===============================
@@ -463,13 +416,8 @@ class TestRun:
         config = AgentFeedbackConfig(
             feedback_name="quality_feedback",
             feedback_definition_prompt="Evaluate agent quality",
-            extraction_window_stride_override=1,
         )
 
-        request_context.storage.get_operation_state_with_new_request_interaction.return_value = (
-            {},
-            sample_request_interaction_models,
-        )
         request_context.storage.get_last_k_interactions_grouped.return_value = (
             sample_request_interaction_models,
             [],
@@ -487,10 +435,10 @@ class TestRun:
             extractor.run()
 
         # Verify storage was queried with user_id=None
-        call_args = (
-            request_context.storage.get_operation_state_with_new_request_interaction.call_args
-        )
-        assert call_args[0][1] is None
+        call_kwargs = request_context.storage.get_last_k_interactions_grouped.call_args[
+            1
+        ]
+        assert call_kwargs["user_id"] is None
 
     def test_run_returns_raw_feedback(
         self,
@@ -503,13 +451,8 @@ class TestRun:
         config = AgentFeedbackConfig(
             feedback_name="quality_feedback",
             feedback_definition_prompt="Evaluate agent quality",
-            extraction_window_stride_override=1,
         )
 
-        request_context.storage.get_operation_state_with_new_request_interaction.return_value = (
-            {},
-            sample_request_interaction_models,
-        )
         request_context.storage.get_last_k_interactions_grouped.return_value = (
             sample_request_interaction_models,
             [],
@@ -530,21 +473,20 @@ class TestRun:
         assert len(result) > 0
         assert all(isinstance(f, RawFeedback) for f in result)
 
-    def test_run_returns_empty_when_stride_not_met(
+    def test_run_returns_empty_when_no_interactions(
         self,
         request_context,
         mock_llm_client,
         service_config,
     ):
-        """Test that run() returns empty list when stride not met."""
+        """Test that run() returns empty list when no interactions available."""
         config = AgentFeedbackConfig(
             feedback_name="quality_feedback",
             feedback_definition_prompt="Evaluate agent quality",
-            extraction_window_stride_override=100,
         )
 
-        request_context.storage.get_operation_state_with_new_request_interaction.return_value = (
-            {},
+        request_context.storage.get_last_k_interactions_grouped.return_value = (
+            [],
             [],
         )
 
@@ -571,13 +513,8 @@ class TestRun:
         config = AgentFeedbackConfig(
             feedback_name="quality_feedback",
             feedback_definition_prompt="Evaluate agent quality",
-            extraction_window_stride_override=1,
         )
 
-        request_context.storage.get_operation_state_with_new_request_interaction.return_value = (
-            {},
-            sample_request_interaction_models,
-        )
         request_context.storage.get_last_k_interactions_grouped.return_value = (
             sample_request_interaction_models,
             [],

@@ -311,6 +311,15 @@ class ProfileGenerationService(
         self.service_config.is_incremental = True
         self.service_config.previously_extracted = list(previously_extracted)
 
+    def _get_extractor_state_service_name(self) -> str:
+        """
+        Get the service name for stride bookmark lookups.
+
+        Returns:
+            str: "profile_extractor" for OperationStateManager stride checks
+        """
+        return "profile_extractor"
+
     def _get_service_name(self) -> str:
         """
         Get the name of the service for logging and operation state tracking.

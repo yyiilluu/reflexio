@@ -36,6 +36,8 @@ class MockExtractorConfig:
     extractor_name: str
     request_sources_enabled: Optional[list[str]] = None
     manual_trigger: bool = False
+    extraction_window_size_override: Optional[int] = None
+    extraction_window_stride_override: Optional[int] = None
 
 
 @dataclass
@@ -50,6 +52,7 @@ class MockServiceConfig:
     extractor_names: Optional[list[str]] = None
     is_incremental: bool = False
     previously_extracted: list = field(default_factory=list)
+    auto_run: bool = True
 
 
 class MockExtractor:
@@ -370,6 +373,176 @@ class TestFilterExtractorConfigsByServiceConfig:
 
         # Both should pass since source is None (no filtering by source)
         assert len(result) == 2
+
+
+# ===============================
+# Test: _filter_configs_by_stride
+# ===============================
+
+
+class StrideEnabledService(ConcreteGenerationService):
+    """Concrete service with stride pre-filtering enabled."""
+
+    def _get_extractor_state_service_name(self):
+        return "test_extractor"
+
+
+class TestFilterConfigsByStride:
+    """Tests for the _filter_configs_by_stride method."""
+
+    def _make_request_interaction_models(self, n_interactions: int):
+        """Create mock RequestInteractionDataModel objects with n interactions."""
+        from reflexio_commons.api_schema.internal_schema import (
+            RequestInteractionDataModel,
+        )
+        from reflexio_commons.api_schema.service_schemas import Request
+
+        interactions = [
+            Interaction(
+                interaction_id=i,
+                user_id="test_user",
+                content=f"message {i}",
+                request_id="req1",
+                created_at=1000 + i,
+                role="user",
+            )
+            for i in range(n_interactions)
+        ]
+        request = Request(
+            request_id="req1",
+            user_id="test_user",
+            created_at=1000,
+            source="api",
+        )
+        return [
+            RequestInteractionDataModel(
+                request_group="req1",
+                request=request,
+                interactions=interactions,
+            )
+        ]
+
+    def test_returns_all_configs_when_no_service_name(
+        self, llm_client, request_context
+    ):
+        """Verify _filter_configs_by_stride returns all configs unchanged when
+        _get_extractor_state_service_name() returns None (e.g., AgentSuccessEvaluationService).
+        """
+        service = ConcreteGenerationService(
+            llm_client,
+            request_context,
+            extractor_configs=[
+                MockExtractorConfig(extractor_name="ext1"),
+                MockExtractorConfig(extractor_name="ext2"),
+            ],
+        )
+        service.service_config = MockServiceConfig()
+
+        configs = [
+            MockExtractorConfig(extractor_name="ext1"),
+            MockExtractorConfig(extractor_name="ext2"),
+        ]
+        result = service._filter_configs_by_stride(configs)
+        assert len(result) == 2
+        assert result is configs  # Same list object returned, no filtering
+
+    def test_returns_all_configs_when_auto_run_false(self, llm_client, request_context):
+        """Verify all configs pass when auto_run=False (rerun/manual mode)."""
+        service = StrideEnabledService(
+            llm_client,
+            request_context,
+            extractor_configs=[],
+        )
+        service.service_config = MockServiceConfig(auto_run=False)
+
+        configs = [
+            MockExtractorConfig(extractor_name="ext1"),
+            MockExtractorConfig(extractor_name="ext2"),
+        ]
+        result = service._filter_configs_by_stride(configs)
+        assert len(result) == 2
+        assert result is configs  # Same list object returned, no filtering
+
+    def _setup_stride_service(self, llm_client, request_context, n_new_interactions):
+        """Create a StrideEnabledService with mocked storage for stride tests.
+
+        Mocks storage and configurator before creating the service so that
+        self.storage in the service references the mock.
+        """
+        # Mock configurator and storage BEFORE creating service so __init__ picks them up
+        request_context.configurator = MagicMock()
+        request_context.configurator.get_config.return_value = None
+
+        mock_storage = MagicMock()
+        new_interactions = self._make_request_interaction_models(n_new_interactions)
+        mock_storage.get_operation_state_with_new_request_interaction = MagicMock(
+            return_value=({}, new_interactions)
+        )
+        request_context.storage = mock_storage
+
+        service = StrideEnabledService(
+            llm_client,
+            request_context,
+            extractor_configs=[],
+        )
+        return service
+
+    def test_filters_configs_when_stride_not_met(self, llm_client, request_context):
+        """Verify configs are dropped when new interaction count < stride."""
+        service = self._setup_stride_service(llm_client, request_context, 2)
+        service.service_config = MockServiceConfig(auto_run=True, source="api")
+
+        configs = [
+            MockExtractorConfig(extractor_name="ext1"),
+        ]
+        result = service._filter_configs_by_stride(configs)
+        assert len(result) == 0
+
+    def test_passes_configs_when_stride_met(self, llm_client, request_context):
+        """Verify configs pass through when new interaction count >= stride."""
+        service = self._setup_stride_service(llm_client, request_context, 6)
+        service.service_config = MockServiceConfig(auto_run=True, source="api")
+
+        configs = [
+            MockExtractorConfig(extractor_name="ext1"),
+        ]
+        result = service._filter_configs_by_stride(configs)
+        assert len(result) == 1
+        assert result[0].extractor_name == "ext1"
+
+    def test_handles_source_skip(self, llm_client, request_context):
+        """Verify configs that fail source filtering in stride check are skipped."""
+        service = self._setup_stride_service(llm_client, request_context, 10)
+        service.service_config = MockServiceConfig(auto_run=True, source="api")
+
+        # ext1 has sources_enabled=["mobile"] but triggering source is "api" -> should be skipped
+        # ext2 has no source restriction -> should pass stride check
+        configs = [
+            MockExtractorConfig(
+                extractor_name="ext1", request_sources_enabled=["mobile"]
+            ),
+            MockExtractorConfig(extractor_name="ext2"),
+        ]
+        result = service._filter_configs_by_stride(configs)
+        # ext1 skipped by source filter, ext2 passes stride
+        assert len(result) == 1
+        assert result[0].extractor_name == "ext2"
+
+    def test_uses_per_extractor_stride_override(self, llm_client, request_context):
+        """Verify per-extractor stride override is respected."""
+        service = self._setup_stride_service(llm_client, request_context, 3)
+        service.service_config = MockServiceConfig(auto_run=True, source="api")
+
+        # 3 new interactions: ext1 (stride=2 -> passes), ext2 (default stride=5 -> fails)
+        configs = [
+            MockExtractorConfig(
+                extractor_name="ext1", extraction_window_stride_override=2
+            ),
+            MockExtractorConfig(extractor_name="ext2"),
+        ]
+        result = service._filter_configs_by_stride(configs)
+        assert len(result) == 1
+        assert result[0].extractor_name == "ext1"
 
 
 # ===============================

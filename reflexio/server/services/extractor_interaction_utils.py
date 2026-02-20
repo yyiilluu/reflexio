@@ -10,6 +10,8 @@ from typing import Optional, TypeVar
 
 from reflexio_commons.api_schema.internal_schema import RequestInteractionDataModel
 
+from reflexio.server.services.extractor_config_utils import get_extractor_name
+
 
 logger = logging.getLogger(__name__)
 
@@ -103,19 +105,10 @@ def get_effective_source_filter(
     # Safety check: triggering_source should be in sources_enabled
     # (filter_extractor_configs should have already filtered this out)
     if triggering_source not in sources_enabled:
-        extractor_name = getattr(
-            extractor_config,
-            "extractor_name",
-            getattr(
-                extractor_config,
-                "feedback_name",
-                getattr(extractor_config, "evaluation_name", "unknown"),
-            ),
-        )
         logger.warning(
             "Skipping extractor '%s' - triggering_source '%s' not in sources_enabled %s "
             "(this should have been filtered earlier)",
-            extractor_name,
+            get_extractor_name(extractor_config),
             triggering_source,
             sources_enabled,
         )

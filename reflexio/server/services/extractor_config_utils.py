@@ -10,6 +10,25 @@ logger = logging.getLogger(__name__)
 TExtractorConfig = TypeVar("TExtractorConfig")
 
 
+def get_extractor_name(config: TExtractorConfig) -> str:
+    """
+    Get the display name for an extractor config.
+
+    Checks extractor_name, feedback_name, and evaluation_name attributes in order.
+
+    Args:
+        config: Extractor configuration object (e.g., ProfileExtractorConfig, AgentFeedbackConfig, AgentSuccessConfig)
+
+    Returns:
+        str: The extractor name, or "unknown" if none found
+    """
+    return getattr(
+        config,
+        "extractor_name",
+        getattr(config, "feedback_name", getattr(config, "evaluation_name", "unknown")),
+    )
+
+
 def filter_extractor_configs(
     extractor_configs: list[TExtractorConfig],
     source: Optional[str] = None,
@@ -43,18 +62,9 @@ def filter_extractor_configs(
             sources_enabled = config.request_sources_enabled
             # Skip if source filtering applies and source is not in enabled list
             if sources_enabled and source and source not in sources_enabled:
-                extractor_name = getattr(
-                    config,
-                    "extractor_name",
-                    getattr(
-                        config,
-                        "feedback_name",
-                        getattr(config, "evaluation_name", "unknown"),
-                    ),
-                )
                 logger.debug(
                     "Skipping extractor '%s' - source '%s' not in enabled sources %s",
-                    extractor_name,
+                    get_extractor_name(config),
                     source,
                     sources_enabled,
                 )
@@ -63,34 +73,19 @@ def filter_extractor_configs(
         # Check manual_trigger: skip if manual_trigger=True and allow_manual_trigger=False
         manual_trigger = getattr(config, "manual_trigger", False)
         if manual_trigger and not allow_manual_trigger:
-            extractor_name = getattr(
-                config,
-                "extractor_name",
-                getattr(
-                    config,
-                    "feedback_name",
-                    getattr(config, "evaluation_name", "unknown"),
-                ),
-            )
             logger.debug(
                 "Skipping extractor '%s' - manual_trigger=True and allow_manual_trigger=False",
-                extractor_name,
+                get_extractor_name(config),
             )
             continue
 
         # Filter by extractor_names if specified
         if extractor_names:
-            extractor_name = getattr(
-                config,
-                "extractor_name",
-                getattr(
-                    config, "feedback_name", getattr(config, "evaluation_name", None)
-                ),
-            )
-            if extractor_name and extractor_name not in extractor_names:
+            name = get_extractor_name(config)
+            if name and name not in extractor_names:
                 logger.debug(
                     "Skipping extractor '%s' - not in specified extractor_names %s",
-                    extractor_name,
+                    name,
                     extractor_names,
                 )
                 continue
