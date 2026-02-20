@@ -249,6 +249,10 @@ class TestGetInteractions:
             {},
             sample_request_interaction_models,
         )
+        request_context.storage.get_last_k_interactions_grouped.return_value = (
+            sample_request_interaction_models,
+            [],
+        )
 
         extractor = ProfileExtractor(
             request_context=request_context,
@@ -355,6 +359,10 @@ class TestGetInteractions:
             {},
             sample_request_interaction_models,
         )
+        request_context.storage.get_last_k_interactions_grouped.return_value = (
+            sample_request_interaction_models,
+            [],
+        )
 
         extractor = ProfileExtractor(
             request_context=request_context,
@@ -440,6 +448,10 @@ class TestRun:
             {},
             sample_request_interaction_models,
         )
+        request_context.storage.get_last_k_interactions_grouped.return_value = (
+            sample_request_interaction_models,
+            [],
+        )
 
         extractor = ProfileExtractor(
             request_context=request_context,
@@ -504,6 +516,10 @@ class TestRun:
             {},
             sample_request_interaction_models,
         )
+        request_context.storage.get_last_k_interactions_grouped.return_value = (
+            sample_request_interaction_models,
+            [],
+        )
         request_context.storage.get_user_profile.return_value = []
 
         extractor = ProfileExtractor(
@@ -539,6 +555,10 @@ class TestRun:
         request_context.storage.get_operation_state_with_new_request_interaction.return_value = (
             {},
             sample_request_interaction_models,
+        )
+        request_context.storage.get_last_k_interactions_grouped.return_value = (
+            sample_request_interaction_models,
+            [],
         )
         request_context.storage.get_user_profile.return_value = []
 

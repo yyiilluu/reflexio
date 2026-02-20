@@ -16,15 +16,20 @@ logger = logging.getLogger(__name__)
 TExtractorConfig = TypeVar("TExtractorConfig")
 
 
+DEFAULT_WINDOW_SIZE = 10
+DEFAULT_STRIDE_SIZE = 5
+
+
 def get_extractor_window_params(
     extractor_config: TExtractorConfig,
     global_window_size: Optional[int],
     global_stride: Optional[int],
-) -> tuple[Optional[int], Optional[int]]:
+) -> tuple[int, int]:
     """
     Get effective window size and stride for a specific extractor.
 
-    Uses extractor's override values if set, otherwise falls back to global values.
+    Uses extractor's override values if set, otherwise falls back to global values,
+    then to defaults (window=10, stride=5).
 
     Args:
         extractor_config: Extractor configuration object
@@ -34,14 +39,26 @@ def get_extractor_window_params(
     Returns:
         Tuple of (window_size, stride_size) for this extractor
     """
-    # Get override values, fall back to global
+    # Get override values, fall back to global, then to defaults
     window_override = getattr(extractor_config, "extraction_window_size_override", None)
     stride_override = getattr(
         extractor_config, "extraction_window_stride_override", None
     )
 
-    window_size = window_override if window_override is not None else global_window_size
-    stride_size = stride_override if stride_override is not None else global_stride
+    window_size = (
+        window_override
+        if window_override is not None
+        else (
+            global_window_size
+            if global_window_size is not None
+            else DEFAULT_WINDOW_SIZE
+        )
+    )
+    stride_size = (
+        stride_override
+        if stride_override is not None
+        else (global_stride if global_stride is not None else DEFAULT_STRIDE_SIZE)
+    )
 
     return window_size, stride_size
 

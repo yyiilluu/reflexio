@@ -174,32 +174,15 @@ class FeedbackExtractor:
         )
 
         # Get window interactions with time range filter
-        if window_size and window_size > 0:
-            request_groups, _ = storage.get_last_k_interactions_grouped(
-                user_id=self.service_config.user_id,  # Per-user feedback extraction
-                k=window_size,
-                sources=effective_source,
-                start_time=self.service_config.rerun_start_time,
-                end_time=self.service_config.rerun_end_time,
-                agent_version=rerun_agent_version,
-            )
-            return request_groups
-        else:
-            # No window configured - for auto_run, return new interactions from stride check
-            if self.service_config.auto_run:
-                # new_interactions was set earlier during stride check
-                return new_interactions
-            # For non-auto_run without window, we still need to fetch interactions
-            # Use a large limit to get all relevant interactions within time range
-            request_groups, _ = storage.get_last_k_interactions_grouped(
-                user_id=self.service_config.user_id,
-                k=1000,  # Reasonable limit for non-windowed rerun
-                sources=effective_source,
-                start_time=self.service_config.rerun_start_time,
-                end_time=self.service_config.rerun_end_time,
-                agent_version=rerun_agent_version,
-            )
-            return request_groups
+        request_groups, _ = storage.get_last_k_interactions_grouped(
+            user_id=self.service_config.user_id,
+            k=window_size,
+            sources=effective_source,
+            start_time=self.service_config.rerun_start_time,
+            end_time=self.service_config.rerun_end_time,
+            agent_version=rerun_agent_version,
+        )
+        return request_groups
 
     def _update_operation_state(
         self, request_interaction_data_models: list[RequestInteractionDataModel]

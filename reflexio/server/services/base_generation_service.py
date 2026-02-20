@@ -600,7 +600,7 @@ class BaseGenerationService(
             window_size, _ = get_extractor_window_params(
                 config, global_window_size, global_stride
             )
-            fetch_k = window_size if window_size and window_size > 0 else 1000
+            fetch_k = window_size
             request_groups, _ = self.storage.get_last_k_interactions_grouped(
                 user_id=getattr(self.service_config, "user_id", None),
                 k=fetch_k,

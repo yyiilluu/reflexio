@@ -234,6 +234,10 @@ class TestGetInteractions:
             {},
             sample_request_interaction_models,
         )
+        request_context.storage.get_last_k_interactions_grouped.return_value = (
+            sample_request_interaction_models,
+            [],
+        )
 
         extractor = FeedbackExtractor(
             request_context=request_context,
@@ -299,6 +303,10 @@ class TestGetInteractions:
         request_context.storage.get_operation_state_with_new_request_interaction.return_value = (
             {},
             sample_request_interaction_models,
+        )
+        request_context.storage.get_last_k_interactions_grouped.return_value = (
+            sample_request_interaction_models,
+            [],
         )
 
         extractor = FeedbackExtractor(
@@ -374,6 +382,10 @@ class TestGetInteractions:
         request_context.storage.get_operation_state_with_new_request_interaction.return_value = (
             {},
             sample_request_interaction_models,
+        )
+        request_context.storage.get_last_k_interactions_grouped.return_value = (
+            sample_request_interaction_models,
+            [],
         )
 
         extractor = FeedbackExtractor(
@@ -458,6 +470,10 @@ class TestRun:
             {},
             sample_request_interaction_models,
         )
+        request_context.storage.get_last_k_interactions_grouped.return_value = (
+            sample_request_interaction_models,
+            [],
+        )
 
         extractor = FeedbackExtractor(
             request_context=request_context,
@@ -493,6 +509,10 @@ class TestRun:
         request_context.storage.get_operation_state_with_new_request_interaction.return_value = (
             {},
             sample_request_interaction_models,
+        )
+        request_context.storage.get_last_k_interactions_grouped.return_value = (
+            sample_request_interaction_models,
+            [],
         )
 
         extractor = FeedbackExtractor(
@@ -557,6 +577,10 @@ class TestRun:
         request_context.storage.get_operation_state_with_new_request_interaction.return_value = (
             {},
             sample_request_interaction_models,
+        )
+        request_context.storage.get_last_k_interactions_grouped.return_value = (
+            sample_request_interaction_models,
+            [],
         )
 
         extractor = FeedbackExtractor(

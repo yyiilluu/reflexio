@@ -53,6 +53,7 @@ def reflexio_with_config(temp_storage, ensure_mock_env):
         context_prompt="Extract user preferences",
         profile_content_definition_prompt="User likes and dislikes",
         metadata_definition_prompt="Metadata about preferences",
+        extraction_window_stride_override=1,
     )
     reflexio.request_context.configurator.set_config_by_name(
         "profile_extractor_configs", [profile_extractor_config]
