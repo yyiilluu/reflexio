@@ -81,7 +81,14 @@ export interface OpenRouterConfig {
   api_key: string
 }
 
+export interface CustomEndpointConfig {
+  model: string
+  api_key: string
+  api_base: string
+}
+
 export interface APIKeyConfig {
+  custom_endpoint?: CustomEndpointConfig
   openai?: OpenAIConfig
   anthropic?: AnthropicConfig
   openrouter?: OpenRouterConfig

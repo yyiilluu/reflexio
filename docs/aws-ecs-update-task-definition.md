@@ -95,7 +95,8 @@ cat > /tmp/task-definition.json << EOF
                 {"name": "OPENAI_API_KEY", "valueFrom": "${SECRET_ARN}:OPENAI_API_KEY::"},
                 {"name": "ANTHROPIC_API_KEY", "valueFrom": "${SECRET_ARN}:ANTHROPIC_API_KEY::"},
                 {"name": "LOGIN_SUPABASE_URL", "valueFrom": "${SECRET_ARN}:LOGIN_SUPABASE_URL::"},
-                {"name": "LOGIN_SUPABASE_KEY", "valueFrom": "${SECRET_ARN}:LOGIN_SUPABASE_KEY::"}
+                {"name": "LOGIN_SUPABASE_KEY", "valueFrom": "${SECRET_ARN}:LOGIN_SUPABASE_KEY::"},
+                {"name": "OPENROUTER_API_KEY", "valueFrom": "${SECRET_ARN}:OPENROUTER_API_KEY::"}
             ],
             "logConfiguration": {
                 "logDriver": "awslogs",

@@ -11,6 +11,7 @@ import { FieldLabel } from "../FieldLabel"
 import { PasswordInput } from "../PasswordInput"
 import type {
   Config,
+  CustomEndpointConfig,
   OpenAIConfig,
   AzureOpenAIConfig,
   AnthropicConfig,
@@ -22,6 +23,7 @@ interface AdvancedSettingsSectionProps {
   config: Config
   openaiMode: "direct" | "azure"
   onOpenAIModeChange: (mode: "direct" | "azure") => void
+  onUpdateCustomEndpoint: (updates: Partial<CustomEndpointConfig>) => void
   onUpdateOpenAI: (updates: Partial<OpenAIConfig>) => void
   onUpdateAzureOpenAI: (updates: Partial<AzureOpenAIConfig>) => void
   onUpdateAnthropic: (updates: Partial<AnthropicConfig>) => void
@@ -33,6 +35,7 @@ export function AdvancedSettingsSection({
   config,
   openaiMode,
   onOpenAIModeChange,
+  onUpdateCustomEndpoint,
   onUpdateOpenAI,
   onUpdateAzureOpenAI,
   onUpdateAnthropic,
@@ -42,6 +45,7 @@ export function AdvancedSettingsSection({
   const [expanded, setExpanded] = useState(false)
 
   const hasConfig = !!(
+    config.api_key_config?.custom_endpoint?.api_key ||
     config.api_key_config?.openai?.api_key ||
     config.api_key_config?.openai?.azure_config?.api_key ||
     config.api_key_config?.anthropic?.api_key ||
@@ -86,6 +90,54 @@ export function AdvancedSettingsSection({
 
       {expanded && (
         <CardContent className="space-y-6 pt-0">
+          {/* Custom Endpoint Configuration */}
+          <div className="p-5 border rounded-lg space-y-4 bg-muted/30">
+            <div className="flex items-center gap-2">
+              <div className="h-7 w-7 rounded-lg bg-gradient-to-br from-violet-500 to-fuchsia-500 flex items-center justify-center">
+                <span className="text-white text-xs font-bold">CE</span>
+              </div>
+              <span className="text-sm font-semibold text-slate-800">Custom Endpoint</span>
+            </div>
+            <p className="text-xs text-slate-500">
+              Connect to any OpenAI-compatible endpoint (e.g., vLLM, LiteLLM proxy, Ollama). When configured, this takes priority over all other providers for LLM completion calls.
+            </p>
+            <div className="grid gap-4 sm:grid-cols-3">
+              <div>
+                <FieldLabel>Model Name</FieldLabel>
+                <Input
+                  type="text"
+                  value={config.api_key_config?.custom_endpoint?.model || ""}
+                  onChange={(e) => onUpdateCustomEndpoint({ model: e.target.value })}
+                  placeholder="e.g., openai/mistral"
+                  className="h-10"
+                />
+                <p className="text-xs text-slate-500 mt-1">Model identifier passed to LiteLLM</p>
+              </div>
+              <div>
+                <FieldLabel>Endpoint URL</FieldLabel>
+                <Input
+                  type="text"
+                  value={config.api_key_config?.custom_endpoint?.api_base || ""}
+                  onChange={(e) => onUpdateCustomEndpoint({ api_base: e.target.value })}
+                  placeholder="http://localhost:8000/v1"
+                  className="h-10"
+                />
+                <p className="text-xs text-slate-500 mt-1">Base URL of the API</p>
+              </div>
+              <div>
+                <FieldLabel>API Key</FieldLabel>
+                <PasswordInput
+                  value={config.api_key_config?.custom_endpoint?.api_key || ""}
+                  onChange={(value) => onUpdateCustomEndpoint({ api_key: value })}
+                  placeholder="API key (if required)"
+                />
+                <p className="text-xs text-slate-500 mt-1">Authentication key for the endpoint</p>
+              </div>
+            </div>
+          </div>
+
+          <Separator />
+
           {/* OpenAI Configuration */}
           <div className="p-5 border rounded-lg space-y-4 bg-muted/30">
             <div className="flex items-center gap-2">

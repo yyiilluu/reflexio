@@ -450,7 +450,7 @@ class FeedbackGenerationService(
     def _get_rerun_user_ids(self, request: RerunFeedbackGenerationRequest) -> list[str]:
         """Get user IDs to process. Extractors collect their own data.
 
-        Identifies unique user_ids with interactions matching the filters.
+        Identifies unique user_ids with matching requests via storage-level filtering.
 
         Args:
             request: RerunFeedbackGenerationRequest with optional time and source filters
@@ -458,31 +458,15 @@ class FeedbackGenerationService(
         Returns:
             List of user IDs to process
         """
-        requests_dict = self.storage.get_request_groups(
-            user_id=None,  # Get for all users
+        return self.storage.get_rerun_user_ids(
+            user_id=None,
             start_time=(
                 int(request.start_time.timestamp()) if request.start_time else None
             ),
             end_time=(int(request.end_time.timestamp()) if request.end_time else None),
-            top_k=None,
+            source=request.source,
+            agent_version=request.agent_version,
         )
-
-        # Get unique user_ids - extractors will collect their own data
-        user_ids: set[str] = set()
-        for request_group_requests in requests_dict.values():
-            for rig in request_group_requests:
-                # Apply source filter if provided
-                if request.source and rig.request.source != request.source:
-                    continue
-                # Apply agent_version filter if provided
-                if (
-                    request.agent_version
-                    and rig.request.agent_version != request.agent_version
-                ):
-                    continue
-                user_ids.add(rig.request.user_id)
-
-        return list(user_ids)
 
     def _build_rerun_request_params(
         self, request: RerunFeedbackGenerationRequest

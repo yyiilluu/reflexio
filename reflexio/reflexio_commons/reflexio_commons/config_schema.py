@@ -76,14 +76,30 @@ class GeminiConfig(BaseModel):
     api_key: str
 
 
+class CustomEndpointConfig(BaseModel):
+    """Custom OpenAI-compatible endpoint configuration.
+
+    Args:
+        model (str): Model name to use (e.g., 'openai/mistral', 'mistral'). Passed as-is to LiteLLM.
+        api_key (str): API key for the custom endpoint.
+        api_base (str): Base URL of the custom endpoint (e.g., 'http://localhost:8000/v1').
+    """
+
+    model: str
+    api_key: str
+    api_base: str
+
+
 class APIKeyConfig(BaseModel):
     """
     API key configuration for LLM providers.
 
-    Supports OpenAI (direct and Azure), Anthropic, OpenRouter, and Google Gemini API keys.
-    These keys are used by the LiteLLM client for multi-provider support.
+    Supports OpenAI (direct and Azure), Anthropic, OpenRouter, Google Gemini, and custom
+    OpenAI-compatible endpoints. When custom_endpoint is configured with non-empty fields,
+    it takes priority over all other providers for LLM completion calls (but not embeddings).
     """
 
+    custom_endpoint: Optional[CustomEndpointConfig] = None
     openai: Optional[OpenAIConfig] = None
     anthropic: Optional[AnthropicConfig] = None
     openrouter: Optional[OpenRouterConfig] = None

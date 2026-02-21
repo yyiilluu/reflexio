@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo, useEffect } from "react"
+import { useState, useMemo, useEffect, useRef } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
@@ -31,6 +31,7 @@ import {
   type Interaction,
   type RequestData,
   type RequestGroup,
+  type GetRequestsRequest,
   getRequests,
   deleteInteraction,
   deleteRequest,
@@ -467,11 +468,34 @@ function RequestGroup({ groupData, onDeleteRequest, onDeleteInteraction, onDelet
   )
 }
 
+// Merge new request groups into existing ones (append requests to existing groups, add new groups)
+const mergeRequestGroups = (existing: RequestGroup[], incoming: RequestGroup[]): RequestGroup[] => {
+  const merged = [...existing]
+  for (const incomingGroup of incoming) {
+    const existingGroup = merged.find((g) => g.request_group === incomingGroup.request_group)
+    if (existingGroup) {
+      // Append new requests that aren't already present
+      const existingIds = new Set(existingGroup.requests.map((r) => r.request.request_id))
+      const newRequests = incomingGroup.requests.filter((r) => !existingIds.has(r.request.request_id))
+      existingGroup.requests = [...existingGroup.requests, ...newRequests]
+    } else {
+      merged.push(incomingGroup)
+    }
+  }
+  return merged
+}
+
 export default function InteractionsPage() {
   // State for API data
   const [requestGroups, setRequestGroups] = useState<RequestGroup[]>([])
   const [loading, setLoading] = useState<boolean>(false)
   const [error, setError] = useState<string>("")
+
+  // Pagination state
+  const [offset, setOffset] = useState<number>(0)
+  const [hasMore, setHasMore] = useState<boolean>(false)
+  const [loadingMore, setLoadingMore] = useState<boolean>(false)
+  const fetchRequestSeqRef = useRef(0)
 
   // Filter state
   const [userId, setUserId] = useState<string>("")
@@ -487,13 +511,19 @@ export default function InteractionsPage() {
   const [deleteError, setDeleteError] = useState<string>("")
 
   // Fetch request groups from API
-  const fetchRequestGroups = async (searchUserId: string, limit: number) => {
-    setLoading(true)
+  const fetchRequestGroups = async (searchUserId: string, limit: number, pageOffset: number = 0) => {
+    const fetchSeq = ++fetchRequestSeqRef.current
+    if (pageOffset === 0) {
+      setLoading(true)
+    } else {
+      setLoadingMore(true)
+    }
     setError("")
 
     try {
-      const requestParams: any = {
+      const requestParams: GetRequestsRequest = {
         top_k: limit,
+        offset: pageOffset,
       }
 
       // Only add user_id if it's provided
@@ -502,26 +532,57 @@ export default function InteractionsPage() {
       }
 
       const response = await getRequests(requestParams)
+      if (fetchSeq !== fetchRequestSeqRef.current) {
+        return
+      }
 
       if (response.success) {
-        setRequestGroups(response.request_groups)
+        if (pageOffset === 0) {
+          setRequestGroups(response.request_groups)
+        } else {
+          setRequestGroups((prev) => mergeRequestGroups(prev, response.request_groups))
+        }
+        setHasMore(response.has_more)
         setError("")
       } else {
         setError(response.msg || "Failed to fetch requests")
-        setRequestGroups([])
+        if (pageOffset === 0) {
+          setRequestGroups([])
+          setHasMore(false)
+        }
       }
     } catch (err) {
+      if (fetchSeq !== fetchRequestSeqRef.current) {
+        return
+      }
       setError(err instanceof Error ? err.message : "An error occurred while fetching requests")
-      setRequestGroups([])
+      if (pageOffset === 0) {
+        setRequestGroups([])
+        setHasMore(false)
+      }
     } finally {
-      setLoading(false)
+      if (fetchSeq === fetchRequestSeqRef.current) {
+        setLoading(false)
+        setLoadingMore(false)
+      }
     }
   }
 
-  // Debounced search effect - auto-fetch when userId or topK changes
+  // Handle "Load More" click
+  const handleLoadMore = () => {
+    const newOffset = offset + topK
+    setOffset(newOffset)
+    fetchRequestGroups(userId, topK, newOffset)
+  }
+
+  // Debounced search effect - auto-fetch when userId or topK changes (reset pagination)
   useEffect(() => {
+    setOffset(0)
+    // Invalidate in-flight requests from the previous filter state.
+    fetchRequestSeqRef.current += 1
+    setHasMore(false)
     const timer = setTimeout(() => {
-      fetchRequestGroups(userId, topK)
+      fetchRequestGroups(userId, topK, 0)
     }, 1000)
 
     return () => clearTimeout(timer)
@@ -555,8 +616,9 @@ export default function InteractionsPage() {
       })
 
       if (response.success) {
-        // Refresh data
-        await fetchRequestGroups(userId, topK)
+        // Refresh data (reset pagination)
+        setOffset(0)
+        await fetchRequestGroups(userId, topK, 0)
         setRequestToDelete(null)
       } else {
         setDeleteError(response.message || "Failed to delete request")
@@ -581,8 +643,9 @@ export default function InteractionsPage() {
       })
 
       if (response.success) {
-        // Refresh data
-        await fetchRequestGroups(userId, topK)
+        // Refresh data (reset pagination)
+        setOffset(0)
+        await fetchRequestGroups(userId, topK, 0)
         setInteractionToDelete(null)
       } else {
         setDeleteError(response.message || "Failed to delete interaction")
@@ -608,8 +671,9 @@ export default function InteractionsPage() {
       })
 
       if (response.success) {
-        // Refresh data
-        await fetchRequestGroups(userId, topK)
+        // Refresh data (reset pagination)
+        setOffset(0)
+        await fetchRequestGroups(userId, topK, 0)
         setRequestGroupToDelete(null)
       } else {
         setDeleteError(response.message || "Failed to delete request group")
@@ -915,6 +979,25 @@ export default function InteractionsPage() {
                   onDeleteGroup={handleDeleteRequestGroup}
                 />
               ))}
+              {hasMore && (
+                <div className="flex justify-center pt-4">
+                  <Button
+                    variant="outline"
+                    onClick={handleLoadMore}
+                    disabled={loadingMore}
+                    className="border-slate-200 text-slate-600 hover:bg-slate-50"
+                  >
+                    {loadingMore ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-2 border-transparent border-t-slate-500 border-r-slate-500 mr-2" />
+                        Loading...
+                      </>
+                    ) : (
+                      "Load More"
+                    )}
+                  </Button>
+                </div>
+              )}
             </div>
           )}
         </div>

@@ -8,6 +8,7 @@ from reflexio_commons.api_schema.service_schemas import (
     DeleteUserProfileRequest,
     DeleteUserInteractionRequest,
     Interaction,
+    Request,
     ProfileChangeLog,
     NEVER_EXPIRES_TIMESTAMP,
 )
@@ -124,6 +125,52 @@ def test_get_all_interactions():
         interactions = sorted(interactions, key=lambda x: x.interaction_id)
         assert interactions[0].content == "I like sushi"
         assert interactions[1].content == "I like pizza"
+
+
+def test_get_rerun_user_ids_with_filters():
+    with tempfile.TemporaryDirectory() as temp_dir:
+        storage = LocalJsonStorage(org_id="0", base_dir=temp_dir)
+        now = int(datetime.now(timezone.utc).timestamp())
+
+        storage.add_request(
+            Request(
+                request_id="req1",
+                user_id="user1",
+                created_at=now - 30,
+                source="api",
+                agent_version="v1",
+                request_group="group1",
+            )
+        )
+        storage.add_request(
+            Request(
+                request_id="req2",
+                user_id="user1",
+                created_at=now - 20,
+                source="api",
+                agent_version="v1",
+                request_group="group1",
+            )
+        )
+        storage.add_request(
+            Request(
+                request_id="req3",
+                user_id="user2",
+                created_at=now - 10,
+                source="web",
+                agent_version="v1",
+                request_group="group2",
+            )
+        )
+
+        result = storage.get_rerun_user_ids(
+            start_time=now - 40,
+            end_time=now - 5,
+            source="api",
+            agent_version="v1",
+        )
+
+        assert result == ["user1"]
 
 
 def test_search_user_profile():

@@ -1,0 +1,49 @@
+# =============================================================================
+# Update Dockerfile: Fast rebuild for backend/config code changes only
+# Skips frontend build, Node.js install, and Python dependency install
+# =============================================================================
+#
+# Prerequisites:
+#   docker build -f Dockerfile.base -t agenticmem:latest .
+#
+# Usage:
+#   docker build -f Dockerfile.update -t agenticmem:latest .
+#
+# What this re-copies:
+#   - reflexio_commons (shared schemas)
+#   - FastAPI backend code + configs + prompts
+#   - Scripts, utils, hooks, libs
+#   - Supabase migrations
+#   - supervisord config
+#
+# What this keeps from base (not rebuilt):
+#   - Python dependencies (requirements.txt)
+#   - Node.js runtime
+#   - Next.js frontend build + node_modules
+#
+# If you changed frontend code or Python dependencies, rebuild with Dockerfile.base
+# =============================================================================
+
+FROM agenticmem:latest
+
+WORKDIR /app
+
+# Re-copy shared schemas (editable install already points here)
+COPY reflexio/reflexio_commons ./reflexio/reflexio_commons
+
+# Re-copy backend code — each directory individually to preserve website/ from base
+COPY reflexio/__init__.py ./reflexio/__init__.py
+COPY reflexio/server ./reflexio/server
+COPY reflexio/scripts ./reflexio/scripts
+COPY reflexio/utils ./reflexio/utils
+COPY reflexio/hooks ./reflexio/hooks
+COPY reflexio/reflexio_lib ./reflexio/reflexio_lib
+COPY reflexio/reflexio_client ./reflexio/reflexio_client
+COPY reflexio/data ./reflexio/data
+COPY reflexio/public_docs ./reflexio/public_docs
+
+# Re-copy Supabase migrations
+COPY supabase/ ./supabase/
+
+# Re-copy supervisord config
+COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf

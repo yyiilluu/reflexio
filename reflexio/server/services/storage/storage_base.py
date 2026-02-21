@@ -274,19 +274,45 @@ class BaseStorage(ABC):
         start_time: Optional[int] = None,
         end_time: Optional[int] = None,
         top_k: Optional[int] = 30,
+        offset: int = 0,
     ) -> dict[str, list[RequestInteractionDataModel]]:
         """
         Get requests with their associated interactions, grouped by request_group.
 
         Args:
-            user_id (str, optional): User ID to filter requests. If None, returns top_k request groups across all users.
+            user_id (str, optional): User ID to filter requests.
             request_id (str, optional): Specific request ID to retrieve
             start_time (int, optional): Start timestamp for filtering
             end_time (int, optional): End timestamp for filtering
-            top_k (int, optional): Maximum number of request_groups to return
+            top_k (int, optional): Maximum number of requests to return
+            offset (int): Number of requests to skip for pagination. Defaults to 0.
 
         Returns:
             dict[str, list[RequestInteractionDataModel]]: Dictionary mapping request_group to list of RequestInteractionDataModel objects
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_rerun_user_ids(
+        self,
+        user_id: Optional[str] = None,
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
+        source: Optional[str] = None,
+        agent_version: Optional[str] = None,
+    ) -> list[str]:
+        """
+        Get distinct user IDs that have matching requests for rerun workflows.
+
+        Args:
+            user_id (str, optional): Restrict to a specific user ID.
+            start_time (int, optional): Start timestamp for request filtering.
+            end_time (int, optional): End timestamp for request filtering.
+            source (str, optional): Restrict to requests from a source.
+            agent_version (str, optional): Restrict to requests with an agent version.
+
+        Returns:
+            list[str]: Distinct user IDs matching the filters.
         """
         raise NotImplementedError
 

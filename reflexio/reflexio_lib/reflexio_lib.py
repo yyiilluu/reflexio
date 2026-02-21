@@ -1132,6 +1132,7 @@ class Reflexio:
                     int(request.end_time.timestamp()) if request.end_time else None
                 ),
                 top_k=request.top_k,
+                offset=request.offset or 0,
             )
 
             # Transform the dictionary into RequestGroup objects
@@ -1149,7 +1150,16 @@ class Reflexio:
                     RequestGroup(request_group=group_name, requests=request_data_list)
                 )
 
-            return GetRequestsResponse(success=True, request_groups=request_groups)
+            # Determine has_more: count total requests returned across all groups
+            total_returned = sum(len(rg.requests) for rg in request_groups)
+            effective_limit = request.top_k or 100
+            has_more = total_returned >= effective_limit
+
+            return GetRequestsResponse(
+                success=True,
+                request_groups=request_groups,
+                has_more=has_more,
+            )
         except Exception as e:
             return GetRequestsResponse(success=False, request_groups=[], msg=str(e))
 

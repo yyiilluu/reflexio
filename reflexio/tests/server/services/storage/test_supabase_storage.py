@@ -1,7 +1,7 @@
 """Tests for SupabaseStorage implementation."""
 
 import pytest
-from unittest.mock import patch, Mock
+from unittest.mock import patch, Mock, call
 from datetime import datetime, timezone
 
 from reflexio_commons.api_schema.service_schemas import (
@@ -1118,15 +1118,8 @@ def test_get_requests_grouped_by_request_group(supabase_storage, mock_supabase_c
     storage = supabase_storage
     current_time = int(datetime.now(timezone.utc).timestamp())
 
-    # Mock responses for getting distinct request_groups
-    mock_supabase_client.table().select().eq().execute.return_value.data = [
-        {"request_group": "group1"},
-        {"request_group": "group1"},
-        {"request_group": "group2"},
-    ]
-
     # Mock response for getting requests with interactions
-    mock_supabase_client.table().select().in_().order().eq().execute.return_value.data = [
+    mock_supabase_client.table().select().order().eq().limit().execute.return_value.data = [
         {
             "request_id": "req1",
             "user_id": "user1",
@@ -1176,3 +1169,78 @@ def test_get_requests_grouped_by_request_group(supabase_storage, mock_supabase_c
     rig2 = results["group2"][0]
     assert rig2.request.request_id == "req2"
     assert len(rig2.interactions) == 0
+
+
+def test_get_rerun_user_ids_applies_filters(supabase_storage, mock_supabase_client):
+    """Test get_rerun_user_ids applies DB-side filters and deduplicates users."""
+    storage = supabase_storage
+
+    query = Mock()
+    query.select.return_value = query
+    query.order.return_value = query
+    query.limit.return_value = query
+    query.offset.return_value = query
+    query.eq.return_value = query
+    query.gte.return_value = query
+    query.lte.return_value = query
+
+    now = int(datetime.now(timezone.utc).timestamp())
+    start_time = now - 3600
+    end_time = now
+
+    response = Mock()
+    response.data = [{"user_id": "user1"}, {"user_id": "user1"}]
+    query.execute.return_value = response
+    mock_supabase_client.table.return_value = query
+
+    result = storage.get_rerun_user_ids(
+        user_id="user1",
+        start_time=start_time,
+        end_time=end_time,
+        source="api",
+        agent_version="v1",
+    )
+
+    assert result == ["user1"]
+    assert call("user_id", "user1") in query.eq.call_args_list
+    assert call("source", "api") in query.eq.call_args_list
+    assert call("agent_version", "v1") in query.eq.call_args_list
+    assert (
+        call(
+            "created_at",
+            datetime.fromtimestamp(start_time, tz=timezone.utc).isoformat(),
+        )
+        in query.gte.call_args_list
+    )
+    assert (
+        call(
+            "created_at", datetime.fromtimestamp(end_time, tz=timezone.utc).isoformat()
+        )
+        in query.lte.call_args_list
+    )
+
+
+def test_get_rerun_user_ids_paginates(supabase_storage, mock_supabase_client):
+    """Test get_rerun_user_ids paginates through requests beyond one page."""
+    storage = supabase_storage
+
+    query = Mock()
+    query.select.return_value = query
+    query.order.return_value = query
+    query.limit.return_value = query
+    query.offset.return_value = query
+    query.eq.return_value = query
+    query.gte.return_value = query
+    query.lte.return_value = query
+
+    response_page_1 = Mock()
+    response_page_1.data = [{"user_id": "user1"} for _ in range(1000)]
+    response_page_2 = Mock()
+    response_page_2.data = [{"user_id": "user2"}]
+    query.execute.side_effect = [response_page_1, response_page_2]
+    mock_supabase_client.table.return_value = query
+
+    result = storage.get_rerun_user_ids()
+
+    assert result == ["user1", "user2"]
+    assert query.offset.call_args_list == [call(0), call(1000)]

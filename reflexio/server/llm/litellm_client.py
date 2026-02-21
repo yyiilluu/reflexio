@@ -113,19 +113,26 @@ class LiteLLMClient:
         self._api_key, self._api_base, self._api_version = self._resolve_api_key()
 
     def _resolve_api_key(
-        self, model: Optional[str] = None
+        self, model: Optional[str] = None, for_embedding: bool = False
     ) -> tuple[Optional[str], Optional[str], Optional[str]]:
         """
         Resolve API key, base URL, and version from api_key_config based on model name.
 
         Args:
             model: Optional model name to resolve keys for. Defaults to self.config.model.
+            for_embedding: If True, skip custom endpoint override (embeddings use their own provider).
 
         Returns:
             tuple[Optional[str], Optional[str], Optional[str]]: (api_key, api_base, api_version)
         """
         if not self.config.api_key_config:
             return None, None, None
+
+        # Custom endpoint takes priority for non-embedding calls
+        if not for_embedding:
+            ce = self.config.api_key_config.custom_endpoint
+            if ce and ce.api_key and ce.api_base:
+                return ce.api_key, ce.api_base, None
 
         model_to_check = model or self.config.model
         model_lower = model_to_check.lower()
@@ -284,7 +291,9 @@ class LiteLLMClient:
                 params["dimensions"] = dimensions
 
             # Resolve and add API key configuration if provided (overrides env vars)
-            api_key, api_base, api_version = self._resolve_api_key(embedding_model)
+            api_key, api_base, api_version = self._resolve_api_key(
+                embedding_model, for_embedding=True
+            )
             if api_key:
                 params["api_key"] = api_key
             if api_base:
@@ -328,7 +337,9 @@ class LiteLLMClient:
                 params["dimensions"] = dimensions
 
             # Resolve and add API key configuration if provided (overrides env vars)
-            api_key, api_base, api_version = self._resolve_api_key(embedding_model)
+            api_key, api_base, api_version = self._resolve_api_key(
+                embedding_model, for_embedding=True
+            )
             if api_key:
                 params["api_key"] = api_key
             if api_base:
@@ -370,6 +381,16 @@ class LiteLLMClient:
 
         # Build request parameters — resolve the actual model first (kwargs may override config)
         actual_model = kwargs.pop("model", self.config.model)
+
+        # Custom endpoint overrides the model for all completion calls
+        ce = (
+            self.config.api_key_config.custom_endpoint
+            if self.config.api_key_config
+            else None
+        )
+        if ce and ce.api_key and ce.api_base:
+            actual_model = ce.model
+
         params = {
             "model": actual_model,
             "messages": messages,

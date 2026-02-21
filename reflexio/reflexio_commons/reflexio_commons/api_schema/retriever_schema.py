@@ -217,6 +217,7 @@ class GetRequestsRequest(BaseModel):
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
     top_k: Optional[int] = 30
+    offset: Optional[int] = 0
 
 
 class RequestData(BaseModel):
@@ -232,6 +233,7 @@ class RequestGroup(BaseModel):
 class GetRequestsResponse(BaseModel):
     success: bool
     request_groups: list[RequestGroup]
+    has_more: bool = False
     msg: Optional[str] = None
 
 

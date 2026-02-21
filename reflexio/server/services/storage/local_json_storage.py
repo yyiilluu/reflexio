@@ -821,16 +821,17 @@ class LocalJsonStorage(BaseStorage):
         start_time: Optional[int] = None,
         end_time: Optional[int] = None,
         top_k: Optional[int] = 30,
+        offset: int = 0,
     ) -> dict[str, list[RequestInteractionDataModel]]:
         """
         Get requests with their associated interactions, grouped by request_group.
 
         Args:
-            user_id (str, optional): User ID to filter requests. If None, returns top_k request groups across all users.
+            user_id (str, optional): User ID to filter requests.
             request_id (str, optional): Specific request ID to retrieve
             start_time (int, optional): Start timestamp for filtering
             end_time (int, optional): End timestamp for filtering
-            top_k (int, optional): Maximum number of request_groups to return
+            top_k (int, optional): Maximum number of requests to return
 
         Returns:
             dict[str, list[RequestInteractionDataModel]]: Dictionary mapping request_group to list of RequestInteractionDataModel objects
@@ -867,6 +868,10 @@ class LocalJsonStorage(BaseStorage):
         # Sort by created_at descending
         requests = sorted(requests, key=lambda x: x.created_at, reverse=True)
 
+        # Apply offset and limit pagination on requests
+        effective_limit = top_k or 100
+        requests = requests[offset : offset + effective_limit]
+
         # Group requests by request_group first
         groups_dict = {}
         for req in requests:
@@ -874,12 +879,6 @@ class LocalJsonStorage(BaseStorage):
             if group_name not in groups_dict:
                 groups_dict[group_name] = []
             groups_dict[group_name].append(req)
-
-        # Apply top_k limit to number of groups
-        if top_k and len(groups_dict) > top_k:
-            # Keep only the first top_k groups (by order of first request in group)
-            limited_groups = dict(list(groups_dict.items())[:top_k])
-            groups_dict = limited_groups
 
         # Get all interactions - if user_id is specified, filter by user, otherwise get all
         if user_id:
@@ -927,6 +926,52 @@ class LocalJsonStorage(BaseStorage):
                 )
 
         return grouped_results
+
+    def get_rerun_user_ids(
+        self,
+        user_id: Optional[str] = None,
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
+        source: Optional[str] = None,
+        agent_version: Optional[str] = None,
+    ) -> list[str]:
+        """
+        Get distinct user IDs that have matching requests for rerun workflows.
+
+        Args:
+            user_id (str, optional): Restrict to a specific user ID.
+            start_time (int, optional): Start timestamp for request filtering.
+            end_time (int, optional): End timestamp for request filtering.
+            source (str, optional): Restrict to requests from a source.
+            agent_version (str, optional): Restrict to requests with an agent version.
+
+        Returns:
+            list[str]: Distinct user IDs matching the filters.
+        """
+        with self._lock:
+            all_memories = self._load()
+
+        if "requests" not in all_memories:
+            return []
+
+        user_ids: set[str] = set()
+        for request_json in all_memories["requests"]:
+            req = Request.model_validate_json(request_json)
+
+            if user_id and req.user_id != user_id:
+                continue
+            if start_time and req.created_at < start_time:
+                continue
+            if end_time and req.created_at > end_time:
+                continue
+            if source and req.source != source:
+                continue
+            if agent_version and req.agent_version != agent_version:
+                continue
+
+            user_ids.add(req.user_id)
+
+        return sorted(user_ids)
 
     # ==============================
     # Profile Change Log methods

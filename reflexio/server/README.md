@@ -37,7 +37,7 @@ Description: FastAPI backend server that processes user interactions to generate
 
 **Key Endpoints**:
 - `POST /api/publish_interaction` - Publish interactions (triggers profile/feedback/evaluation)
-- `POST /api/get_requests` - Get request groups with associated interactions
+- `POST /api/get_requests` - Get request groups with associated interactions (supports `offset`/`has_more` pagination)
 - `GET /api/get_all_interactions` - Get all interactions across all users
 - `GET /api/get_profile_statistics` - Profile statistics by status
 - `GET /api/get_all_profiles?status_filter=<status>` - Filter by status (current/pending/archived)
@@ -111,7 +111,8 @@ Key files:
 - `llm_utils.py`: Helper functions for Pydantic model conversion
 
 **Features**:
-- Uses LiteLLM for multi-provider support (OpenAI, Claude, Azure, OpenRouter, Gemini, etc.)
+- Uses LiteLLM for multi-provider support (OpenAI, Claude, Azure, OpenRouter, Gemini, custom endpoints, etc.)
+- **Custom endpoint support**: `CustomEndpointConfig` (model, api_key, api_base) takes priority over all other providers for LLM completion calls when configured with non-empty fields (but not embeddings)
 - **Gemini support**: Model names with `gemini/` prefix route through Google Gemini; API key from `api_key_config.gemini`
 - **OpenRouter support**: Model names with `openrouter/` prefix (e.g., `openrouter/openai/gpt-5-nano`) route through OpenRouter; API key from `api_key_config.openrouter`
 - API keys read from environment variables (OPENAI_API_KEY, ANTHROPIC_API_KEY) or `ApiKeyConfig`
@@ -189,6 +190,7 @@ Access: `SiteVarManager().get_site_var(key)` for raw values, `feature_flags.is_f
 | File | Purpose |
 |------|---------|
 | `manage_invitation_codes.py` | CLI to generate and list invitation codes |
+| `show_raw_feedback_with_interactions.py` | Debug script to display raw feedback alongside interaction context |
 
 **Usage**:
 ```shell
@@ -448,7 +450,8 @@ Skills search gated behind `skill_generation` feature flag. Pre-computed embeddi
 
 **Key Methods**:
 - CRUD: profiles, interactions, feedbacks, results, requests, skills
-- `get_request_groups()` → `dict[str, list[RequestInteractionDataModel]]` (groups by request_id)
+- `get_request_groups(offset, top_k)` → `dict[str, list[RequestInteractionDataModel]]` (groups by request_id, supports offset/limit pagination)
+- `get_rerun_user_ids(user_id, start_time, end_time, source, agent_version)` → `list[str]` - Get distinct user IDs matching filters for rerun workflows (pushes filtering to storage layer)
 - `get_feedbacks(status_filter, feedback_status_filter)` - Filter by profile status and approval status
 - `save_feedbacks()` → returns `list[Feedback]` with `feedback_id` populated (callers can ignore return)
 - Selective feedback operations (used by cluster change detection):

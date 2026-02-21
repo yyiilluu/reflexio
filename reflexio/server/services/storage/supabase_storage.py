@@ -722,112 +722,34 @@ class SupabaseStorage(BaseStorage):
         start_time: Optional[int] = None,
         end_time: Optional[int] = None,
         top_k: Optional[int] = 30,
+        offset: int = 0,
     ) -> dict[str, list[RequestInteractionDataModel]]:
         """
         Get requests with their associated interactions, grouped by request_group.
 
         Uses PostgREST's automatic JOIN syntax via the foreign key relationship between
-        requests and interactions tables. Groups results by request_group and applies
-        top_k limit to the number of groups returned.
+        requests and interactions tables. Applies request-level filters and pagination,
+        then groups returned requests by request_group.
 
         Args:
-            user_id (str, optional): User ID to filter requests. If None, returns top_k request groups across all users.
+            user_id (str, optional): User ID to filter requests.
             request_id (str, optional): Specific request ID to retrieve
             start_time (int, optional): Start timestamp for filtering
             end_time (int, optional): End timestamp for filtering
-            top_k (int, optional): Maximum number of request_groups to return
+            top_k (int, optional): Maximum number of requests to return
+            offset (int): Number of requests to skip for pagination
 
         Returns:
             dict[str, list[RequestInteractionDataModel]]: Dictionary mapping request_group to list of RequestInteractionDataModel objects
         """
-        # First, get distinct request_groups with filtering and limit
-        group_query = self.client.table("requests").select("request_group")
-
-        # Apply user_id filter if specified
-        if user_id:
-            group_query = group_query.eq("user_id", user_id)
-
-        # Apply filters for getting groups
-        if request_id:
-            group_query = group_query.eq("request_id", request_id)
-        if start_time:
-            start_time_iso = datetime.fromtimestamp(
-                start_time, tz=timezone.utc
-            ).isoformat()
-            group_query = group_query.gte("created_at", start_time_iso)
-        if end_time:
-            end_time_iso = datetime.fromtimestamp(end_time, tz=timezone.utc).isoformat()
-            group_query = group_query.lte("created_at", end_time_iso)
-
-        group_response = group_query.execute()
-
-        # Log the actual raw values to understand what we're dealing with
-        for item in group_response.data:
-            item.get("request_group")
-
-        if not group_response.data:
-            logger.warning("No request groups found matching the filters")
-            return {}
-
-        # Get unique request_groups and limit them
-        # Handle None and empty string values explicitly
-        unique_groups = list(
-            {item.get("request_group") for item in group_response.data}
+        # Explicit interaction columns to avoid fetching embedding vector(1536) and content_fts
+        interaction_columns = "interaction_id,user_id,content,request_id,created_at,role,user_action,user_action_description,interacted_image_url,shadow_content,tools_used"
+        select_expr = f"*, interactions({interaction_columns})"
+        query = (
+            self.client.table("requests")
+            .select(select_expr)
+            .order("created_at", desc=True)
         )
-        logger.info(f"Found {len(unique_groups)} unique request_groups (raw)")
-
-        # Separate None, empty string, and valid groups
-        # Only treat None and "" as null/empty, but '""' is a valid (non-empty) string value
-        has_null_or_empty = None in unique_groups or "" in unique_groups
-        valid_groups = [g for g in unique_groups if g is not None and g != ""]
-
-        if top_k and len(unique_groups) > top_k:
-            # Need to handle both null/empty and valid groups when limiting
-            if has_null_or_empty and len(valid_groups) >= top_k:
-                valid_groups = valid_groups[:top_k]
-                has_null_or_empty = False
-            elif has_null_or_empty:
-                valid_groups = valid_groups[: top_k - 1]
-            else:
-                valid_groups = valid_groups[:top_k]
-            logger.info(
-                f"Limited to top_k={top_k} groups: has_null_or_empty={has_null_or_empty}"
-            )
-
-        # Build query - simple approach: include empty string in the .in_() list
-        if has_null_or_empty and valid_groups:
-            # Include empty string in the valid_groups for .in_() query
-            # and separately query for NULL values
-            all_groups = valid_groups + [""]  # Add empty string to the list
-            groups_str = ",".join(f'"{g}"' for g in all_groups)
-            query = (
-                self.client.table("requests")
-                .select("*, interactions(*)")
-                .or_(f"request_group.in.({groups_str}),request_group.is.null")
-                .order("created_at", desc=True)
-            )
-            logger.debug(
-                f"Query with all_groups: {all_groups}, groups_str: {groups_str}"
-            )
-        elif has_null_or_empty:
-            # Only null or empty groups - query for both empty string and null
-            query = (
-                self.client.table("requests")
-                .select("*, interactions(*)")
-                .or_('request_group.eq."",request_group.is.null')
-                .order("created_at", desc=True)
-            )
-        elif valid_groups:
-            # Only valid (non-null, non-empty) groups
-            query = (
-                self.client.table("requests")
-                .select("*, interactions(*)")
-                .in_("request_group", valid_groups)
-                .order("created_at", desc=True)
-            )
-        else:
-            logger.warning("No valid request groups found (all were filtered out)")
-            return {}
 
         # Apply user_id filter if specified
         if user_id:
@@ -844,6 +766,12 @@ class SupabaseStorage(BaseStorage):
         if end_time:
             end_time_iso = datetime.fromtimestamp(end_time, tz=timezone.utc).isoformat()
             query = query.lte("created_at", end_time_iso)
+
+        # Apply pagination: limit and offset on filtered requests.
+        effective_limit = top_k or 100
+        query = query.limit(effective_limit)
+        if offset:
+            query = query.offset(offset)
 
         response = query.execute()
 
@@ -886,6 +814,75 @@ class SupabaseStorage(BaseStorage):
             )
 
         return grouped_results
+
+    @handle_exceptions
+    def get_rerun_user_ids(
+        self,
+        user_id: Optional[str] = None,
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
+        source: Optional[str] = None,
+        agent_version: Optional[str] = None,
+    ) -> list[str]:
+        """
+        Get distinct user IDs that have matching requests for rerun workflows.
+
+        Args:
+            user_id (str, optional): Restrict to a specific user ID.
+            start_time (int, optional): Start timestamp for request filtering.
+            end_time (int, optional): End timestamp for request filtering.
+            source (str, optional): Restrict to requests from a source.
+            agent_version (str, optional): Restrict to requests with an agent version.
+
+        Returns:
+            list[str]: Distinct user IDs matching the filters.
+        """
+        page_size = 1000
+        current_offset = 0
+        user_ids: set[str] = set()
+
+        while True:
+            query = (
+                self.client.table("requests")
+                .select("user_id")
+                .order("created_at", desc=True)
+                .limit(page_size)
+                .offset(current_offset)
+            )
+
+            if user_id:
+                query = query.eq("user_id", user_id)
+            if start_time:
+                start_time_iso = datetime.fromtimestamp(
+                    start_time, tz=timezone.utc
+                ).isoformat()
+                query = query.gte("created_at", start_time_iso)
+            if end_time:
+                end_time_iso = datetime.fromtimestamp(
+                    end_time, tz=timezone.utc
+                ).isoformat()
+                query = query.lte("created_at", end_time_iso)
+            if source:
+                query = query.eq("source", source)
+            if agent_version:
+                query = query.eq("agent_version", agent_version)
+
+            response = query.execute()
+            rows = response.data or []
+
+            if not rows:
+                break
+
+            for row in rows:
+                row_user_id = row.get("user_id")
+                if row_user_id:
+                    user_ids.add(row_user_id)
+
+            if len(rows) < page_size:
+                break
+            current_offset += page_size
+
+        return sorted(user_ids)
 
     # ==============================
     # Profile Change Log methods

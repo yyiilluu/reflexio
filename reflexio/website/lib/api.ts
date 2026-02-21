@@ -223,11 +223,13 @@ export interface GetRequestsRequest {
   start_time?: string
   end_time?: string
   top_k?: number
+  offset?: number
 }
 
 export interface GetRequestsResponse {
   success: boolean
   request_groups: RequestGroup[]
+  has_more: boolean
   msg?: string
 }
 

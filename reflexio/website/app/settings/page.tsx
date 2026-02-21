@@ -41,6 +41,7 @@ import type {
   ProfileExtractorConfig,
   AgentFeedbackConfig,
   AgentSuccessConfig,
+  CustomEndpointConfig,
   OpenAIConfig,
   AzureOpenAIConfig,
   AnthropicConfig,
@@ -89,6 +90,22 @@ export default function SettingsPage() {
   }, [])
 
   // --- API key config helpers ---
+  const updateCustomEndpointConfig = (updates: Partial<CustomEndpointConfig>) => {
+    const current = config.api_key_config?.custom_endpoint
+    const merged = {
+      model: current?.model || "",
+      api_key: current?.api_key || "",
+      api_base: current?.api_base || "",
+      ...updates,
+    }
+    // Clear custom_endpoint entirely when all fields are empty
+    const customEndpoint = (merged.model || merged.api_key || merged.api_base) ? merged : undefined
+    setConfig({
+      ...config,
+      api_key_config: { ...config.api_key_config, custom_endpoint: customEndpoint },
+    })
+  }
+
   const updateOpenAIConfig = (updates: Partial<OpenAIConfig>) => {
     setConfig({ ...config, api_key_config: { ...config.api_key_config, openai: { ...config.api_key_config?.openai, ...updates } } })
   }
@@ -423,6 +440,7 @@ export default function SettingsPage() {
                   config={config}
                   openaiMode={openaiMode}
                   onOpenAIModeChange={handleOpenAIModeChange}
+                  onUpdateCustomEndpoint={updateCustomEndpointConfig}
                   onUpdateOpenAI={updateOpenAIConfig}
                   onUpdateAzureOpenAI={updateAzureOpenAIConfig}
                   onUpdateAnthropic={updateAnthropicConfig}
