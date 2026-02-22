@@ -1,0 +1,189 @@
+---
+title: "Feedback Models"
+description: "Data structures for raw and aggregated feedback — collecting, aggregating, and managing agent feedback."
+---
+
+# Feedback Models
+
+## BlockingIssue
+
+Represents a capability gap that blocked the agent from completing a user request.
+
+| Field | Type | Description | Default |
+|-------|------|-------------|---------|
+| `kind` | BlockingIssueKind | Type of blocking issue | Required |
+| `details` | string | What capability is missing and why it blocks the request | Required |
+
+## RawFeedback
+
+Represents raw feedback generated from user interactions.
+
+| Field | Type | Description | Default |
+|-------|------|-------------|---------|
+| `raw_feedback_id` | integer | Unique identifier for the feedback | 0 |
+| `agent_version` | string | Version of the agent | Required |
+| `request_id` | string | Request ID that generated this feedback | Required |
+| `feedback_name` | string | Name of the feedback type | Empty string |
+| `created_at` | integer | Unix timestamp when feedback was created | Current time |
+| `feedback_content` | string | Content of the feedback | Empty string |
+| `do_action` | string | The preferred behavior the agent should adopt (structured feedback v1.2.0+) | None |
+| `do_not_action` | string | The mistaken behavior the agent should avoid (structured feedback v1.2.0+) | None |
+| `when_condition` | string | The condition/context when this rule applies (structured feedback v1.2.0+) | None |
+| `source` | string | Source of the interaction that generated this feedback | None |
+| `blocking_issue` | BlockingIssue | Root cause when agent couldn't complete action | None |
+| `indexed_content` | string | Content used for embedding/indexing (extracted from feedback_content) | None |
+| `status` | Status | Processing status (None=current, PENDING=from rerun, ARCHIVED=old) | None |
+| `embedding` | array[float] | Vector embedding of the feedback | Empty array |
+
+## Feedback
+
+Represents aggregated feedback consolidated from multiple raw feedbacks.
+
+| Field | Type | Description | Default |
+|-------|------|-------------|---------|
+| `feedback_id` | integer | Unique identifier for the aggregated feedback | 0 |
+| `feedback_name` | string | Name of the feedback type | Empty string |
+| `agent_version` | string | Version of the agent | Required |
+| `created_at` | integer | Unix timestamp when feedback was created | Current time |
+| `feedback_content` | string | Aggregated content of the feedback | Required |
+| `do_action` | string | The preferred behavior the agent should adopt (structured feedback v1.2.0+) | None |
+| `do_not_action` | string | The mistaken behavior the agent should avoid (structured feedback v1.2.0+) | None |
+| `when_condition` | string | The condition/context when this rule applies (structured feedback v1.2.0+) | None |
+| `blocking_issue` | BlockingIssue | Root cause when agent couldn't complete action | None |
+| `feedback_status` | FeedbackStatus | Approval status (PENDING, APPROVED, REJECTED) | Required |
+| `feedback_metadata` | string | Additional metadata about the feedback | Required |
+| `status` | Status | Processing status for aggregation tracking | None |
+| `embedding` | array[float] | Vector embedding of the feedback | Empty array |
+
+## GetRawFeedbacksRequest
+
+Request model for getting raw feedbacks.
+
+| Field | Type | Description | Default |
+|-------|------|-------------|---------|
+| `limit` | integer | Maximum number of results to return | 100 |
+| `feedback_name` | string | Filter by feedback name | Optional |
+| `status_filter` | array[Status] | Filter by status | Optional |
+
+## GetRawFeedbacksResponse
+
+Response model for getting raw feedbacks.
+
+| Field | Type | Description | Default |
+|-------|------|-------------|---------|
+| `success` | boolean | Whether the request was successful | Required |
+| `raw_feedbacks` | array[RawFeedback] | List of raw feedbacks | Required |
+| `msg` | string | Additional message | Optional |
+
+## AddRawFeedbackRequest
+
+Request model for adding raw feedbacks directly to storage.
+
+| Field | Type | Description | Default |
+|-------|------|-------------|---------|
+| `raw_feedbacks` | array[RawFeedback] | List of raw feedbacks to add | Required |
+
+## AddRawFeedbackResponse
+
+Response model for adding raw feedbacks.
+
+| Field | Type | Description | Default |
+|-------|------|-------------|---------|
+| `success` | boolean | Whether the operation was successful | Required |
+| `message` | string | Additional information about the operation | Empty string |
+| `added_count` | integer | Number of feedbacks added | 0 |
+
+## GetFeedbacksRequest
+
+Request model for getting aggregated feedbacks.
+
+| Field | Type | Description | Default |
+|-------|------|-------------|---------|
+| `limit` | integer | Maximum number of results to return | 100 |
+| `feedback_name` | string | Filter by feedback name | Optional |
+| `status_filter` | array[Status] | Filter by status | Optional |
+| `feedback_status_filter` | FeedbackStatus | Filter by feedback status | APPROVED |
+
+## GetFeedbacksResponse
+
+Response model for getting aggregated feedbacks.
+
+| Field | Type | Description | Default |
+|-------|------|-------------|---------|
+| `success` | boolean | Whether the request was successful | Required |
+| `feedbacks` | array[Feedback] | List of aggregated feedbacks | Required |
+| `msg` | string | Additional message | Optional |
+
+## RunFeedbackAggregationRequest
+
+Request model for running feedback aggregation.
+
+| Field | Type | Description | Default |
+|-------|------|-------------|---------|
+| `agent_version` | string | Agent version to aggregate feedbacks for | Required |
+| `feedback_name` | string | Name of the feedback type to aggregate | Required |
+
+## RunFeedbackAggregationResponse
+
+Response model for feedback aggregation requests.
+
+| Field | Type | Description | Default |
+|-------|------|-------------|---------|
+| `success` | boolean | Whether the aggregation was successful | Required |
+| `message` | string | Additional information about the operation | Empty string |
+
+## DeleteFeedbackRequest
+
+Request model for deleting a feedback.
+
+| Field | Type | Description | Default |
+|-------|------|-------------|---------|
+| `feedback_id` | integer | Identifier of the feedback to delete | Required |
+
+## DeleteFeedbackResponse
+
+Response model for feedback deletion requests.
+
+| Field | Type | Description | Default |
+|-------|------|-------------|---------|
+| `success` | boolean | Whether the deletion was successful | Required |
+| `message` | string | Additional information about the operation | Empty string |
+
+## DeleteRawFeedbackRequest
+
+Request model for deleting a raw feedback.
+
+| Field | Type | Description | Default |
+|-------|------|-------------|---------|
+| `raw_feedback_id` | integer | Identifier of the raw feedback to delete | Required |
+
+## DeleteRawFeedbackResponse
+
+Response model for raw feedback deletion requests.
+
+| Field | Type | Description | Default |
+|-------|------|-------------|---------|
+| `success` | boolean | Whether the deletion was successful | Required |
+| `message` | string | Additional information about the operation | Empty string |
+
+## RerunFeedbackGenerationRequest
+
+Request model for rerunning feedback generation.
+
+| Field | Type | Description | Default |
+|-------|------|-------------|---------|
+| `agent_version` | string | Agent version to evaluate | Required |
+| `start_time` | datetime | Filter interactions from this time | Optional |
+| `end_time` | datetime | Filter interactions until this time | Optional |
+| `feedback_name` | string | Specific feedback type to generate | Optional |
+
+## RerunFeedbackGenerationResponse
+
+Response model for feedback generation rerun requests.
+
+| Field | Type | Description | Default |
+|-------|------|-------------|---------|
+| `success` | boolean | Whether the operation was successful | Required |
+| `msg` | string | Additional information | Optional |
+| `feedbacks_generated` | integer | Number of feedbacks generated | Optional |
+| `operation_id` | string | Operation identifier for tracking | Optional |

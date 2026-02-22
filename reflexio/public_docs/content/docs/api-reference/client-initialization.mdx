@@ -1,0 +1,77 @@
+---
+title: "Initialization & Authentication"
+description: "ReflexioClient setup and login methods."
+---
+
+# Initialization & Authentication
+
+## ReflexioClient
+
+The main client class for interacting with the Reflexio API.
+
+### Initialization
+
+```python
+from reflexio import ReflexioClient
+
+client = ReflexioClient(api_key="", url_endpoint="")
+```
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `api_key` | str | No | `""` | API key for authentication. Can be set later via `client.api_key` |
+| `url_endpoint` | str | No | Production URL | API endpoint URL |
+
+**Examples:**
+
+```python
+# Initialize with endpoint, authenticate later
+client = ReflexioClient(url_endpoint="http://127.0.0.1:8081/")
+
+# Initialize with a previously saved API key (from token.api_key)
+client = ReflexioClient(
+    api_key="<your_saved_token.api_key>",  # From a previous login
+    url_endpoint="http://127.0.0.1:8081/"
+)
+```
+
+---
+
+## Authentication
+
+### `login`
+
+Authenticate with the Reflexio API using email and password. The client automatically stores the API key after successful login.
+
+```python
+token = client.login(email, password)
+```
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `email` | str | Yes | User email address |
+| `password` | str | Yes | User password |
+
+**Returns:** `Token` object
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `api_key` | str | Authentication token (never expires) |
+| `token_type` | str | Type of token (e.g., "bearer") |
+
+**Note:** After calling `login()`, the client automatically sets the API key internally. You don't need to manually assign it. The returned API key **never expires**, so you can save it and initialize the client directly with the `api_key` parameter for efficiency (avoiding the login call on subsequent sessions).
+
+**Example:**
+
+```python
+# First-time login - client automatically stores the API key
+token = client.login("user@example.com", "password")
+print(f"Authenticated! Save token.api_key for future use: {token.api_key}")
+
+# For subsequent sessions, initialize with the saved token.api_key (more efficient)
+client = ReflexioClient(
+    api_key=token.api_key,  # Use the saved token.api_key from a previous login
+    url_endpoint="http://127.0.0.1:8081/"
+)
+# No login needed - ready to use immediately
+```

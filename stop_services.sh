@@ -39,7 +39,7 @@ else
     echo "Website (${FRONTEND_PORT}) not running"
 fi
 
-# Stop mkdocs
-pkill -f "mkdocs serve" && echo "Stopped mkdocs" || echo "MkDocs not running"
+# Stop docs
+pkill -f "next dev.*-p ${DOCS_PORT}" && echo "Stopped docs" || echo "Docs not running"
 
 echo "All services stopped."

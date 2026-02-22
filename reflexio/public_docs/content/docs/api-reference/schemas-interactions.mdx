@@ -1,0 +1,132 @@
+---
+title: "Interaction Models"
+description: "Data structures for user interactions — publishing, searching, retrieving, and deleting interactions."
+---
+
+# Interaction Models
+
+## ToolUsed
+
+Tracks a tool the agent used during an interaction. Multiple tools can be used per interaction.
+
+| Field | Type | Description | Default |
+|-------|------|-------------|---------|
+| `tool_name` | string | Name of the tool used | Required |
+| `tool_input` | object | Parameter name to value mapping | Empty object |
+
+## Interaction
+
+Represents information about a user interaction stored in the system.
+
+| Field | Type | Description | Default |
+|-------|------|-------------|---------|
+| `interaction_id` | string | Unique identifier for the interaction | Required |
+| `user_id` | string | Identifier of the user | Required |
+| `request_id` | string | Identifier of the request | Required |
+| `created_at` | integer | Unix timestamp when interaction was created | Required |
+| `role` | string | Role of the interaction participant | Required |
+| `content` | string | Text content of the interaction | Empty string |
+| `shadow_content` | string | Alternative agent response for A/B testing (see [Shadow Content](/docs/api-reference/schemas-concepts#shadow-content)) | Empty string |
+| `user_action` | UserActionType | Type of user action | `NONE` |
+| `user_action_description` | string | Description of the user action | Empty string |
+| `interacted_image_url` | string | URL of any associated image | Empty string |
+| `image_encoding` | string | Base64 encoded image data | Empty string |
+| `tools_used` | list[ToolUsed] | Tools used during this interaction | Empty list |
+| `embedding` | array[float] | Vector embedding of the interaction | Empty array |
+
+## InteractionData
+
+Model for user-provided interaction information (also called InteractionRequest).
+
+| Field | Type | Description | Default |
+|-------|------|-------------|---------|
+| `created_at` | integer | Unix timestamp when interaction was created | Current time |
+| `role` | string | Role of the interaction participant (e.g., "User", "Agent") | "User" |
+| `content` | string | Text content of the interaction | Empty string |
+| `shadow_content` | string | Alternative agent response for A/B testing (see [Shadow Content](/docs/api-reference/schemas-concepts#shadow-content)) | Empty string |
+| `user_action` | UserActionType | Type of user action | `NONE` |
+| `user_action_description` | string | Description of the user action | Empty string |
+| `interacted_image_url` | string | URL of any associated image | Empty string |
+| `image_encoding` | string | Base64 encoded image data | Empty string |
+| `tools_used` | list[ToolUsed] | Tools used during this interaction | Empty list |
+
+## PublishUserInteractionRequest
+
+Request model for publishing user interactions.
+
+| Field | Type | Description | Default |
+|-------|------|-------------|---------|
+| `user_id` | string | Identifier of the user | Required |
+| `interaction_data_list` | array[InteractionData] | List of interaction data | Required |
+| `source` | string | Source of the interactions | Empty string |
+| `agent_version` | string | Version of the agent generating interactions | Empty string |
+| `request_group` | string | Group identifier for related requests | None |
+
+## PublishUserInteractionResponse
+
+Response model for interaction publication requests.
+
+| Field | Type | Description | Default |
+|-------|------|-------------|---------|
+| `success` | boolean | Whether the publication was successful | Required |
+| `message` | string | Additional information about the operation | Empty string |
+
+## SearchInteractionRequest
+
+Request model for searching user interactions.
+
+| Field | Type | Description | Default |
+|-------|------|-------------|---------|
+| `user_id` | string | Identifier of the user | Required |
+| `query` | string | Semantic search query | Required |
+| `top_k` | integer | Number of results to return | 5 |
+| `threshold` | float | Similarity threshold for results | 0.7 |
+
+## SearchInteractionResponse
+
+Response model for interaction search requests.
+
+| Field | Type | Description | Default |
+|-------|------|-------------|---------|
+| `success` | boolean | Whether the search was successful | Required |
+| `interactions` | array[Interaction] | List of matching interactions | Required |
+| `msg` | string | Additional message | Optional |
+
+## GetInteractionsRequest
+
+Request model for getting user interactions.
+
+| Field | Type | Description | Default |
+|-------|------|-------------|---------|
+| `user_id` | string | Identifier of the user | Required |
+| `start_time` | datetime | Filter by start time | Optional |
+| `end_time` | datetime | Filter by end time | Optional |
+| `top_k` | integer | Maximum number of results to return | 30 |
+
+## GetInteractionsResponse
+
+Response model for getting user interactions.
+
+| Field | Type | Description | Default |
+|-------|------|-------------|---------|
+| `success` | boolean | Whether the request was successful | Required |
+| `interactions` | array[Interaction] | List of interactions | Required |
+| `msg` | string | Additional message | Optional |
+
+## DeleteUserInteractionRequest
+
+Request model for deleting a user interaction.
+
+| Field | Type | Description | Default |
+|-------|------|-------------|---------|
+| `user_id` | string | Identifier of the user | Required |
+| `interaction_id` | string | Identifier of the interaction to delete | Required |
+
+## DeleteUserInteractionResponse
+
+Response model for interaction deletion requests.
+
+| Field | Type | Description | Default |
+|-------|------|-------------|---------|
+| `success` | boolean | Whether the deletion was successful | Required |
+| `message` | string | Additional information about the operation | Empty string |

@@ -1,0 +1,60 @@
+---
+title: "Enums"
+description: "Enumeration types used in the Reflexio API."
+---
+
+# Enums
+
+## UserActionType
+
+Represents different types of user actions that can be tracked.
+
+- `CLICK`: Click interaction
+- `SCROLL`: Scroll interaction
+- `TYPE`: Type interaction
+- `NONE`: No specific interaction
+
+## ProfileTimeToLive
+
+Defines the time-to-live options for user profiles.
+
+- `ONE_DAY`: Profile expires after one day
+- `ONE_WEEK`: Profile expires after one week
+- `ONE_MONTH`: Profile expires after one month
+- `ONE_QUARTER`: Profile expires after one quarter
+- `ONE_YEAR`: Profile expires after one year
+- `INFINITY`: Profile never expires
+
+## Status
+
+Represents the processing status for profiles and feedbacks.
+
+- `CURRENT` (None): Active profile/feedback currently in use
+- `ARCHIVED`: Profile/feedback has been archived (old versions)
+- `PENDING`: New profile/feedback that is pending approval or processing (from rerun operations)
+- `ARCHIVE_IN_PROGRESS`: Temporary status during downgrade operation
+
+## FeedbackStatus
+
+Represents the approval status of feedback.
+
+- `PENDING`: Feedback is pending review
+- `APPROVED`: Feedback has been approved
+- `REJECTED`: Feedback has been rejected
+
+## BlockingIssueKind
+
+Represents the type of capability gap that prevented the agent from completing a request.
+
+- `MISSING_TOOL`: Tool doesn't exist in the agent's toolset
+- `PERMISSION_DENIED`: Agent lacks authorization to perform the action
+- `EXTERNAL_DEPENDENCY`: External service is unavailable
+- `POLICY_RESTRICTION`: Policy prevents the action
+
+## OperationStatus
+
+Represents the status of long-running operations.
+
+- `IN_PROGRESS`: Operation is currently running
+- `COMPLETED`: Operation has completed successfully
+- `FAILED`: Operation has failed

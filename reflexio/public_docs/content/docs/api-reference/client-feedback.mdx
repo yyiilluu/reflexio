@@ -1,0 +1,524 @@
+---
+title: "Feedback Management"
+description: "Methods for searching, retrieving, adding, and deleting raw and aggregated feedbacks."
+---
+
+# Feedback Management
+
+## `search_raw_feedbacks`
+
+Search for raw feedbacks using semantic/text search and advanced filtering.
+
+```python
+response = client.search_raw_feedbacks(
+    query="user satisfaction",
+    agent_version="v2.1.0",
+    top_k=10
+)
+```
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `query` | str | No | `None` | Query for semantic/text search |
+| `user_id` | str | No | `None` | Filter by user (via request_id linkage) |
+| `agent_version` | str | No | `None` | Filter by agent version |
+| `feedback_name` | str | No | `None` | Filter by feedback name |
+| `start_time` | datetime | No | `None` | Filter by start time |
+| `end_time` | datetime | No | `None` | Filter by end time |
+| `status_filter` | list[Status] | No | `None` | Filter by status (None for CURRENT, PENDING, ARCHIVED) |
+| `top_k` | int | No | `10` | Maximum number of results to return |
+| `threshold` | float | No | `0.5` | Similarity threshold for vector search |
+
+### SearchRawFeedbackResponse Schema
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `success` | bool | Whether the search was successful |
+| `raw_feedbacks` | list[RawFeedback] | List of matching raw feedbacks |
+| `msg` | str | Additional message (optional) |
+
+**Example:**
+
+```python
+# Search with semantic query
+response = client.search_raw_feedbacks(
+    query="response quality issues",
+    agent_version="v2.1.0",
+    top_k=10
+)
+
+for fb in response.raw_feedbacks:
+    print(f"Request: {fb.request_id}")
+    print(f"  Content: {fb.feedback_content}")
+
+# Filter by user and feedback name
+response = client.search_raw_feedbacks(
+    user_id="user_123",
+    feedback_name="quality_feedback",
+    top_k=20
+)
+
+# Search with time filter
+from datetime import datetime, timedelta
+
+response = client.search_raw_feedbacks(
+    query="helpful",
+    start_time=datetime.now() - timedelta(days=7),
+    end_time=datetime.now(),
+    threshold=0.6
+)
+
+# Filter by status
+from reflexio_commons.api_schema.service_schemas import Status
+
+response = client.search_raw_feedbacks(
+    agent_version="v2.1.0",
+    status_filter=[Status.CURRENT]
+)
+```
+
+---
+
+## `search_feedbacks`
+
+Search for aggregated feedbacks using semantic/text search and advanced filtering.
+
+```python
+response = client.search_feedbacks(
+    query="concise responses",
+    agent_version="v2.1.0",
+    feedback_status_filter="approved"
+)
+```
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `query` | str | No | `None` | Query for semantic/text search |
+| `agent_version` | str | No | `None` | Filter by agent version |
+| `feedback_name` | str | No | `None` | Filter by feedback name |
+| `start_time` | datetime | No | `None` | Filter by start time |
+| `end_time` | datetime | No | `None` | Filter by end time |
+| `status_filter` | list[Status] | No | `None` | Filter by status (None for CURRENT, PENDING, ARCHIVED) |
+| `feedback_status_filter` | FeedbackStatus | No | `None` | Filter by feedback approval status (PENDING, APPROVED, REJECTED) |
+| `top_k` | int | No | `10` | Maximum number of results to return |
+| `threshold` | float | No | `0.5` | Similarity threshold for vector search |
+
+### SearchFeedbackResponse Schema
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `success` | bool | Whether the search was successful |
+| `feedbacks` | list[Feedback] | List of matching feedbacks |
+| `msg` | str | Additional message (optional) |
+
+**Example:**
+
+```python
+# Search with semantic query
+response = client.search_feedbacks(
+    query="improve response clarity",
+    agent_version="v2.1.0",
+    top_k=10
+)
+
+for fb in response.feedbacks:
+    print(f"Feedback: {fb.feedback_content}")
+    print(f"  Status: {fb.feedback_status}")
+
+# Filter by feedback status (only approved)
+from reflexio_commons.api_schema.service_schemas import FeedbackStatus
+
+response = client.search_feedbacks(
+    agent_version="v2.1.0",
+    feedback_status_filter=FeedbackStatus.APPROVED,
+    top_k=20
+)
+
+# Search with time filter
+from datetime import datetime, timedelta
+
+response = client.search_feedbacks(
+    query="user experience",
+    start_time=datetime.now() - timedelta(days=30),
+    feedback_name="quality_feedback",
+    threshold=0.6
+)
+
+# Combine multiple filters
+response = client.search_feedbacks(
+    query="actionable suggestions",
+    agent_version="v2.1.0",
+    feedback_name="helpfulness",
+    feedback_status_filter=FeedbackStatus.APPROVED,
+    top_k=5
+)
+```
+
+---
+
+## `get_raw_feedbacks`
+
+Retrieve raw feedback entries extracted from interactions.
+
+```python
+response = client.get_raw_feedbacks(
+    limit=100,
+    feedback_name="quality_feedback"
+)
+```
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `limit` | int | No | `100` | Maximum number of results to return |
+| `feedback_name` | str | No | `None` | Filter by feedback name |
+| `status_filter` | list[Status] | No | `None` | Filter by status |
+
+### GetRawFeedbacksResponse Schema
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `success` | bool | Whether the request was successful |
+| `raw_feedbacks` | list[RawFeedback] | List of raw feedbacks |
+| `msg` | str | Additional message (optional) |
+
+### RawFeedback Schema
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `raw_feedback_id` | int | Unique identifier for the feedback |
+| `agent_version` | str | Version of the agent |
+| `request_id` | str | Request ID that generated this feedback |
+| `feedback_name` | str | Name of the feedback type |
+| `created_at` | int | Unix timestamp when feedback was created |
+| `feedback_content` | str | Content of the feedback |
+| `embedding` | list[float] | Vector embedding of the feedback |
+
+**Example:**
+
+```python
+# Get all raw feedbacks using kwargs
+feedbacks = client.get_raw_feedbacks()
+
+for fb in feedbacks.raw_feedbacks:
+    print(f"Request: {fb.request_id}")
+    print(f"  Feedback Name: {fb.feedback_name}")
+    print(f"  Agent Version: {fb.agent_version}")
+    print(f"  Content: {fb.feedback_content}")
+    print(f"  Created: {fb.created_at}")
+
+# Filter by feedback name
+feedbacks = client.get_raw_feedbacks(
+    feedback_name="quality_feedback",
+    limit=50
+)
+
+# Filter by status
+from reflexio_commons.api_schema.service_schemas import Status
+
+feedbacks = client.get_raw_feedbacks(
+    status_filter=[Status.CURRENT]
+)
+
+# Analyze feedback by agent version
+from collections import defaultdict
+by_version = defaultdict(list)
+
+for fb in feedbacks.raw_feedbacks:
+    by_version[fb.agent_version].append(fb)
+
+for version, fbs in by_version.items():
+    print(f"Agent {version}: {len(fbs)} feedbacks")
+```
+
+---
+
+## `add_raw_feedback`
+
+Add raw feedback directly to storage.
+
+```python
+response = client.add_raw_feedback(
+    raw_feedbacks=[
+        {
+            "agent_version": "v2.1.0",
+            "request_id": "req_123",
+            "feedback_name": "quality_feedback",
+            "feedback_content": "User expressed satisfaction with response"
+        }
+    ]
+)
+```
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `raw_feedbacks` | list[dict] | Yes | List of raw feedback entries to add |
+
+### RawFeedback Dict Fields
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `agent_version` | str | Yes | - | Version of the agent |
+| `request_id` | str | Yes | - | Request ID associated with the feedback |
+| `feedback_name` | str | No | `""` | Name/category of the feedback |
+| `feedback_content` | str | No | `""` | Content of the feedback |
+
+### AddRawFeedbackResponse Schema
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `success` | bool | Whether the operation was successful |
+| `message` | str | Additional information about the operation |
+| `added_count` | int | Number of feedbacks added |
+
+**Example:**
+
+```python
+# Add single feedback
+response = client.add_raw_feedback(
+    raw_feedbacks=[
+        {
+            "agent_version": "v2.1.0",
+            "request_id": "req_456",
+            "feedback_name": "response_quality",
+            "feedback_content": "Agent provided accurate and helpful information"
+        }
+    ]
+)
+print(f"Added {response.added_count} feedbacks")
+
+# Add multiple feedbacks at once
+response = client.add_raw_feedback(
+    raw_feedbacks=[
+        {
+            "agent_version": "v2.1.0",
+            "request_id": "req_001",
+            "feedback_name": "helpfulness",
+            "feedback_content": "Response was very helpful"
+        },
+        {
+            "agent_version": "v2.1.0",
+            "request_id": "req_002",
+            "feedback_name": "clarity",
+            "feedback_content": "Response could be clearer"
+        }
+    ]
+)
+
+if response.success:
+    print(f"Successfully added {response.added_count} feedback entries")
+```
+
+---
+
+## `add_feedbacks`
+
+Add aggregated feedback directly to storage. Unlike `add_raw_feedback` which adds raw feedback entries that need to be aggregated, this method adds already-aggregated feedback entries.
+
+```python
+response = client.add_feedbacks(
+    feedbacks=[
+        {
+            "agent_version": "v2.1.0",
+            "feedback_name": "quality_feedback",
+            "feedback_content": "Agent should provide more concise responses",
+            "feedback_status": "approved",
+            "feedback_metadata": "{}"
+        }
+    ]
+)
+```
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `feedbacks` | list[dict] | Yes | List of aggregated feedback entries to add |
+
+### Feedback Dict Fields
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `agent_version` | str | Yes | - | Version of the agent |
+| `feedback_name` | str | No | `""` | Name/category of the feedback |
+| `feedback_content` | str | Yes | - | Content of the aggregated feedback |
+| `feedback_status` | FeedbackStatus | Yes | - | Approval status: `"pending"`, `"approved"`, or `"rejected"` |
+| `feedback_metadata` | str | Yes | - | JSON string with additional metadata |
+
+### AddFeedbackResponse Schema
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `success` | bool | Whether the operation was successful |
+| `message` | str | Additional information about the operation |
+| `added_count` | int | Number of feedbacks added |
+
+**Example:**
+
+```python
+# Add single aggregated feedback
+response = client.add_feedbacks(
+    feedbacks=[
+        {
+            "agent_version": "v2.1.0",
+            "feedback_name": "response_quality",
+            "feedback_content": "Agent should validate user input before processing",
+            "feedback_status": "approved",
+            "feedback_metadata": "{\"source\": \"manual_review\"}"
+        }
+    ]
+)
+print(f"Added {response.added_count} feedbacks")
+
+# Add multiple aggregated feedbacks at once
+response = client.add_feedbacks(
+    feedbacks=[
+        {
+            "agent_version": "v2.1.0",
+            "feedback_name": "helpfulness",
+            "feedback_content": "Responses should include actionable next steps",
+            "feedback_status": "approved",
+            "feedback_metadata": "{}"
+        },
+        {
+            "agent_version": "v2.1.0",
+            "feedback_name": "clarity",
+            "feedback_content": "Avoid technical jargon when explaining to users",
+            "feedback_status": "pending",
+            "feedback_metadata": "{}"
+        }
+    ]
+)
+
+if response.success:
+    print(f"Successfully added {response.added_count} aggregated feedback entries")
+```
+
+---
+
+## `get_feedbacks`
+
+Retrieve aggregated feedback entries.
+
+```python
+response = client.get_feedbacks(
+    feedback_name="quality_feedback",
+    limit=10
+)
+```
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `limit` | int | No | `100` | Maximum number of results |
+| `feedback_name` | str | No | `None` | Filter by feedback name |
+| `status_filter` | list[Status] | No | `None` | Filter by status |
+| `feedback_status_filter` | FeedbackStatus | No | `APPROVED` | Filter by feedback status |
+| `force_refresh` | bool | No | `False` | Bypass cache |
+
+### GetFeedbacksResponse Schema
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `success` | bool | Whether the request was successful |
+| `feedbacks` | list[Feedback] | List of aggregated feedbacks |
+| `msg` | str | Additional message (optional) |
+
+**Example:**
+
+```python
+# Get all aggregated feedbacks
+feedbacks = client.get_feedbacks()
+
+for fb in feedbacks.feedbacks:
+    print(f"Feedback: {fb}")
+
+# Filter by feedback name
+feedbacks = client.get_feedbacks(
+    feedback_name="quality_feedback",
+    limit=10
+)
+
+# Force refresh after new data
+feedbacks = client.get_feedbacks(force_refresh=True)
+
+# Compare feedbacks across types
+quality_feedbacks = client.get_feedbacks(feedback_name="quality_feedback")
+helpfulness_feedbacks = client.get_feedbacks(feedback_name="helpfulness_feedback")
+```
+
+---
+
+## `delete_feedback`
+
+Delete a feedback by ID.
+
+```python
+response = client.delete_feedback(
+    feedback_id,
+    wait_for_response=False
+)
+```
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `feedback_id` | int | Yes | - | Feedback ID to delete |
+| `wait_for_response` | bool | No | `False` | Wait for confirmation |
+
+### DeleteFeedbackResponse Schema
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `success` | bool | Whether the deletion was successful |
+| `message` | str | Additional information about the operation |
+
+**Example:**
+
+```python
+# Fire-and-forget
+client.delete_feedback(feedback_id=123)
+
+# Wait for confirmation
+response = client.delete_feedback(
+    feedback_id=123,
+    wait_for_response=True
+)
+if response.success:
+    print(f"Deleted: {response.message}")
+```
+
+---
+
+## `delete_raw_feedback`
+
+Delete a raw feedback by ID.
+
+```python
+response = client.delete_raw_feedback(
+    raw_feedback_id,
+    wait_for_response=False
+)
+```
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `raw_feedback_id` | int | Yes | - | Raw feedback ID to delete |
+| `wait_for_response` | bool | No | `False` | Wait for confirmation |
+
+### DeleteRawFeedbackResponse Schema
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `success` | bool | Whether the deletion was successful |
+| `message` | str | Additional information about the operation |
+
+**Example:**
+
+```python
+# Fire-and-forget
+client.delete_raw_feedback(raw_feedback_id=456)
+
+# Wait for confirmation
+response = client.delete_raw_feedback(
+    raw_feedback_id=456,
+    wait_for_response=True
+)
+if response.success:
+    print(f"Deleted: {response.message}")
+```

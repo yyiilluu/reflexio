@@ -1,0 +1,256 @@
+---
+title: "Operations"
+description: "Methods for rerun/manual generation and feedback aggregation."
+---
+
+# Rerun and Manual Generation Operations
+
+Profile and feedback generation can be triggered in different modes:
+
+| Mode | Method | Interactions | Output Status | Blocking | Use Case |
+|------|--------|--------------|---------------|----------|----------|
+| **Rerun** | `rerun_*_generation` | ALL interactions | PENDING | Optional | Test prompt changes, full regeneration |
+| **Manual** | `manual_*_generation` | Window-sized (from config) | CURRENT | Fire-and-forget only | Force regeneration, fill gaps |
+
+**Key Differences:**
+- **Rerun**: Uses ALL interactions, outputs PENDING status (requires upgrade workflow), supports `wait_for_response`
+- **Manual**: Uses `extraction_window_size` from config, outputs CURRENT status directly, always fire-and-forget
+
+---
+
+## `rerun_profile_generation`
+
+Regenerate user profiles from ALL existing interactions. Creates profiles with PENDING status.
+
+```python
+response = client.rerun_profile_generation(
+    user_id="user_123",
+    wait_for_response=True
+)
+```
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `user_id` | str | No | `None` | Specific user ID. If None, runs for all users |
+| `start_time` | datetime | No | `None` | Filter interactions from this time |
+| `end_time` | datetime | No | `None` | Filter interactions until this time |
+| `source` | str | No | `None` | Filter by interaction source |
+| `extractor_names` | list[str] | No | `None` | List of specific extractor names to run. If None, runs all extractors |
+| `wait_for_response` | bool | No | `False` | Wait for operation to complete |
+
+### RerunProfileGenerationResponse Schema
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `success` | bool | Whether the operation was successful |
+| `msg` | str | Additional information (optional) |
+| `profiles_generated` | int | Number of profiles generated (optional) |
+| `operation_id` | str | Operation identifier for tracking |
+
+**Example:**
+
+```python
+# Rerun for all users (fire-and-forget)
+client.rerun_profile_generation()
+
+# Rerun for specific user using kwargs
+response = client.rerun_profile_generation(
+    user_id="user_123",
+    wait_for_response=True
+)
+
+# Rerun with time filter
+from datetime import datetime, timedelta
+
+client.rerun_profile_generation(
+    start_time=datetime.now() - timedelta(days=7),
+    end_time=datetime.now(),
+    source="chat"
+)
+
+# Rerun with only specific extractors
+response = client.rerun_profile_generation(
+    user_id="user_123",
+    extractor_names=["preferences", "skills"],
+    wait_for_response=True
+)
+print(f"Generated {response.profiles_generated} profiles")
+```
+
+---
+
+## `manual_profile_generation`
+
+Manually trigger profile generation with window-sized interactions (fire-and-forget). Creates profiles with CURRENT status directly (no upgrade needed).
+
+```python
+client.manual_profile_generation(user_id="user_123")
+```
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `user_id` | str | No | `None` | Specific user ID. If None, runs for all users |
+| `source` | str | No | `None` | Filter by interaction source |
+| `extractor_names` | list[str] | No | `None` | Specific extractors to run. If None, runs extractors with `allow_manual_trigger=True` |
+
+**Returns:** `None` (fire-and-forget operation)
+
+**Prerequisites:**
+- `extraction_window_size` must be configured in your config
+- Extractors must have `allow_manual_trigger=True` to be included
+
+**Example:**
+
+```python
+# Force regeneration for a user (CURRENT status, fire-and-forget)
+client.manual_profile_generation(user_id="user_123")
+
+# Regenerate for all users with specific source
+client.manual_profile_generation(source="chat")
+
+# Run specific extractors only
+client.manual_profile_generation(
+    user_id="user_123",
+    extractor_names=["preferences"]
+)
+```
+
+---
+
+## `rerun_feedback_generation`
+
+Regenerate feedback from ALL interactions for a specific agent version. Creates feedbacks with PENDING status.
+
+```python
+response = client.rerun_feedback_generation(
+    agent_version="v2.1.0",
+    wait_for_response=True
+)
+```
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `agent_version` | str | Yes | - | Agent version to evaluate |
+| `start_time` | datetime | No | `None` | Filter interactions from this time |
+| `end_time` | datetime | No | `None` | Filter interactions until this time |
+| `feedback_name` | str | No | `None` | Specific feedback type to generate |
+| `wait_for_response` | bool | No | `False` | Wait for operation to complete |
+
+### RerunFeedbackGenerationResponse Schema
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `success` | bool | Whether the operation was successful |
+| `msg` | str | Additional information (optional) |
+| `feedbacks_generated` | int | Number of feedbacks generated (optional) |
+| `operation_id` | str | Operation identifier for tracking |
+
+**Example:**
+
+```python
+# Rerun feedback for agent version using kwargs
+client.rerun_feedback_generation(agent_version="v2.1.0")
+
+# Rerun specific feedback type with wait
+response = client.rerun_feedback_generation(
+    agent_version="v2.1.0",
+    feedback_name="response_quality",
+    wait_for_response=True
+)
+
+# Rerun with time filter
+from datetime import datetime, timedelta
+
+client.rerun_feedback_generation(
+    agent_version="v2.1.0",
+    start_time=datetime.now() - timedelta(days=7),
+    end_time=datetime.now()
+)
+```
+
+---
+
+## `manual_feedback_generation`
+
+Manually trigger feedback generation with window-sized interactions (fire-and-forget). Creates feedbacks with CURRENT status directly (no upgrade needed).
+
+```python
+client.manual_feedback_generation(agent_version="v2.1.0")
+```
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `agent_version` | str | Yes | - | Agent version to evaluate |
+| `source` | str | No | `None` | Filter by interaction source |
+| `feedback_name` | str | No | `None` | Specific feedback type to generate |
+
+**Returns:** `None` (fire-and-forget operation)
+
+**Prerequisites:**
+- `extraction_window_size` must be configured in your config
+- Feedback configs must have `allow_manual_trigger=True` to be included
+
+**Example:**
+
+```python
+# Force regeneration for an agent version (CURRENT status, fire-and-forget)
+client.manual_feedback_generation(agent_version="v2.1.0")
+
+# Regenerate with specific source filter
+client.manual_feedback_generation(
+    agent_version="v2.1.0",
+    source="chat"
+)
+
+# Run for specific feedback type only
+client.manual_feedback_generation(
+    agent_version="v2.1.0",
+    feedback_name="response_quality"
+)
+```
+
+---
+
+## `run_feedback_aggregation`
+
+Aggregate raw feedbacks into consolidated insights using clustering.
+
+```python
+response = client.run_feedback_aggregation(
+    agent_version="v2.1.0",
+    feedback_name="response_quality"
+)
+```
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `agent_version` | str | Yes | - | Agent version to aggregate for |
+| `feedback_name` | str | Yes | - | Feedback type to aggregate |
+| `wait_for_response` | bool | No | `False` | Wait for operation to complete |
+
+### RunFeedbackAggregationResponse Schema
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `success` | bool | Whether the aggregation was successful |
+| `message` | str | Additional information |
+
+**Example:**
+
+```python
+# Aggregate feedback for an agent version using kwargs
+client.run_feedback_aggregation(
+    agent_version="v2.1.0",
+    feedback_name="response_quality"
+)
+
+# Wait for completion
+response = client.run_feedback_aggregation(
+    agent_version="v2.1.0",
+    feedback_name="response_quality",
+    wait_for_response=True
+)
+
+if response.success:
+    print("Aggregation complete")
+```

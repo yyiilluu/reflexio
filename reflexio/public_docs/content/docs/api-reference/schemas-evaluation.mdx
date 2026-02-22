@@ -1,0 +1,41 @@
+---
+title: "Evaluation Models"
+description: "Data structures for agent success evaluation results."
+---
+
+# Evaluation Models
+
+## AgentSuccessEvaluationResult
+
+Represents an agent performance evaluation result.
+
+| Field | Type | Description | Default |
+|-------|------|-------------|---------|
+| `result_id` | integer | Unique identifier for the evaluation result | 0 |
+| `agent_version` | string | Version of the agent being evaluated | Required |
+| `request_id` | string | Request ID that was evaluated | Required |
+| `is_success` | boolean | Whether the agent was successful | Required |
+| `failure_type` | string | Type of failure if unsuccessful | Required |
+| `failure_reason` | string | Detailed reason for failure | Required |
+| `agent_prompt_update` | string | Suggested improvement for the agent | Required |
+| `created_at` | integer | Unix timestamp when evaluation was created | Current time |
+| `embedding` | array[float] | Vector embedding of the evaluation result | Empty array |
+
+## GetAgentSuccessEvaluationResultsRequest
+
+Request model for getting agent success evaluation results.
+
+| Field | Type | Description | Default |
+|-------|------|-------------|---------|
+| `agent_version` | string | Filter by specific agent version | Optional |
+| `limit` | integer | Maximum number of results to return | 100 |
+
+## GetAgentSuccessEvaluationResultsResponse
+
+Response model for getting agent success evaluation results.
+
+| Field | Type | Description | Default |
+|-------|------|-------------|---------|
+| `success` | boolean | Whether the request was successful | Required |
+| `results` | array[AgentSuccessEvaluationResult] | List of evaluation results | Required |
+| `msg` | string | Additional message | Optional |

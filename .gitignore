@@ -17,8 +17,7 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-!reflexio/website/lib/
+/lib/
 lib64/
 parts/
 sdist/

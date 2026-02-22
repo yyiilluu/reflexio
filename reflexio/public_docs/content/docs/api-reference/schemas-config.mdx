@@ -1,0 +1,47 @@
+---
+title: "Configuration Models"
+description: "Data structures for system configuration — profile extraction, agent feedback, and feedback aggregation settings."
+---
+
+# Configuration Models
+
+## Config
+
+Configuration object for Reflexio system.
+
+| Field | Type | Description | Default |
+|-------|------|-------------|---------|
+| `storage_config` | StorageConfig | Database storage configuration | Required |
+| `agent_context_prompt` | string | Global agent context prompt | Optional |
+| `profile_extractor_configs` | array[ProfileExtractorConfig] | Profile extraction configurations | Empty array |
+| `agent_feedback_configs` | array[AgentFeedbackConfig] | Agent feedback configurations | Empty array |
+
+## ProfileExtractorConfig
+
+Configuration for profile extraction from interactions.
+
+| Field | Type | Description | Default |
+|-------|------|-------------|---------|
+| `profile_content_definition_prompt` | string | Prompt defining what to extract | Required |
+| `context_prompt` | string | Context for profile extraction | Empty string |
+| `metadata_definition_prompt` | string | Prompt for metadata extraction | Optional |
+| `should_extract_profile_prompt_override` | string | Override for extraction conditions | Optional |
+
+## AgentFeedbackConfig
+
+Configuration for agent feedback generation.
+
+| Field | Type | Description | Default |
+|-------|------|-------------|---------|
+| `feedback_name` | string | Name of the feedback type | Required |
+| `feedback_definition_prompt` | string | Prompt defining feedback extraction | Required |
+| `metadata_definition_prompt` | string | Prompt for metadata extraction | Optional |
+| `feedback_aggregator_config` | FeedbackAggregatorConfig | Configuration for aggregation | Required |
+
+## FeedbackAggregatorConfig
+
+Configuration for feedback aggregation.
+
+| Field | Type | Description | Default |
+|-------|------|-------------|---------|
+| `min_feedback_threshold` | integer | Minimum feedbacks required for aggregation | 2 |

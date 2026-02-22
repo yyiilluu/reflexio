@@ -1,0 +1,134 @@
+---
+title: "Profile Models"
+description: "Data structures for user profiles — searching, retrieving, deleting profiles and tracking profile changes."
+---
+
+# Profile Models
+
+## UserProfile
+
+Represents a user profile generated from user interactions.
+
+| Field | Type | Description | Default |
+|-------|------|-------------|---------|
+| `profile_id` | string | Unique identifier for the profile | Required |
+| `user_id` | string | Identifier of the user | Required |
+| `profile_content` | string | Content of the user profile | Required |
+| `last_modified_timestamp` | integer | Unix timestamp of last modification | Required |
+| `generated_from_request_id` | string | Request ID that generated this profile | Required |
+| `profile_time_to_live` | ProfileTimeToLive | Time-to-live setting for the profile | `INFINITY` |
+| `expiration_timestamp` | integer | Unix timestamp when profile expires | Maximum timestamp |
+| `custom_features` | object | Custom feature metadata | None |
+| `source` | string | Source of the interaction that generated this profile | None |
+| `status` | Status | Processing status of the profile (None for current, ARCHIVED, PENDING) | None |
+| `embedding` | array[float] | Vector embedding of the profile | Empty array |
+
+## SearchUserProfileRequest
+
+Request model for searching user profiles.
+
+| Field | Type | Description | Default |
+|-------|------|-------------|---------|
+| `user_id` | string | Identifier of the user | Required |
+| `query` | string | Semantic search query | Required |
+| `source` | string | Filter by interaction source | Optional |
+| `custom_feature` | string | Filter by custom features | Optional |
+| `extractor_name` | string | Filter by extractor name | Optional |
+| `threshold` | float | Similarity threshold for results | 0.7 |
+| `top_k` | integer | Number of results to return | 5 |
+
+## SearchUserProfileResponse
+
+Response model for profile search requests.
+
+| Field | Type | Description | Default |
+|-------|------|-------------|---------|
+| `success` | boolean | Whether the search was successful | Required |
+| `user_profiles` | array[UserProfile] | List of matching profiles | Required |
+| `msg` | string | Additional message | Optional |
+
+## GetUserProfilesRequest
+
+Request model for getting user profiles.
+
+| Field | Type | Description | Default |
+|-------|------|-------------|---------|
+| `user_id` | string | Identifier of the user | Required |
+| `start_time` | datetime | Filter by start time | Optional |
+| `end_time` | datetime | Filter by end time | Optional |
+| `top_k` | integer | Maximum number of results to return | 30 |
+| `status_filter` | array[Status] | Filter by profile status | Optional |
+
+## GetUserProfilesResponse
+
+Response model for getting user profiles.
+
+| Field | Type | Description | Default |
+|-------|------|-------------|---------|
+| `success` | boolean | Whether the request was successful | Required |
+| `user_profiles` | array[UserProfile] | List of profiles | Required |
+| `msg` | string | Additional message | Optional |
+
+## DeleteUserProfileRequest
+
+Request model for deleting a user profile.
+
+| Field | Type | Description | Default |
+|-------|------|-------------|---------|
+| `user_id` | string | Identifier of the user | Required |
+| `profile_id` | string | Identifier of the profile to delete | Empty string |
+| `search_query` | string | Search query to find profiles to delete | Empty string |
+
+## DeleteUserProfileResponse
+
+Response model for profile deletion requests.
+
+| Field | Type | Description | Default |
+|-------|------|-------------|---------|
+| `success` | boolean | Whether the deletion was successful | Required |
+| `message` | string | Additional information about the operation | Empty string |
+
+## ProfileChangeLog
+
+Represents a log entry tracking changes to user profiles.
+
+| Field | Type | Description | Default |
+|-------|------|-------------|---------|
+| `id` | integer | Unique identifier for the change log | Required |
+| `user_id` | string | Identifier of the user whose profile changed | Required |
+| `request_id` | string | Request ID that triggered the change | Required |
+| `created_at` | integer | Unix timestamp when the change occurred | Current time |
+| `added_profiles` | array[UserProfile] | Profiles that were added | Required |
+| `removed_profiles` | array[UserProfile] | Profiles that were removed | Required |
+| `mentioned_profiles` | array[UserProfile] | Profiles that were referenced but not changed | Required |
+
+## ProfileChangeLogResponse
+
+Response model for profile change log requests.
+
+| Field | Type | Description | Default |
+|-------|------|-------------|---------|
+| `success` | boolean | Whether the request was successful | Required |
+| `profile_change_logs` | array[ProfileChangeLog] | List of profile change logs | Required |
+
+## RerunProfileGenerationRequest
+
+Request model for rerunning profile generation.
+
+| Field | Type | Description | Default |
+|-------|------|-------------|---------|
+| `user_id` | string | Specific user ID to rerun for (if None, runs for all users) | Optional |
+| `start_time` | datetime | Filter interactions from this time | Optional |
+| `end_time` | datetime | Filter interactions until this time | Optional |
+| `source` | string | Filter interactions by source | Optional |
+
+## RerunProfileGenerationResponse
+
+Response model for profile generation rerun requests.
+
+| Field | Type | Description | Default |
+|-------|------|-------------|---------|
+| `success` | boolean | Whether the operation was successful | Required |
+| `msg` | string | Additional information | Optional |
+| `profiles_generated` | integer | Number of profiles generated | Optional |
+| `operation_id` | string | Operation identifier for tracking | Optional |

@@ -12,8 +12,8 @@ uvicorn reflexio.server.api:app --host 0.0.0.0 --port ${BACKEND_PORT} --reload -
 # Start website
 (cd reflexio/website && npx next dev -p ${FRONTEND_PORT}) &
 
-# Start mkdocs documentation server
-mkdocs serve -f reflexio/public_docs/mkdocs.yml --dev-addr 0.0.0.0:${DOCS_PORT} &
+# Start documentation server
+(cd reflexio/public_docs && npx next dev -p ${DOCS_PORT}) &
 
 # Keep container running
 wait

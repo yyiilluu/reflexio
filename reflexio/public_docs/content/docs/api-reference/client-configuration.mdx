@@ -1,0 +1,119 @@
+---
+title: "Configuration"
+description: "Methods for getting and setting system configuration."
+---
+
+# Configuration Management
+
+## `get_config`
+
+Get the current system configuration.
+
+```python
+config = client.get_config()
+```
+
+### Config Schema
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `storage_config` | dict | Database storage configuration |
+| `agent_context_prompt` | str | Global agent context prompt (optional) |
+| `profile_extractor_configs` | list[dict] | Profile extraction configurations |
+| `agent_feedback_configs` | list[dict] | Agent feedback configurations |
+
+**Example:**
+
+```python
+config = client.get_config()
+print(f"Profile extractors: {len(config.profile_extractor_configs)}")
+print(f"Feedback configs: {len(config.agent_feedback_configs)}")
+
+# Inspect profile extractors
+for extractor in config.profile_extractor_configs:
+    print(f"  Extractor: {extractor['profile_content_definition_prompt'][:50]}...")
+```
+
+---
+
+## `set_config`
+
+Set the system configuration.
+
+```python
+response = client.set_config(config)
+```
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `config` | dict | Yes | Configuration to set |
+
+### Config Dict Fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `profile_extractor_configs` | list[dict] | No | Profile extraction configurations |
+| `agent_feedback_configs` | list[dict] | No | Agent feedback configurations |
+| `agent_context_prompt` | str | No | Global agent context prompt |
+
+### ProfileExtractorConfig Dict Fields
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `profile_content_definition_prompt` | str | Yes | - | Prompt defining what to extract |
+| `context_prompt` | str | No | `""` | Context for profile extraction |
+| `metadata_definition_prompt` | str | No | `None` | Prompt for metadata extraction |
+| `should_extract_profile_prompt_override` | str | No | `None` | Override for extraction conditions |
+
+### AgentFeedbackConfig Dict Fields
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `feedback_name` | str | Yes | - | Name of the feedback type |
+| `feedback_definition_prompt` | str | Yes | - | Prompt defining feedback extraction |
+| `metadata_definition_prompt` | str | No | `None` | Prompt for metadata extraction |
+| `feedback_aggregator_config` | dict | Yes | - | Configuration for aggregation |
+
+### FeedbackAggregatorConfig Dict Fields
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `min_feedback_threshold` | int | No | `2` | Minimum feedbacks required for aggregation |
+
+**Returns:** Dictionary with `success` and `message`
+
+**Example:**
+
+```python
+config = client.get_config()
+
+# Add profile extractors using dict format
+config.profile_extractor_configs = [
+    {
+        "profile_content_definition_prompt": "Extract user preferences and interests",
+        "context_prompt": "Analyzing customer conversations"
+    },
+    {
+        "profile_content_definition_prompt": "Extract user technical skill level",
+        "context_prompt": "Technical support interactions",
+        "metadata_definition_prompt": "Include skill areas and proficiency levels"
+    }
+]
+
+# Add feedback configuration using dict format
+config.agent_feedback_configs = [
+    {
+        "feedback_name": "quality_feedback",
+        "feedback_definition_prompt": "Extract feedback about response quality",
+        "feedback_aggregator_config": {"min_feedback_threshold": 3}
+    },
+    {
+        "feedback_name": "helpfulness_feedback",
+        "feedback_definition_prompt": "Identify whether the response was helpful to the user",
+        "feedback_aggregator_config": {"min_feedback_threshold": 5}
+    }
+]
+
+response = client.set_config(config)
+print(f"Config updated: {response['success']}")
+```

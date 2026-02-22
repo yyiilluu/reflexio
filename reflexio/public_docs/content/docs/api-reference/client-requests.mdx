@@ -1,0 +1,168 @@
+---
+title: "Request Management"
+description: "Methods for retrieving and deleting requests and request groups."
+---
+
+# Request Management
+
+## `get_requests`
+
+Get requests with their associated interactions, grouped by request_group.
+
+```python
+response = client.get_requests(
+    user_id="user_123",
+    top_k=50
+)
+```
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `user_id` | str | No | `None` | Filter by user ID |
+| `request_id` | str | No | `None` | Filter by specific request ID |
+| `start_time` | datetime | No | `None` | Filter by start time |
+| `end_time` | datetime | No | `None` | Filter by end time |
+| `top_k` | int | No | `30` | Maximum number of results to return |
+
+### GetRequestsResponse Schema
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `success` | bool | Whether the request was successful |
+| `request_groups` | list[RequestGroup] | List of request groups with their requests |
+| `msg` | str | Additional message (optional) |
+
+### RequestGroup Schema
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `request_group` | str | The request group identifier |
+| `requests` | list[RequestData] | List of requests in this group |
+
+### RequestData Schema
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `request` | Request | The request object |
+| `interactions` | list[Interaction] | List of interactions in this request |
+
+### Request Schema
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `request_id` | str | Unique identifier for the request |
+| `user_id` | str | Identifier of the user |
+| `created_at` | int | Unix timestamp when request was created |
+| `source` | str | Source of the request (e.g., "web_app", "mobile_app") |
+| `agent_version` | str | Version of the agent that generated this request |
+| `request_group` | str | Group identifier for related requests |
+
+**Example:**
+
+```python
+# Get all requests for a user using kwargs
+response = client.get_requests(
+    user_id="user_123",
+    top_k=50
+)
+
+for group in response.request_groups:
+    print(f"Group: {group.request_group}")
+    for req_data in group.requests:
+        print(f"  Request: {req_data.request.request_id}")
+        print(f"  Agent Version: {req_data.request.agent_version}")
+        print(f"  Interactions: {len(req_data.interactions)}")
+
+# Get requests within a time range
+from datetime import datetime, timedelta
+
+response = client.get_requests(
+    user_id="user_123",
+    start_time=datetime.now() - timedelta(days=7),
+    end_time=datetime.now()
+)
+
+# Get a specific request by ID
+response = client.get_requests(request_id="req_12345")
+```
+
+---
+
+## `delete_request`
+
+Delete a request and all its associated interactions.
+
+```python
+response = client.delete_request(
+    request_id,
+    wait_for_response=False
+)
+```
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `request_id` | str | Yes | - | Request ID to delete |
+| `wait_for_response` | bool | No | `False` | Wait for confirmation |
+
+### DeleteRequestResponse Schema
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `success` | bool | Whether the deletion was successful |
+| `message` | str | Additional information about the operation |
+
+**Example:**
+
+```python
+# Fire-and-forget
+client.delete_request(request_id="req_12345")
+
+# Wait for confirmation
+response = client.delete_request(
+    request_id="req_12345",
+    wait_for_response=True
+)
+if response.success:
+    print(f"Deleted: {response.message}")
+```
+
+---
+
+## `delete_request_group`
+
+Delete all requests and interactions in a request group.
+
+```python
+response = client.delete_request_group(
+    request_group,
+    wait_for_response=False
+)
+```
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `request_group` | str | Yes | - | Request group to delete |
+| `wait_for_response` | bool | No | `False` | Wait for confirmation |
+
+### DeleteRequestGroupResponse Schema
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `success` | bool | Whether the deletion was successful |
+| `message` | str | Additional information about the operation |
+| `deleted_requests_count` | int | Number of requests deleted |
+
+**Example:**
+
+```python
+# Clean up after an experiment
+response = client.delete_request_group(
+    request_group="experiment_001",
+    wait_for_response=True
+)
+if response.success:
+    print(f"Deleted {response.deleted_requests_count} requests")
+
+# Fire-and-forget cleanup
+client.delete_request_group(request_group="old_session_data")
+```

@@ -1,0 +1,60 @@
+---
+title: "Concepts"
+description: "Key concepts like Shadow Content used in the Reflexio API."
+---
+
+# Concepts
+
+## Shadow Content
+
+The `shadow_content` field allows you to capture an alternative agent response alongside the production response, enabling A/B testing and comparison of different agent behaviors.
+
+**How it works:**
+
+| Field | Purpose |
+|-------|---------|
+| `content` | The actual production interaction between user and agent. Used for storage, semantic search, and retrieval. |
+| `shadow_content` | An alternative response (e.g., from a different agent version or with different user profiles). Used for profile extraction, feedback generation, and evaluation when provided. |
+
+This separation allows you to:
+
+- **Compare agent versions**: Test how a new agent version would respond without affecting production
+- **Evaluate profile effectiveness**: See how different user profile configurations affect agent responses
+- **A/B test feedback integration**: Compare responses with and without specific agent feedback applied
+
+**When to use shadow_content:**
+
+- Testing a new agent version's responses against the current production version
+- Evaluating how different user profile configurations affect agent behavior
+- Comparing responses with different feedback/prompt improvements applied
+- Running shadow evaluations without impacting the user experience
+
+**Example: Comparing Agent Responses**
+
+```python
+# Agent v1.0 is in production, testing v2.0 response in shadow
+client.publish_interaction(
+    user_id="user_123",
+    interactions=[
+        {
+            "role": "User",
+            "content": "I would like to get a refund"
+        },
+        {
+            "role": "Agent",
+            # Production response (v1.0) - generic, asks for info
+            "content": "Happy to help you with that. What is your email or phone number?",
+            # Shadow response (v2.0) - personalized, uses known user data
+            "shadow_content": "Happy to assist you with that. I can see your phone number is 123-456-7890. Is that the right number to send the refund confirmation to?"
+        }
+    ],
+    request_group="support_session_001",
+    agent_version="v1.0"
+)
+```
+
+In this example:
+- `content` stores the production response from agent v1.0
+- `shadow_content` captures how agent v2.0 (with access to user profiles) would have responded
+- Profile extraction and evaluation use `shadow_content` to assess the v2.0 approach
+- You can compare evaluation results to decide whether to promote v2.0 to production

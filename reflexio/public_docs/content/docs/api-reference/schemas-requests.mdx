@@ -1,0 +1,94 @@
+---
+title: "Request Models"
+description: "Data structures for requests and request groups — retrieving and deleting requests."
+---
+
+# Request Models
+
+## Request
+
+Represents a container for one or more interactions with metadata.
+
+| Field | Type | Description | Default |
+|-------|------|-------------|---------|
+| `request_id` | string | Unique identifier for the request | Required |
+| `user_id` | string | Identifier of the user | Required |
+| `created_at` | integer | Unix timestamp when request was created | Required |
+| `source` | string | Source of the request (e.g., "web_app", "mobile_app") | Empty string |
+| `agent_version` | string | Version of the agent that generated this request | Empty string |
+| `request_group` | string | Group identifier for related requests | Empty string |
+
+## RequestData
+
+Contains a request with its associated interactions.
+
+| Field | Type | Description | Default |
+|-------|------|-------------|---------|
+| `request` | Request | The request object | Required |
+| `interactions` | array[Interaction] | List of interactions in this request | Required |
+
+## RequestGroup
+
+Groups multiple requests by request_group identifier.
+
+| Field | Type | Description | Default |
+|-------|------|-------------|---------|
+| `request_group` | string | The request group identifier | Required |
+| `requests` | array[RequestData] | List of requests in this group | Required |
+
+## GetRequestsRequest
+
+Request model for getting requests grouped by request_group.
+
+| Field | Type | Description | Default |
+|-------|------|-------------|---------|
+| `user_id` | string | Filter by user ID | Optional |
+| `request_id` | string | Filter by specific request ID | Optional |
+| `start_time` | datetime | Filter by start time | Optional |
+| `end_time` | datetime | Filter by end time | Optional |
+| `top_k` | integer | Maximum number of results to return | 30 |
+
+## GetRequestsResponse
+
+Response model for getting requests.
+
+| Field | Type | Description | Default |
+|-------|------|-------------|---------|
+| `success` | boolean | Whether the request was successful | Required |
+| `request_groups` | array[RequestGroup] | List of request groups with their requests | Required |
+| `msg` | string | Additional message | Optional |
+
+## DeleteRequestRequest
+
+Request model for deleting a request and all its associated interactions.
+
+| Field | Type | Description | Default |
+|-------|------|-------------|---------|
+| `request_id` | string | Identifier of the request to delete | Required |
+
+## DeleteRequestResponse
+
+Response model for request deletion requests.
+
+| Field | Type | Description | Default |
+|-------|------|-------------|---------|
+| `success` | boolean | Whether the deletion was successful | Required |
+| `message` | string | Additional information about the operation | Empty string |
+
+## DeleteRequestGroupRequest
+
+Request model for deleting all requests in a request group.
+
+| Field | Type | Description | Default |
+|-------|------|-------------|---------|
+| `request_group` | string | Request group identifier | Required |
+
+## DeleteRequestGroupResponse
+
+Response model for request group deletion requests.
+
+| Field | Type | Description | Default |
+|-------|------|-------------|---------|
+| `success` | boolean | Whether the deletion was successful | Required |
+| `message` | string | Additional information about the operation | Empty string |
+| `deleted_requests_count` | integer | Number of requests deleted | 0 |

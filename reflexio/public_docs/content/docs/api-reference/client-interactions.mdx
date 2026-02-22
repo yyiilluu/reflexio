@@ -1,0 +1,335 @@
+---
+title: "Interaction Management"
+description: "Methods for publishing, searching, retrieving, and deleting user interactions."
+---
+
+# Interaction Management
+
+## `publish_interaction`
+
+Publish user interactions to the system. This is the primary method for sending data to Reflexio.
+
+```python
+response = client.publish_interaction(
+    user_id,
+    interactions,
+    source="",
+    agent_version="",
+    request_group=None,
+    wait_for_response=False
+)
+```
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `user_id` | str | Yes | - | Unique identifier for the user |
+| `interactions` | list[dict] | Yes | - | List of interaction dicts (see Interaction Dict Fields below) |
+| `source` | str | No | `""` | Source category (e.g., "chat", "email", "support"), which can trigger specific profile extractor if set |
+| `agent_version` | str | No | `""` | Version string for tracking agent iterations |
+| `request_group` | str | No | `None` | Groups related requests together |
+| `wait_for_response` | bool | No | `False` | If `True`, waits for server confirmation |
+
+**Returns:**
+- `PublishUserInteractionResponse` if `wait_for_response=True`
+- `None` if `wait_for_response=False` (fire-and-forget mode)
+
+### Interaction Dict Fields
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `role` | str | No | `"User"` | Role of the interaction participant: `"User"`, `"Agent"`, or `"System"` |
+| `content` | str | No | `""` | Text content of the interaction |
+| `shadow_content` | str | No | `""` | Alternative agent response for A/B testing and comparison (see [Shadow Content](/docs/api-reference/schemas-concepts#shadow-content)) |
+| `image_encoding` | str | No | `None` | Base64-encoded image data |
+| `user_action` | str | No | `"NONE"` | Type of user action: `"NONE"`, `"CLICK"`, `"SCROLL"`, `"TYPE"` |
+| `user_action_description` | str | No | `None` | Description of the user action |
+| `interacted_image_url` | str | No | `None` | URL of any associated image |
+
+### PublishUserInteractionResponse Schema
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `success` | bool | Whether the publication was successful |
+| `message` | str | Additional information about the operation |
+
+### Example 1: Basic Text Conversation
+
+```python
+# Simple conversation (fire-and-forget)
+client.publish_interaction(
+    user_id="user_123",
+    interactions=[
+        {"role": "User", "content": "What's the weather like?"},
+        {"role": "Agent", "content": "It's sunny and 72°F today."}
+    ],
+    source="chat",
+    request_group="session_001"
+)
+```
+
+### Example 2: Wait for Confirmation
+
+```python
+# Wait for server response
+response = client.publish_interaction(
+    user_id="user_123",
+    interactions=[
+        {"role": "User", "content": "I want to upgrade my plan"}
+    ],
+    source="support",
+    wait_for_response=True
+)
+
+if response.success:
+    print(f"Published successfully: {response.message}")
+```
+
+### Example 3: Multi-Turn Conversation with Agent Version
+
+```python
+# Track which agent version handled the interaction
+client.publish_interaction(
+    user_id="customer_456",
+    interactions=[
+        {"role": "User", "content": "I need help choosing a laptop"},
+        {"role": "Agent", "content": "I'd be happy to help! What's your budget?"},
+        {"role": "User", "content": "Around $1000 for programming work"},
+        {"role": "Agent", "content": "For programming, I recommend the ThinkPad X1..."}
+    ],
+    source="sales_chat",
+    agent_version="v2.1.0",
+    request_group="purchase_flow_789"
+)
+```
+
+### Example 4: Image Interactions
+
+```python
+import base64
+
+def encode_image(path):
+    with open(path, "rb") as f:
+        return base64.b64encode(f.read()).decode("utf-8")
+
+# User shares an image
+client.publish_interaction(
+    user_id="user_123",
+    interactions=[
+        {
+            "role": "User",
+            "content": "What do you think of this outfit?",
+            "image_encoding": encode_image("outfit.jpg")
+        },
+        {
+            "role": "Agent",
+            "content": "Great choice! The colors complement each other well."
+        }
+    ],
+    source="styling_consultation",
+    request_group="style_session_001"
+)
+```
+
+### Example 5: User Action Tracking
+
+```python
+# Track user behavior on your platform
+client.publish_interaction(
+    user_id="shopper_789",
+    interactions=[
+        {
+            "user_action": "CLICK",
+            "user_action_description": "Clicked 'Add to Cart' for MacBook Pro",
+            "interacted_image_url": "https://store.com/products/macbook-pro.jpg"
+        },
+        {
+            "user_action": "SCROLL",
+            "user_action_description": "Scrolled through laptop accessories"
+        }
+    ],
+    source="ecommerce",
+    request_group="shopping_session_001"
+)
+```
+
+---
+
+## `search_interactions`
+
+Search for user interactions using semantic queries.
+
+```python
+response = client.search_interactions(
+    user_id="user_123",
+    query="laptop recommendations",
+    top_k=5,
+    most_recent_k=10
+)
+```
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `user_id` | str | Yes | - | Identifier of the user to search |
+| `request_id` | str | No | `None` | Filter by specific request ID |
+| `query` | str | No | `None` | Semantic search query |
+| `start_time` | datetime | No | `None` | Filter by start time |
+| `end_time` | datetime | No | `None` | Filter by end time |
+| `top_k` | int | No | `None` | Maximum number of results to return |
+| `most_recent_k` | int | No | `None` | Return most recent k interactions |
+
+### SearchInteractionResponse Schema
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `success` | bool | Whether the search was successful |
+| `interactions` | list[Interaction] | List of matching interactions |
+| `msg` | str | Additional message (optional) |
+
+### Interaction Schema (Returned Object)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `interaction_id` | str | Unique identifier for the interaction |
+| `user_id` | str | Identifier of the user |
+| `request_id` | str | Identifier of the request |
+| `created_at` | int | Unix timestamp when interaction was created |
+| `role` | str | Role of the interaction participant |
+| `content` | str | Text content of the interaction |
+| `user_action` | str | Type of user action |
+| `user_action_description` | str | Description of the user action |
+| `interacted_image_url` | str | URL of any associated image |
+| `image_encoding` | str | Base64 encoded image data |
+| `embedding` | list[float] | Vector embedding of the interaction |
+
+**Example:**
+
+```python
+# Search for interactions using kwargs
+response = client.search_interactions(
+    user_id="user_123",
+    query="laptop recommendations budget",
+    top_k=10
+)
+
+for interaction in response.interactions:
+    print(f"[{interaction.role}]: {interaction.content}")
+    print(f"  Request ID: {interaction.request_id}")
+    print(f"  Created at: {interaction.created_at}")
+
+# Search with time filter
+from datetime import datetime, timedelta
+
+response = client.search_interactions(
+    user_id="user_123",
+    query="product preferences",
+    start_time=datetime.now() - timedelta(days=7),
+    top_k=20
+)
+
+# Get most recent interactions without semantic search
+response = client.search_interactions(
+    user_id="user_123",
+    most_recent_k=10
+)
+```
+
+---
+
+## `get_interactions`
+
+Retrieve user interactions without semantic search.
+
+```python
+response = client.get_interactions(
+    user_id="user_123",
+    top_k=50
+)
+```
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `user_id` | str | Yes | - | Identifier of the user to query |
+| `start_time` | datetime | No | `None` | Filter by start time |
+| `end_time` | datetime | No | `None` | Filter by end time |
+| `top_k` | int | No | `30` | Maximum number of results to return |
+
+### GetInteractionsResponse Schema
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `success` | bool | Whether the request was successful |
+| `interactions` | list[Interaction] | List of interactions |
+| `msg` | str | Additional message (optional) |
+
+**Example:**
+
+```python
+# Get recent interactions using kwargs
+response = client.get_interactions(
+    user_id="user_123",
+    top_k=50
+)
+
+print(f"Found {len(response.interactions)} interactions")
+
+# Get interactions within a time range
+from datetime import datetime, timedelta
+
+response = client.get_interactions(
+    user_id="user_123",
+    start_time=datetime.now() - timedelta(days=7),
+    end_time=datetime.now(),
+    top_k=100
+)
+
+for interaction in response.interactions:
+    print(f"[{interaction.created_at}] {interaction.role}: {interaction.content[:50]}...")
+```
+
+---
+
+## `delete_interaction`
+
+Delete a specific user interaction.
+
+```python
+response = client.delete_interaction(
+    user_id,
+    interaction_id,
+    wait_for_response=False
+)
+```
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `user_id` | str | Yes | - | User identifier |
+| `interaction_id` | str | Yes | - | Interaction ID to delete |
+| `wait_for_response` | bool | No | `False` | Wait for confirmation |
+
+### DeleteUserInteractionResponse Schema
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `success` | bool | Whether the deletion was successful |
+| `message` | str | Additional information about the operation |
+
+**Example:**
+
+```python
+# Fire-and-forget deletion
+client.delete_interaction(
+    user_id="user_123",
+    interaction_id="int_456"
+)
+
+# Wait for confirmation
+response = client.delete_interaction(
+    user_id="user_123",
+    interaction_id="int_456",
+    wait_for_response=True
+)
+if response.success:
+    print(f"Deleted successfully: {response.message}")
+else:
+    print(f"Deletion failed: {response.message}")
+```

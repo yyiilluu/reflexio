@@ -1,0 +1,305 @@
+---
+title: "Profile Management"
+description: "Methods for searching, retrieving, and deleting user profiles, plus profile changelog."
+---
+
+# Profile Management
+
+## `search_profiles`
+
+Search for user profiles using semantic queries.
+
+```python
+response = client.search_profiles(
+    user_id="user_123",
+    query="laptop preferences",
+    threshold=0.7,
+    top_k=5
+)
+```
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `user_id` | str | Yes | - | Identifier of the user to search |
+| `generated_from_request_id` | str | No | `None` | Filter by request ID that generated the profile |
+| `query` | str | No | `None` | Semantic search query |
+| `start_time` | datetime | No | `None` | Filter by start time |
+| `end_time` | datetime | No | `None` | Filter by end time |
+| `top_k` | int | No | `10` | Maximum number of results to return |
+| `source` | str | No | `None` | Filter by interaction source |
+| `custom_feature` | str | No | `None` | Filter by custom features |
+| `extractor_name` | str | No | `None` | Filter by extractor name |
+| `threshold` | float | No | `0.7` | Similarity threshold (0.0-1.0) |
+
+### SearchUserProfileResponse Schema
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `success` | bool | Whether the search was successful |
+| `user_profiles` | list[UserProfile] | List of matching profiles |
+| `msg` | str | Additional message (optional) |
+
+### UserProfile Schema
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `profile_id` | str | Unique identifier for the profile |
+| `user_id` | str | Identifier of the user |
+| `profile_content` | str | Content of the user profile |
+| `last_modified_timestamp` | int | Unix timestamp of last modification |
+| `generated_from_request_id` | str | Request ID that generated this profile |
+| `profile_time_to_live` | str | Time-to-live setting (see [ProfileTimeToLive](/docs/api-reference/schemas-enums#profiletimetolive)) |
+| `expiration_timestamp` | int | Unix timestamp when profile expires |
+| `custom_features` | dict | Custom feature metadata |
+| `source` | str | Source of the interaction that generated this profile |
+| `embedding` | list[float] | Vector embedding of the profile |
+
+**Example:**
+
+```python
+# Basic semantic search using kwargs
+response = client.search_profiles(
+    user_id="user_123",
+    query="laptop preferences budget constraints",
+    threshold=0.7
+)
+
+for profile in response.user_profiles:
+    print(f"Profile: {profile.profile_content}")
+    print(f"Source: {profile.source}")
+    print(f"Created from request: {profile.generated_from_request_id}")
+
+# Filter by source
+response = client.search_profiles(
+    user_id="user_123",
+    query="product preferences",
+    source="sales_chat",
+    top_k=10,
+    threshold=0.6
+)
+
+# Filter by extractor name
+response = client.search_profiles(
+    user_id="user_123",
+    query="product preferences",
+    extractor_name="preferences_extractor",
+    top_k=10
+)
+
+# Search with time filter
+from datetime import datetime, timedelta
+
+response = client.search_profiles(
+    user_id="user_123",
+    query="communication style",
+    start_time=datetime.now() - timedelta(days=30),
+    custom_feature="personality_traits"
+)
+```
+
+---
+
+## `get_profiles`
+
+Retrieve user profiles.
+
+```python
+response = client.get_profiles(
+    user_id="user_123",
+    top_k=10
+)
+```
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `user_id` | str | Yes | - | Identifier of the user to query |
+| `start_time` | datetime | No | `None` | Filter by start time |
+| `end_time` | datetime | No | `None` | Filter by end time |
+| `top_k` | int | No | `30` | Maximum number of results to return |
+| `status_filter` | list[Status \| str] | No | `None` | Filter by profile status. Accepts Status enum or string values (e.g., `"current"`, `"archived"`, `"pending"`) |
+| `force_refresh` | bool | No | `False` | Bypass cache |
+
+### GetUserProfilesResponse Schema
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `success` | bool | Whether the request was successful |
+| `user_profiles` | list[UserProfile] | List of user profiles |
+| `msg` | str | Additional message (optional) |
+
+**Example:**
+
+```python
+# Get cached profiles (faster) using kwargs
+response = client.get_profiles(
+    user_id="user_123",
+    top_k=10
+)
+
+for profile in response.user_profiles:
+    print(f"[{profile.source}] {profile.profile_content}")
+
+# Force fresh data after publishing new interactions
+response = client.get_profiles(
+    user_id="user_123",
+    top_k=10,
+    force_refresh=True
+)
+
+# Get profiles within a time range
+from datetime import datetime, timedelta
+
+response = client.get_profiles(
+    user_id="user_123",
+    start_time=datetime.now() - timedelta(days=30),
+    top_k=50
+)
+
+# Filter by status using enum
+from reflexio_commons.api_schema.service_schemas import Status
+
+response = client.get_profiles(
+    user_id="user_123",
+    status_filter=[Status.CURRENT]
+)
+
+# Filter by status using string (equivalent to above)
+response = client.get_profiles(
+    user_id="user_123",
+    status_filter=["current"]
+)
+```
+
+---
+
+## `get_all_profiles`
+
+Get profiles across all users (admin operation).
+
+```python
+response = client.get_all_profiles(limit=100)
+```
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `limit` | int | No | `100` | Maximum profiles to return |
+
+**Returns:** `GetUserProfilesResponse` with profiles from all users
+
+**Example:**
+
+```python
+# Get profiles from all users
+all_profiles = client.get_all_profiles(limit=50)
+
+# Group by user
+from collections import defaultdict
+by_user = defaultdict(list)
+
+for profile in all_profiles.user_profiles:
+    by_user[profile.user_id].append(profile)
+
+for user_id, profiles in by_user.items():
+    print(f"User {user_id}: {len(profiles)} profiles")
+    for p in profiles[:3]:  # Show first 3
+        print(f"  - {p.profile_content[:50]}...")
+```
+
+---
+
+## `delete_profile`
+
+Delete user profiles by ID or search query.
+
+```python
+response = client.delete_profile(
+    user_id,
+    profile_id="",
+    search_query="",
+    wait_for_response=False
+)
+```
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `user_id` | str | Yes | - | User identifier |
+| `profile_id` | str | No | `""` | Specific profile ID to delete |
+| `search_query` | str | No | `""` | Delete profiles matching query |
+| `wait_for_response` | bool | No | `False` | Wait for confirmation |
+
+### DeleteUserProfileResponse Schema
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `success` | bool | Whether the deletion was successful |
+| `message` | str | Additional information about the operation |
+
+**Example:**
+
+```python
+# Delete specific profile by ID
+client.delete_profile(
+    user_id="user_123",
+    profile_id="prof_456"
+)
+
+# Delete profiles matching a search query
+response = client.delete_profile(
+    user_id="user_123",
+    search_query="outdated preferences",
+    wait_for_response=True
+)
+if response.success:
+    print(f"Deleted profiles: {response.message}")
+
+# Delete with confirmation
+response = client.delete_profile(
+    user_id="user_123",
+    profile_id="prof_789",
+    wait_for_response=True
+)
+```
+
+---
+
+## `get_profile_change_log`
+
+Retrieve the history of profile changes.
+
+```python
+logs = client.get_profile_change_log()
+```
+
+### ProfileChangeLogResponse Schema
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `success` | bool | Whether the request was successful |
+| `profile_change_logs` | list[ProfileChangeLog] | List of profile change logs |
+
+### ProfileChangeLog Schema
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | int | Unique identifier for the change log |
+| `user_id` | str | Identifier of the user whose profile changed |
+| `request_id` | str | Request that triggered the change |
+| `created_at` | int | Unix timestamp when the change occurred |
+| `added_profiles` | list[UserProfile] | Profiles that were added |
+| `removed_profiles` | list[UserProfile] | Profiles that were removed |
+| `mentioned_profiles` | list[UserProfile] | Profiles that were referenced but not changed |
+
+**Example:**
+
+```python
+logs = client.get_profile_change_log()
+
+for log in logs.profile_change_logs:
+    print(f"Request: {log.request_id}")
+    print(f"  Added: {len(log.added_profiles)} profiles")
+    for added in log.added_profiles:
+        print(f"    + {added.profile_content[:50]}...")
+    print(f"  Removed: {len(log.removed_profiles)} profiles")
+    for removed in log.removed_profiles:
+        print(f"    - {removed.profile_content[:50]}...")
+```

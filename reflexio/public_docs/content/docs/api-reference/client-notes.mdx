@@ -1,0 +1,167 @@
+---
+title: "Notes"
+description: "Enums reference, fire-and-forget mode, caching behavior, and synchronous API."
+---
+
+# Notes
+
+## Enums Reference
+
+### UserActionType
+
+Represents different types of user actions that can be tracked. Use as string values in dict format.
+
+| Value | Description |
+|-------|-------------|
+| `"CLICK"` | Click interaction |
+| `"SCROLL"` | Scroll interaction |
+| `"TYPE"` | Type interaction |
+| `"NONE"` | No specific interaction |
+
+**Example:**
+
+```python
+# Track a click action
+interaction = {
+    "user_action": "CLICK",
+    "user_action_description": "Clicked on product image"
+}
+
+# Track a scroll action
+interaction = {
+    "user_action": "SCROLL",
+    "user_action_description": "Scrolled through recommendations"
+}
+```
+
+---
+
+### ProfileTimeToLive
+
+Defines the time-to-live options for user profiles. Use as string values.
+
+| Value | Description |
+|-------|-------------|
+| `"ONE_DAY"` | Profile expires after one day |
+| `"ONE_WEEK"` | Profile expires after one week |
+| `"ONE_MONTH"` | Profile expires after one month |
+| `"ONE_QUARTER"` | Profile expires after one quarter |
+| `"ONE_YEAR"` | Profile expires after one year |
+| `"INFINITY"` | Profile never expires |
+
+---
+
+### Status
+
+Represents the current status of a user profile. Use as string values.
+
+| Value | Description |
+|-------|-------------|
+| `"CURRENT"` | Active profile currently in use |
+| `"ARCHIVED"` | Profile has been archived |
+| `"PENDING"` | Profile is pending approval or processing |
+| `"ARCHIVE_IN_PROGRESS"` | Profile is being archived |
+
+---
+
+### FeedbackStatus
+
+Represents the approval status of feedback. Use as string values.
+
+| Value | Description |
+|-------|-------------|
+| `"PENDING"` | Feedback is pending review |
+| `"APPROVED"` | Feedback has been approved |
+| `"REJECTED"` | Feedback has been rejected |
+
+---
+
+## Fire-and-Forget Mode
+
+The following methods use fire-and-forget mode by default (can use `wait_for_response=True` to wait):
+
+- `publish_interaction`
+- `delete_interaction`
+- `delete_profile`
+- `delete_request`
+- `delete_request_group`
+- `delete_feedback`
+- `delete_raw_feedback`
+
+The following methods are **always** fire-and-forget (no blocking option):
+
+- `manual_profile_generation`
+- `manual_feedback_generation`
+
+**Behavior:**
+- Returns `None` immediately
+- Operation executes asynchronously in the background
+- Errors are silently ignored
+- For methods that support it, set `wait_for_response=True` to get confirmation
+
+**Example:**
+
+```python
+# Fire-and-forget (fast, no confirmation)
+client.publish_interaction(
+    user_id="user_123",
+    interactions=[{"role": "User", "content": "Hello"}]
+)
+# Returns None immediately, operation runs in background
+
+# With confirmation (slower, but reliable)
+response = client.publish_interaction(
+    user_id="user_123",
+    interactions=[{"role": "User", "content": "Hello"}],
+    wait_for_response=True
+)
+if response.success:
+    print("Published successfully")
+
+# Always fire-and-forget (no wait option)
+client.manual_profile_generation(user_id="user_123")
+client.manual_feedback_generation(agent_version="v2.1.0")
+```
+
+---
+
+## Caching
+
+The following methods use caching to reduce API calls:
+
+- `get_profiles` - Use `force_refresh=True` to bypass
+- `get_feedbacks` - Use `force_refresh=True` to bypass
+
+**Example:**
+
+```python
+# Uses cache (fast)
+profiles = client.get_profiles(user_id="user_123")
+
+# After publishing new interactions, force refresh
+client.publish_interaction(
+    user_id="user_123",
+    interactions=[{"role": "User", "content": "New data"}],
+    wait_for_response=True
+)
+
+# Bypass cache to get fresh data
+profiles = client.get_profiles(
+    user_id="user_123",
+    force_refresh=True
+)
+```
+
+---
+
+## Synchronous API
+
+All client methods are synchronous - no `await` needed. The client handles async operations internally.
+
+```python
+# All methods are synchronous
+client = ReflexioClient(url_endpoint="http://127.0.0.1:8081/")
+token = client.login("user@example.com", "password")
+profiles = client.get_profiles(user_id="user_123")
+# No async/await required
+```
