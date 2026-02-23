@@ -57,7 +57,7 @@ export function Footer() {
                 </a>
               </li>
               <li>
-                <a href="/docs/api-reference/client/" target="_blank" rel="noopener noreferrer" className="text-sm text-slate-600 hover:text-indigo-600 transition-colors">
+                <a href="/docs/api-reference/" target="_blank" rel="noopener noreferrer" className="text-sm text-slate-600 hover:text-indigo-600 transition-colors">
                   API Reference
                 </a>
               </li>

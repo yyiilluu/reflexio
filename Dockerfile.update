@@ -20,8 +20,9 @@
 #   - Python dependencies (requirements.txt)
 #   - Node.js runtime
 #   - Next.js frontend build + node_modules
+#   - Fumadocs documentation build + node_modules
 #
-# If you changed frontend code or Python dependencies, rebuild with Dockerfile.base
+# If you changed frontend, docs, or Python dependencies, rebuild with Dockerfile.base
 # =============================================================================
 
 FROM agenticmem:latest
@@ -40,7 +41,8 @@ COPY reflexio/hooks ./reflexio/hooks
 COPY reflexio/reflexio_lib ./reflexio/reflexio_lib
 COPY reflexio/reflexio_client ./reflexio/reflexio_client
 COPY reflexio/data ./reflexio/data
-COPY reflexio/public_docs ./reflexio/public_docs
+# Note: public_docs is NOT re-copied here to preserve the pre-built .next from base.
+# If docs content changed, rebuild with Dockerfile.base instead.
 
 # Re-copy Supabase migrations
 COPY supabase/ ./supabase/

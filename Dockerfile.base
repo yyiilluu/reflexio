@@ -18,7 +18,7 @@ WORKDIR /app/website
 COPY reflexio/website/package*.json ./
 
 # Install dependencies
-RUN npm ci --only=production=false
+RUN npm ci
 
 # Copy source files
 COPY reflexio/website/ ./
@@ -27,6 +27,26 @@ COPY reflexio/website/ ./
 RUN touch .env
 
 # Build Next.js
+RUN npm run build
+
+# -----------------------------------------------------------------------------
+# Stage 1b: Build Fumadocs documentation site
+# -----------------------------------------------------------------------------
+FROM node:20-alpine AS docs-builder
+
+WORKDIR /app/docs
+
+# Copy package files and source config (needed by fumadocs-mdx postinstall)
+COPY reflexio/public_docs/package*.json ./
+COPY reflexio/public_docs/source.config.ts ./
+
+# Install dependencies
+RUN npm ci
+
+# Copy source files
+COPY reflexio/public_docs/ ./
+
+# Build docs (pages are pre-rendered at build time)
 RUN npm run build
 
 # -----------------------------------------------------------------------------
@@ -70,6 +90,12 @@ COPY --from=frontend-builder /app/website/node_modules ./reflexio/website/node_m
 COPY --from=frontend-builder /app/website/package.json ./reflexio/website/package.json
 COPY --from=frontend-builder /app/website/public ./reflexio/website/public
 
+# Copy built docs site with node_modules
+COPY --from=docs-builder /app/docs/.next ./reflexio/public_docs/.next
+COPY --from=docs-builder /app/docs/node_modules ./reflexio/public_docs/node_modules
+COPY --from=docs-builder /app/docs/package.json ./reflexio/public_docs/package.json
+COPY --from=docs-builder /app/docs/public ./reflexio/public_docs/public
+
 # Copy Supabase migrations
 COPY supabase/ ./supabase/
 
@@ -77,7 +103,7 @@ COPY supabase/ ./supabase/
 COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
 # Expose ports
-EXPOSE 8080 8081
+EXPOSE 8080 8081 8082
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \

@@ -13,6 +13,6 @@ const resolvedSource: Source<typeof mdxSource extends Source<infer C> ? C : neve
 };
 
 export const source = loader({
-  baseUrl: '/docs',
+  baseUrl: '/',
   source: resolvedSource,
 });

@@ -9,10 +9,9 @@ Complete deployment for Reflexio (FastAPI + Next.js) to AWS ECS Fargate with HTT
                     │                         AWS Cloud                           │
                     │                                                             │
    Users ──────────►│  CloudFront ──► ALB ──► ECS Fargate Spot (1 Task)          │
-                    │       │                    ├── FastAPI :8081                │
-                    │       │                    └── Next.js :8080                │
-                    │       │                                                     │
-                    │       └──► S3 Bucket (MkDocs) ──► /docs/*                   │
+                    │                            ├── FastAPI    :8081             │
+                    │                            ├── Next.js    :8080             │
+                    │                            └── Fumadocs   :8082 (/docs/*)  │
                     │                                                             │
                     │  ECR (Container Registry)                                   │
                     │  Secrets Manager (API keys)                                 │
@@ -68,7 +67,6 @@ export APP_NAME=agenticmem
 export ECR_REPO_NAME=agenticmem
 export ECR_URI=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO_NAME
 export DOMAIN_NAME=reflexio.ai
-export S3_BUCKET_NAME=agenticmem
 export CF_DISTRIBUTION_ID=E15WBN9QYYCSND
 
 echo "Account: $AWS_ACCOUNT_ID"
@@ -279,6 +277,7 @@ export ECS_SG=$(aws ec2 create-security-group \
 
 aws ec2 authorize-security-group-ingress --group-id $ECS_SG --protocol tcp --port 8080 --source-group $ALB_SG
 aws ec2 authorize-security-group-ingress --group-id $ECS_SG --protocol tcp --port 8081 --source-group $ALB_SG
+aws ec2 authorize-security-group-ingress --group-id $ECS_SG --protocol tcp --port 8082 --source-group $ALB_SG
 
 echo "ALB SG: $ALB_SG"
 echo "ECS SG: $ECS_SG"
@@ -333,8 +332,20 @@ export TG_API_ARN=$(aws elbv2 create-target-group \
     --health-check-interval-seconds 30 \
     --query 'TargetGroups[0].TargetGroupArn' --output text)
 
+# Docs target group (port 8082)
+export TG_DOCS_ARN=$(aws elbv2 create-target-group \
+    --name $APP_NAME-docs-tg \
+    --protocol HTTP \
+    --port 8082 \
+    --vpc-id $VPC_ID \
+    --target-type ip \
+    --health-check-path "/docs" \
+    --health-check-interval-seconds 30 \
+    --query 'TargetGroups[0].TargetGroupArn' --output text)
+
 echo "Frontend TG: $TG_FRONTEND_ARN"
 echo "API TG: $TG_API_ARN"
+echo "Docs TG: $TG_DOCS_ARN"
 ```
 
 ---
@@ -370,6 +381,19 @@ aws elbv2 create-rule \
     --priority 10 \
     --conditions Field=path-pattern,Values='/api/*' \
     --actions Type=forward,TargetGroupArn=$TG_API_ARN
+
+# Route /docs and /docs/* to Docs (Fumadocs)
+aws elbv2 create-rule \
+    --listener-arn $LISTENER_ARN \
+    --priority 15 \
+    --conditions Field=path-pattern,Values='/docs' \
+    --actions Type=forward,TargetGroupArn=$TG_DOCS_ARN
+
+aws elbv2 create-rule \
+    --listener-arn $LISTENER_ARN \
+    --priority 16 \
+    --conditions Field=path-pattern,Values='/docs/*' \
+    --actions Type=forward,TargetGroupArn=$TG_DOCS_ARN
 
 echo "Listener ARN: $LISTENER_ARN"
 ```
@@ -429,7 +453,8 @@ cat > /tmp/task-definition.json << EOF
             "essential": true,
             "portMappings": [
                 {"containerPort": 8080, "protocol": "tcp", "name": "frontend"},
-                {"containerPort": 8081, "protocol": "tcp", "name": "api"}
+                {"containerPort": 8081, "protocol": "tcp", "name": "api"},
+                {"containerPort": 8082, "protocol": "tcp", "name": "docs"}
             ],
             "environment": [
                 {"name": "NODE_ENV", "value": "production"},
@@ -482,7 +507,7 @@ aws ecs create-service \
     --capacity-provider-strategy "capacityProvider=FARGATE_SPOT,weight=1" \
     --platform-version LATEST \
     --network-configuration "awsvpcConfiguration={subnets=[$SUBNET_1,$SUBNET_2],securityGroups=[$ECS_SG],assignPublicIp=ENABLED}" \
-    --load-balancers "targetGroupArn=$TG_FRONTEND_ARN,containerName=$APP_NAME,containerPort=8080" "targetGroupArn=$TG_API_ARN,containerName=$APP_NAME,containerPort=8081" \
+    --load-balancers "targetGroupArn=$TG_FRONTEND_ARN,containerName=$APP_NAME,containerPort=8080" "targetGroupArn=$TG_API_ARN,containerName=$APP_NAME,containerPort=8081" "targetGroupArn=$TG_DOCS_ARN,containerName=$APP_NAME,containerPort=8082" \
     --deployment-configuration "minimumHealthyPercent=0,maximumPercent=100" \
     --enable-execute-command \
     --region $AWS_REGION
@@ -506,6 +531,9 @@ aws elbv2 describe-target-health --target-group-arn $TG_FRONTEND_ARN
 
 echo "API target health:"
 aws elbv2 describe-target-health --target-group-arn $TG_API_ARN
+
+echo "Docs target health:"
+aws elbv2 describe-target-health --target-group-arn $TG_DOCS_ARN
 
 # Test endpoints
 echo "Frontend: http://$ALB_DNS/"
@@ -585,53 +613,30 @@ aws elbv2 create-rule \
     --conditions Field=path-pattern,Values='/api/*' \
     --actions Type=forward,TargetGroupArn=$TG_API_ARN
 
+# Route /docs and /docs/* to Docs (Fumadocs)
+aws elbv2 create-rule \
+    --listener-arn $HTTPS_LISTENER_ARN \
+    --priority 15 \
+    --conditions Field=path-pattern,Values='/docs' \
+    --actions Type=forward,TargetGroupArn=$TG_DOCS_ARN
+
+aws elbv2 create-rule \
+    --listener-arn $HTTPS_LISTENER_ARN \
+    --priority 16 \
+    --conditions Field=path-pattern,Values='/docs/*' \
+    --actions Type=forward,TargetGroupArn=$TG_DOCS_ARN
+
 echo "HTTPS Listener ARN: $HTTPS_LISTENER_ARN"
 ```
 
 ---
 
-## Step 17: Set Up S3 for MkDocs
+## Step 17: (Removed — docs now served from ECS)
 
-```bash
-# Create S3 bucket
-aws s3 mb s3://$S3_BUCKET_NAME --region $AWS_REGION
-
-# Enable static website hosting
-aws s3 website s3://$S3_BUCKET_NAME --index-document index.html --error-document 404.html
-
-# Set bucket policy for public read access
-cat > /tmp/bucket-policy.json << EOF
-{
-    "Version": "2012-10-17",
-    "Statement": [{
-        "Sid": "PublicReadGetObject",
-        "Effect": "Allow",
-        "Principal": "*",
-        "Action": "s3:GetObject",
-        "Resource": "arn:aws:s3:::$S3_BUCKET_NAME/*"
-    }]
-}
-EOF
-
-aws s3api put-bucket-policy --bucket $S3_BUCKET_NAME --policy file:///tmp/bucket-policy.json
-
-export S3_WEBSITE_ENDPOINT=$S3_BUCKET_NAME.s3-website-$AWS_REGION.amazonaws.com
-echo "S3 Website: http://$S3_WEBSITE_ENDPOINT"
-```
-
-### Upload MkDocs
-
-```bash
-cd reflexio/public_docs
-
-# Build the site
-mkdocs build
-
-# Upload to docs/ prefix in S3
-aws s3 sync site/ s3://$S3_BUCKET_NAME/docs/ --delete
-
-echo "Docs uploaded to s3://$S3_BUCKET_NAME/docs/"
-```
+> Documentation has been migrated from MkDocs (S3 static hosting) to Fumadocs (Next.js).
+> Docs are now built into the Docker image and served by the ECS task on port 8082.
+> The S3 bucket and related steps are no longer needed for docs hosting.
+> If you previously set up S3 for MkDocs, you can clean it up (see Cleanup section).
 
 ---
 
@@ -676,21 +681,11 @@ cat > /tmp/cloudfront-config.json << EOF
   },
   "DefaultRootObject": "",
   "Origins": {
-    "Quantity": 2,
+    "Quantity": 1,
     "Items": [
       {
         "Id": "alb-origin",
         "DomainName": "$ALB_DNS",
-        "CustomOriginConfig": {
-          "HTTPPort": 80,
-          "HTTPSPort": 443,
-          "OriginProtocolPolicy": "http-only",
-          "OriginSslProtocols": {"Quantity": 1, "Items": ["TLSv1.2"]}
-        }
-      },
-      {
-        "Id": "s3-docs-origin",
-        "DomainName": "$S3_WEBSITE_ENDPOINT",
         "CustomOriginConfig": {
           "HTTPPort": 80,
           "HTTPSPort": 443,
@@ -713,33 +708,7 @@ cat > /tmp/cloudfront-config.json << EOF
     "Compress": true
   },
   "CacheBehaviors": {
-    "Quantity": 2,
-    "Items": [
-      {
-        "PathPattern": "/docs",
-        "TargetOriginId": "s3-docs-origin",
-        "ViewerProtocolPolicy": "redirect-to-https",
-        "AllowedMethods": {
-          "Quantity": 2,
-          "Items": ["GET", "HEAD"],
-          "CachedMethods": {"Quantity": 2, "Items": ["GET", "HEAD"]}
-        },
-        "CachePolicyId": "658327ea-f89d-4fab-a63d-7e88639e58f6",
-        "Compress": true
-      },
-      {
-        "PathPattern": "/docs/*",
-        "TargetOriginId": "s3-docs-origin",
-        "ViewerProtocolPolicy": "redirect-to-https",
-        "AllowedMethods": {
-          "Quantity": 2,
-          "Items": ["GET", "HEAD"],
-          "CachedMethods": {"Quantity": 2, "Items": ["GET", "HEAD"]}
-        },
-        "CachePolicyId": "658327ea-f89d-4fab-a63d-7e88639e58f6",
-        "Compress": true
-      }
-    ]
+    "Quantity": 0
   },
   "Comment": "$APP_NAME with S3 docs",
   "Enabled": true,
@@ -855,12 +824,30 @@ echo "Deployment complete!"
 
 ## Updating Documentation
 
-```bash
-cd reflexio/public_docs
-mkdocs build
-aws s3 sync site/ s3://$S3_BUCKET_NAME/docs/ --delete
+Documentation is now bundled in the Docker image (Fumadocs/Next.js). To update docs, rebuild and redeploy the container:
 
-# Invalidate CloudFront cache
+```bash
+cd /Users/yilu/repos/reflexio
+
+# Rebuild and push (docs are built as part of the Docker image)
+aws ecr get-login-password --region $AWS_REGION | \
+    docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
+
+docker build --platform linux/amd64 -f Dockerfile.base -t ${ECR_REPO_NAME}:latest .
+docker tag ${ECR_REPO_NAME}:latest ${ECR_URI}:latest
+docker push ${ECR_URI}:latest
+
+# Force new deployment
+aws ecs update-service \
+    --cluster $APP_NAME-cluster \
+    --service $APP_NAME-service \
+    --force-new-deployment
+
+aws ecs wait services-stable \
+    --cluster $APP_NAME-cluster \
+    --services $APP_NAME-service
+
+# Invalidate CloudFront cache for docs
 aws cloudfront create-invalidation \
     --distribution-id $CF_DISTRIBUTION_ID \
     --paths "/docs" "/docs/*"
@@ -920,14 +907,14 @@ echo "export ALB_ARN=$ALB_ARN"
 echo "export ALB_DNS=$ALB_DNS"
 echo "export TG_FRONTEND_ARN=$TG_FRONTEND_ARN"
 echo "export TG_API_ARN=$TG_API_ARN"
+echo "export TG_DOCS_ARN=$TG_DOCS_ARN"
 echo "export LISTENER_ARN=$LISTENER_ARN"
 echo "export HTTPS_LISTENER_ARN=$HTTPS_LISTENER_ARN"
 echo "export CERT_ARN=$CERT_ARN"
 echo "export CF_CERT_ARN=$CF_CERT_ARN"
 echo "export CF_DISTRIBUTION_ID=$CF_DISTRIBUTION_ID"
 echo "export CF_DOMAIN=$CF_DOMAIN"
-echo "export S3_BUCKET_NAME=$S3_BUCKET_NAME"
-echo "export S3_WEBSITE_ENDPOINT=$S3_WEBSITE_ENDPOINT"
+echo "export S3_BUCKET_NAME=$S3_BUCKET_NAME"  # Only if S3 still used for other assets
 ```
 
 ---
@@ -957,6 +944,7 @@ aws ecs describe-tasks \
 ```bash
 aws elbv2 describe-target-health --target-group-arn $TG_FRONTEND_ARN
 aws elbv2 describe-target-health --target-group-arn $TG_API_ARN
+aws elbv2 describe-target-health --target-group-arn $TG_DOCS_ARN
 ```
 
 ### Check service events
@@ -984,9 +972,9 @@ aws cloudfront delete-distribution --id $CF_DISTRIBUTION_ID --if-match $ETAG
 # Delete CloudFront certificate
 aws acm delete-certificate --certificate-arn $CF_CERT_ARN --region us-east-1
 
-# Delete S3 bucket
-aws s3 rm s3://$S3_BUCKET_NAME --recursive
-aws s3 rb s3://$S3_BUCKET_NAME
+# Delete S3 bucket (if previously created for MkDocs)
+aws s3 rm s3://$S3_BUCKET_NAME --recursive 2>/dev/null || true
+aws s3 rb s3://$S3_BUCKET_NAME 2>/dev/null || true
 
 # Delete ECS service
 aws ecs update-service --cluster $APP_NAME-cluster --service $APP_NAME-service --desired-count 0
@@ -1000,6 +988,7 @@ aws elbv2 delete-listener --listener-arn $HTTPS_LISTENER_ARN
 aws elbv2 delete-listener --listener-arn $LISTENER_ARN
 aws elbv2 delete-target-group --target-group-arn $TG_FRONTEND_ARN
 aws elbv2 delete-target-group --target-group-arn $TG_API_ARN
+aws elbv2 delete-target-group --target-group-arn $TG_DOCS_ARN
 aws elbv2 delete-load-balancer --load-balancer-arn $ALB_ARN
 sleep 60
 

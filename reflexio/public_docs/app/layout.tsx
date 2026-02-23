@@ -1,5 +1,7 @@
 import './global.css';
 import { RootProvider } from 'fumadocs-ui/provider';
+import { DocsLayout } from 'fumadocs-ui/layouts/docs';
+import { source } from '@/lib/source';
 import { Inter } from 'next/font/google';
 import type { ReactNode } from 'react';
 import type { Metadata } from 'next';
@@ -19,7 +21,16 @@ export default function Layout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={inter.className}>
-        <RootProvider>{children}</RootProvider>
+        <RootProvider>
+          <DocsLayout
+            tree={source.pageTree}
+            nav={{
+              title: 'Reflexio Docs',
+            }}
+          >
+            {children}
+          </DocsLayout>
+        </RootProvider>
       </body>
     </html>
   );

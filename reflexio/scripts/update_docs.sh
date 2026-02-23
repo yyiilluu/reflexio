@@ -1,30 +1,35 @@
 #!/bin/bash
-# Script to update MkDocs documentation website on AWS (S3 + CloudFront)
+# Script to update Fumadocs documentation website on AWS (ECS + CloudFront)
+#
+# Docs are built into the Docker image and served by the ECS task on port 8082.
+# This script rebuilds the Docker image and forces an ECS redeployment.
 #
 # Usage:
-#   ./update_docs.sh           # Build and deploy docs
-#   ./update_docs.sh --build   # Only build docs locally (no deploy)
-#   ./update_docs.sh --deploy  # Only deploy (skip build, use existing site/)
+#   ./update_docs.sh           # Build image, deploy, and invalidate cache
+#   ./update_docs.sh --build   # Only build Docker image locally (no deploy)
+#   ./update_docs.sh --deploy  # Only deploy (skip build, use existing image)
 #
 # Prerequisites:
 #   - AWS CLI configured with appropriate credentials
-#   - mkdocs and mkdocs-material installed (poetry install)
-#   - S3 bucket and CloudFront distribution already set up
+#   - Docker Desktop running
+#   - ECR repository already set up
+#   - ECS service already running
 #
-# Reference: docs/aws-ecs-upgrade-option-a.md (Step 16)
+# Reference: docs/aws-ecs-deployment.md
 
 set -e
 
 # Configuration
 AWS_REGION="${AWS_REGION:-us-west-2}"
-S3_BUCKET_NAME="${S3_BUCKET_NAME:-agenticmem}"
+AWS_ACCOUNT_ID="${AWS_ACCOUNT_ID:-$(aws sts get-caller-identity --query Account --output text 2>/dev/null)}"
+APP_NAME="${APP_NAME:-agenticmem}"
+ECR_REPO_NAME="${ECR_REPO_NAME:-agenticmem}"
+ECR_URI="${ECR_URI:-$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO_NAME}"
 CF_DISTRIBUTION_ID="${CF_DISTRIBUTION_ID:-E15WBN9QYYCSND}"
 
 # Paths
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-DOCS_DIR="$PROJECT_ROOT/reflexio/public_docs"
-SITE_DIR="$DOCS_DIR/site"
 
 # Colors for output
 RED='\033[0;31m'
@@ -53,21 +58,24 @@ show_help() {
     cat << EOF
 Usage: $(basename "$0") [OPTIONS]
 
-Update MkDocs documentation website on AWS (S3 + CloudFront).
+Update Fumadocs documentation website on AWS (ECS + CloudFront).
+Docs are built into the Docker image and served by the ECS task on port 8082.
 
 Options:
-    --build     Only build docs locally (no deploy)
-    --deploy    Only deploy (skip build, use existing site/)
+    --build     Only build Docker image locally (no deploy)
+    --deploy    Only deploy existing image (skip build)
     --help      Show this help message
 
 Examples:
-    $(basename "$0")           # Build and deploy docs
-    $(basename "$0") --build   # Only build docs locally
-    $(basename "$0") --deploy  # Deploy existing build
+    $(basename "$0")           # Build, deploy, and invalidate cache
+    $(basename "$0") --build   # Only build Docker image
+    $(basename "$0") --deploy  # Deploy existing image and invalidate cache
 
 Configuration (via environment variables):
     AWS_REGION          AWS region (default: us-west-2)
-    S3_BUCKET_NAME      S3 bucket name (default: reflexio)
+    AWS_ACCOUNT_ID      AWS account ID (auto-detected)
+    APP_NAME            Application name (default: agenticmem)
+    ECR_REPO_NAME       ECR repository name (default: agenticmem)
     CF_DISTRIBUTION_ID  CloudFront distribution ID (default: E15WBN9QYYCSND)
 EOF
 }
@@ -87,62 +95,68 @@ check_prerequisites() {
         exit 1
     fi
 
-    # Check mkdocs
-    if ! command -v mkdocs &> /dev/null; then
-        log_error "mkdocs is not installed. Run 'poetry install' first."
-        exit 1
+    # Check Docker (only needed for build)
+    if [[ "$DEPLOY_ONLY" != true ]]; then
+        if ! command -v docker &> /dev/null; then
+            log_error "Docker is not installed. Please install Docker Desktop first."
+            exit 1
+        fi
+
+        if ! docker info &> /dev/null; then
+            log_error "Docker is not running. Please start Docker Desktop first."
+            exit 1
+        fi
     fi
 
     log_success "All prerequisites met."
 }
 
-build_docs() {
-    log_info "Building MkDocs documentation..."
+build_image() {
+    log_info "Building Docker image with updated docs..."
 
-    cd "$DOCS_DIR"
+    cd "$PROJECT_ROOT"
 
-    # Check if mkdocs.yml exists
-    if [[ ! -f "mkdocs.yml" ]]; then
-        log_error "mkdocs.yml not found in $DOCS_DIR"
-        exit 1
-    fi
+    # Login to ECR
+    log_info "Logging in to ECR..."
+    aws ecr get-login-password --region "$AWS_REGION" | \
+        docker login --username AWS --password-stdin "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
 
-    # Build the site
-    mkdocs build --clean
+    # Build image
+    log_info "Building image (this includes Fumadocs build)..."
+    docker build --platform linux/amd64 -f Dockerfile.base -t "${ECR_REPO_NAME}:latest" .
 
-    if [[ -d "$SITE_DIR" ]]; then
-        local file_count=$(find "$SITE_DIR" -type f | wc -l | tr -d ' ')
-        log_success "Documentation built successfully ($file_count files in $SITE_DIR)"
-    else
-        log_error "Build failed: $SITE_DIR directory not created"
-        exit 1
-    fi
+    # Tag and push
+    docker tag "${ECR_REPO_NAME}:latest" "${ECR_URI}:latest"
+    log_info "Pushing image to ECR..."
+    docker push "${ECR_URI}:latest"
+
+    log_success "Docker image built and pushed to ECR."
 }
 
-deploy_to_s3() {
-    log_info "Uploading documentation to S3..."
+deploy_to_ecs() {
+    log_info "Forcing new ECS deployment..."
 
-    # Check if site directory exists
-    if [[ ! -d "$SITE_DIR" ]]; then
-        log_error "$SITE_DIR directory not found. Run with --build first or without flags."
-        exit 1
-    fi
+    aws ecs update-service \
+        --cluster "$APP_NAME-cluster" \
+        --service "$APP_NAME-service" \
+        --force-new-deployment \
+        --region "$AWS_REGION" > /dev/null
 
-    # Sync to S3 with /docs/ prefix
-    aws s3 sync "$SITE_DIR/" "s3://$S3_BUCKET_NAME/docs/" \
-        --delete \
+    log_info "Waiting for ECS service to stabilize..."
+    aws ecs wait services-stable \
+        --cluster "$APP_NAME-cluster" \
+        --services "$APP_NAME-service" \
         --region "$AWS_REGION"
 
-    log_success "Documentation uploaded to s3://$S3_BUCKET_NAME/docs/"
+    log_success "ECS deployment complete."
 }
 
 invalidate_cloudfront() {
-    log_info "Invalidating CloudFront cache..."
+    log_info "Invalidating CloudFront cache for /docs/*..."
 
-    # Create invalidation for /docs/* path
     local invalidation_id=$(aws cloudfront create-invalidation \
         --distribution-id "$CF_DISTRIBUTION_ID" \
-        --paths "/docs/*" \
+        --paths "/docs" "/docs/*" \
         --query 'Invalidation.Id' \
         --output text)
 
@@ -157,8 +171,7 @@ print_summary() {
     echo "=========================================="
     echo ""
     echo "URLs:"
-    echo "  - Production: https://reflexio.com/docs/"
-    echo "  - S3 Direct:  http://$S3_BUCKET_NAME.s3-website-$AWS_REGION.amazonaws.com/docs/"
+    echo "  - Production: https://reflexio.ai/docs/"
     echo ""
     echo "CloudFront Distribution: $CF_DISTRIBUTION_ID"
     echo ""
@@ -199,28 +212,29 @@ fi
 # Main execution
 echo ""
 echo "=========================================="
-echo "  MkDocs Documentation Update Script"
+echo "  Fumadocs Documentation Update Script"
 echo "=========================================="
 echo ""
 log_info "AWS Region: $AWS_REGION"
-log_info "S3 Bucket: $S3_BUCKET_NAME"
+log_info "ECR URI: $ECR_URI"
+log_info "ECS Cluster: $APP_NAME-cluster"
 log_info "CloudFront Distribution: $CF_DISTRIBUTION_ID"
 echo ""
 
 if [[ "$BUILD_ONLY" == true ]]; then
     check_prerequisites
-    build_docs
-    log_success "Build complete. Run with --deploy to upload."
+    build_image
+    log_success "Build complete. Run with --deploy to deploy."
 elif [[ "$DEPLOY_ONLY" == true ]]; then
     check_prerequisites
-    deploy_to_s3
+    deploy_to_ecs
     invalidate_cloudfront
     print_summary
 else
     # Full build and deploy
     check_prerequisites
-    build_docs
-    deploy_to_s3
+    build_image
+    deploy_to_ecs
     invalidate_cloudfront
     print_summary
 fi
