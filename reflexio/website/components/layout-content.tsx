@@ -3,6 +3,7 @@
 import { usePathname, useRouter } from "next/navigation"
 import { useEffect } from "react"
 import { useAuth } from "@/lib/auth-context"
+import { AUTH_PAGES, PROTECTED_ROUTES } from "@/lib/routes"
 import { ResponsiveSidebar } from "@/components/responsive-sidebar"
 
 export function LayoutContent({ children }: { children: React.ReactNode }) {
@@ -10,26 +11,28 @@ export function LayoutContent({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const { isAuthenticated, isSelfHost } = useAuth()
 
-  // Hide sidebar on auth-related pages and landing page
-  const authPages = ["/login", "/register", "/forgot-password", "/reset-password", "/verify-email", "/resend-verification"]
-  const isAuthPage = authPages.includes(pathname)
+  const isAuthPage = AUTH_PAGES.includes(pathname as typeof AUTH_PAGES[number])
   const isLandingPage = pathname === "/"
+  const isProtectedRoute = PROTECTED_ROUTES.some(route => pathname === route || pathname.startsWith(route + "/"))
 
-  // Redirect to login if not authenticated and not in self-host mode
+  // Redirect to login if not authenticated and accessing a protected route
   useEffect(() => {
-    // Skip auth check for auth pages, landing page, and self-host mode
     if (isAuthPage || isLandingPage || isSelfHost) {
       return
     }
 
-    // Redirect to login if not authenticated
-    if (!isAuthenticated) {
+    if (!isAuthenticated && isProtectedRoute) {
       router.push("/login")
     }
-  }, [isAuthenticated, isSelfHost, isAuthPage, isLandingPage, pathname, router])
+  }, [isAuthenticated, isSelfHost, isAuthPage, isLandingPage, isProtectedRoute, pathname, router])
 
   if (isAuthPage || isLandingPage) {
     // Auth pages and landing page get full screen without sidebar
+    return <>{children}</>
+  }
+
+  // For unknown routes, let Next.js render the not-found page
+  if (!isProtectedRoute) {
     return <>{children}</>
   }
 
