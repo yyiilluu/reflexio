@@ -132,7 +132,7 @@ class LiteLLMClient:
         if not for_embedding:
             ce = self.config.api_key_config.custom_endpoint
             if ce and ce.api_key and ce.api_base:
-                return ce.api_key, ce.api_base, None
+                return ce.api_key, str(ce.api_base), None
 
         model_to_check = model or self.config.model
         model_lower = model_to_check.lower()
@@ -154,7 +154,7 @@ class LiteLLMClient:
                 and self.config.api_key_config.openai.azure_config
             ):
                 azure = self.config.api_key_config.openai.azure_config
-                return azure.api_key, azure.endpoint, azure.api_version
+                return azure.api_key, str(azure.endpoint), azure.api_version
         # Anthropic/Claude models
         elif "claude" in model_lower or "anthropic" in model_lower:
             if self.config.api_key_config.anthropic:

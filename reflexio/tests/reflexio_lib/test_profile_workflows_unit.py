@@ -627,7 +627,7 @@ def test_upgrade_only_affected_users(reflexio_with_config):
     assert len(pending_for_other_user) == 0
 
     # Upgrade with only_affected_users=True
-    upgrade_request = UpgradeProfilesRequest(user_id="", only_affected_users=True)
+    upgrade_request = UpgradeProfilesRequest(user_id=None, only_affected_users=True)
     response = reflexio.upgrade_all_profiles(upgrade_request)
 
     assert response.success is True
@@ -688,7 +688,7 @@ def test_downgrade_only_affected_users(reflexio_with_config):
     # Use only_affected_users=True so only user_with_archived is affected
     rerun_request = RerunProfileGenerationRequest(user_id=user_with_archived)
     reflexio.rerun_profile_generation(rerun_request)
-    upgrade_request = UpgradeProfilesRequest(user_id="", only_affected_users=True)
+    upgrade_request = UpgradeProfilesRequest(user_id=None, only_affected_users=True)
     reflexio.upgrade_all_profiles(upgrade_request)
 
     # Verify initial state before downgrade
@@ -713,7 +713,7 @@ def test_downgrade_only_affected_users(reflexio_with_config):
     assert len(archived_for_other_user) == 0
 
     # Downgrade with only_affected_users=True
-    downgrade_request = DowngradeProfilesRequest(user_id="", only_affected_users=True)
+    downgrade_request = DowngradeProfilesRequest(user_id=None, only_affected_users=True)
     response = reflexio.downgrade_all_profiles(downgrade_request)
 
     assert response.success is True

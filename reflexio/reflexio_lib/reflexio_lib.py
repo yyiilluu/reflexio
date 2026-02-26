@@ -1364,7 +1364,7 @@ class Reflexio:
         if isinstance(request, dict):
             request = UpgradeProfilesRequest(**request)
         elif request is None:
-            request = UpgradeProfilesRequest(user_id="", only_affected_users=False)
+            request = UpgradeProfilesRequest(user_id=None, only_affected_users=False)
 
         # Create service with shared LLM client
         service = ProfileGenerationService(
@@ -1401,7 +1401,7 @@ class Reflexio:
         if isinstance(request, dict):
             request = DowngradeProfilesRequest(**request)
         elif request is None:
-            request = DowngradeProfilesRequest(user_id="", only_affected_users=False)
+            request = DowngradeProfilesRequest(user_id=None, only_affected_users=False)
 
         # Create service with shared LLM client
         service = ProfileGenerationService(

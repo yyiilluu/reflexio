@@ -40,7 +40,14 @@ Key files:
 
 - `login_schema.py`: Authentication models
   - **Token**: JWT token for authentication
-  - User login/registration schemas
+  - User login/registration schemas (with `EmailStr` validation)
+
+- `validators.py`: Reusable Pydantic v2 validator types
+  - **NonEmptyStr / OptionalNonEmptyStr**: Reject empty/whitespace-only strings
+  - **EmbeddingVector**: Validate embedding is empty or exactly 512 dimensions
+  - **SafeHttpUrl**: SSRF-safe URL type (blocks cloud metadata always; blocks private IPs when `REFLEXIO_BLOCK_PRIVATE_URLS=true`)
+  - **SanitizedStr / SanitizedNonEmptyStr**: Strip C0 control characters from strings flowing into LLM prompts
+  - **TimeRangeValidatorMixin**: Reusable start_time/end_time validation
 
 - `data_schema.py`: Additional data structures
 
