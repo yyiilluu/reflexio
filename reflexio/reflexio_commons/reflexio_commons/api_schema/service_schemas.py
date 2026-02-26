@@ -1,7 +1,16 @@
 import enum
 from datetime import datetime, timezone
-from typing import Optional
-from pydantic import BaseModel, Field
+from typing import Optional, Self
+from urllib.parse import urlparse
+
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+from reflexio_commons.api_schema.validators import (
+    NonEmptyStr,
+    EmbeddingVector,
+    _check_safe_url,
+    TimeRangeValidatorMixin,
+)
 
 # OS-agnostic "never expires" timestamp (January 1, 2100 00:00:00 UTC)
 # This is well within the safe range for all systems (32-bit timestamp limit is 2038)
@@ -107,7 +116,22 @@ class Interaction(BaseModel):
     image_encoding: str = ""  # base64 encoded image
     shadow_content: str = ""
     tools_used: list[ToolUsed] = Field(default_factory=list)
-    embedding: list[float] = []
+    embedding: EmbeddingVector = []
+
+    @field_validator("interacted_image_url", mode="after")
+    @classmethod
+    def validate_image_url(cls, v: str) -> str:
+        """SSRF prevention: if URL is provided, must be safe http(s) or data URI."""
+        if not v:
+            return v  # empty string is allowed (no image)
+        parsed = urlparse(v)
+        if parsed.scheme not in ("http", "https", "data"):
+            raise ValueError(
+                f"Image URL scheme must be http, https, or data — got '{parsed.scheme}'"
+            )
+        if parsed.scheme in ("http", "https"):
+            _check_safe_url(v)
+        return v
 
 
 class Request(BaseModel):
@@ -136,7 +160,7 @@ class UserProfile(BaseModel):
     source: Optional[str] = None
     status: Optional[Status] = None  # indicates the status of the profile
     extractor_names: Optional[list[str]] = None
-    embedding: list[float] = []
+    embedding: EmbeddingVector = []
 
 
 # raw feedback for agents
@@ -170,7 +194,7 @@ class RawFeedback(BaseModel):
     indexed_content: Optional[
         str
     ] = None  # Content used for embedding/indexing (extracted from feedback_content)
-    embedding: list[float] = []
+    embedding: EmbeddingVector = []
 
 
 class ProfileChangeLog(BaseModel):
@@ -206,7 +230,7 @@ class Feedback(BaseModel):
     ] = None  # Root cause when agent couldn't complete action
     feedback_status: FeedbackStatus = FeedbackStatus.PENDING
     feedback_metadata: str = ""
-    embedding: list[float] = []
+    embedding: EmbeddingVector = []
     status: Optional[
         Status
     ] = None  # used for tracking intermediate states during feedback aggregation. Status.ARCHIVED for feedbacks during aggregation process, None for current feedbacks
@@ -224,7 +248,7 @@ class Skill(BaseModel):
     blocking_issues: list[BlockingIssue] = Field(default_factory=list)
     raw_feedback_ids: list[int] = Field(default_factory=list)
     skill_status: SkillStatus = SkillStatus.DRAFT
-    embedding: list[float] = Field(default_factory=list, exclude=True)
+    embedding: EmbeddingVector = Field(default_factory=list, exclude=True)
     created_at: int = Field(
         default_factory=lambda: int(datetime.now(timezone.utc).timestamp())
     )
@@ -246,7 +270,7 @@ class AgentSuccessEvaluationResult(BaseModel):
         default_factory=lambda: int(datetime.now(timezone.utc).timestamp())
     )
     regular_vs_shadow: Optional[RegularVsShadow] = None
-    embedding: list[float] = []
+    embedding: EmbeddingVector = []
 
 
 # ===============================
@@ -256,7 +280,7 @@ class AgentSuccessEvaluationResult(BaseModel):
 
 # delete user profile request
 class DeleteUserProfileRequest(BaseModel):
-    user_id: str
+    user_id: NonEmptyStr
     profile_id: str = ""
     search_query: str = ""
 
@@ -269,8 +293,8 @@ class DeleteUserProfileResponse(BaseModel):
 
 # delete user interaction request
 class DeleteUserInteractionRequest(BaseModel):
-    user_id: str
-    interaction_id: int
+    user_id: NonEmptyStr
+    interaction_id: int = Field(gt=0)
 
 
 # delete user interaction response
@@ -281,7 +305,7 @@ class DeleteUserInteractionResponse(BaseModel):
 
 # delete request request
 class DeleteRequestRequest(BaseModel):
-    request_id: str
+    request_id: NonEmptyStr
 
 
 # delete request response
@@ -292,7 +316,7 @@ class DeleteRequestResponse(BaseModel):
 
 # delete request group request
 class DeleteRequestGroupRequest(BaseModel):
-    request_group: str
+    request_group: NonEmptyStr
 
 
 # delete request group response
@@ -304,7 +328,7 @@ class DeleteRequestGroupResponse(BaseModel):
 
 # delete feedback request
 class DeleteFeedbackRequest(BaseModel):
-    feedback_id: int
+    feedback_id: int = Field(gt=0)
 
 
 # delete feedback response
@@ -315,7 +339,7 @@ class DeleteFeedbackResponse(BaseModel):
 
 # delete raw feedback request
 class DeleteRawFeedbackRequest(BaseModel):
-    raw_feedback_id: int
+    raw_feedback_id: int = Field(gt=0)
 
 
 # delete raw feedback response
@@ -338,11 +362,26 @@ class InteractionData(BaseModel):
     image_encoding: str = ""  # base64 encoded image
     tools_used: list[ToolUsed] = Field(default_factory=list)
 
+    @field_validator("interacted_image_url", mode="after")
+    @classmethod
+    def validate_image_url(cls, v: str) -> str:
+        """SSRF prevention: if URL is provided, must be safe http(s) or data URI."""
+        if not v:
+            return v  # empty string is allowed (no image)
+        parsed = urlparse(v)
+        if parsed.scheme not in ("http", "https", "data"):
+            raise ValueError(
+                f"Image URL scheme must be http, https, or data — got '{parsed.scheme}'"
+            )
+        if parsed.scheme in ("http", "https"):
+            _check_safe_url(v)
+        return v
+
 
 # publish user interaction request
 class PublishUserInteractionRequest(BaseModel):
-    user_id: str
-    interaction_data_list: list[InteractionData]
+    user_id: NonEmptyStr
+    interaction_data_list: list[InteractionData] = Field(min_length=1)
     source: str = ""
     agent_version: str = (
         ""  # this is used for aggregating interactions for generating agent feedback
@@ -358,7 +397,7 @@ class PublishUserInteractionResponse(BaseModel):
 
 # add raw feedback request/response
 class AddRawFeedbackRequest(BaseModel):
-    raw_feedbacks: list[RawFeedback]
+    raw_feedbacks: list[RawFeedback] = Field(min_length=1)
 
 
 class AddRawFeedbackResponse(BaseModel):
@@ -369,7 +408,7 @@ class AddRawFeedbackResponse(BaseModel):
 
 # add feedback request/response (for aggregated feedbacks)
 class AddFeedbackRequest(BaseModel):
-    feedbacks: list[Feedback]
+    feedbacks: list[Feedback] = Field(min_length=1)
 
 
 class AddFeedbackResponse(BaseModel):
@@ -384,8 +423,8 @@ class ProfileChangeLogResponse(BaseModel):
 
 
 class RunFeedbackAggregationRequest(BaseModel):
-    agent_version: str
-    feedback_name: str
+    agent_version: NonEmptyStr
+    feedback_name: NonEmptyStr
 
 
 class RunFeedbackAggregationResponse(BaseModel):
@@ -399,6 +438,12 @@ class RerunProfileGenerationRequest(BaseModel):
     end_time: Optional[datetime] = None
     source: Optional[str] = None
     extractor_names: Optional[list[str]] = None
+
+    @model_validator(mode="after")
+    def check_time_range(self) -> Self:
+        """Validate that end_time is after start_time."""
+        TimeRangeValidatorMixin.validate_time_range(self.start_time, self.end_time)
+        return self
 
 
 class RerunProfileGenerationResponse(BaseModel):
@@ -435,7 +480,7 @@ class ManualFeedbackGenerationRequest(BaseModel):
     Outputs feedbacks with CURRENT status (not PENDING like rerun).
     """
 
-    agent_version: str
+    agent_version: NonEmptyStr
     source: Optional[str] = None
     feedback_name: Optional[str] = None  # Optional filter by feedback name
 
@@ -449,11 +494,17 @@ class ManualFeedbackGenerationResponse(BaseModel):
 
 
 class RerunFeedbackGenerationRequest(BaseModel):
-    agent_version: str
+    agent_version: NonEmptyStr
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
     feedback_name: Optional[str] = None
     source: Optional[str] = None
+
+    @model_validator(mode="after")
+    def check_time_range(self) -> Self:
+        """Validate that end_time is after start_time."""
+        TimeRangeValidatorMixin.validate_time_range(self.start_time, self.end_time)
+        return self
 
 
 class RerunFeedbackGenerationResponse(BaseModel):
@@ -464,7 +515,7 @@ class RerunFeedbackGenerationResponse(BaseModel):
 
 
 class UpgradeProfilesRequest(BaseModel):
-    user_id: str
+    user_id: Optional[str] = None  # None means "all users"
     profile_ids: Optional[list[str]] = None
     only_affected_users: bool = (
         False  # If True, only upgrade users who have pending profiles
@@ -480,7 +531,7 @@ class UpgradeProfilesResponse(BaseModel):
 
 
 class DowngradeProfilesRequest(BaseModel):
-    user_id: str
+    user_id: Optional[str] = None  # None means "all users"
     profile_ids: Optional[list[str]] = None
     only_affected_users: bool = (
         False  # If True, only downgrade users who have archived profiles
@@ -537,7 +588,7 @@ class OperationStatusInfo(BaseModel):
     request_params: dict = {}
     stats: dict = {}
     error_message: Optional[str] = None
-    progress_percentage: float = 0.0
+    progress_percentage: float = Field(default=0.0, ge=0.0, le=100.0)
 
 
 class GetOperationStatusRequest(BaseModel):
@@ -566,8 +617,8 @@ class CancelOperationResponse(BaseModel):
 
 
 class RunSkillGenerationRequest(BaseModel):
-    agent_version: str
-    feedback_name: str
+    agent_version: NonEmptyStr
+    feedback_name: NonEmptyStr
 
 
 class RunSkillGenerationResponse(BaseModel):
@@ -578,7 +629,7 @@ class RunSkillGenerationResponse(BaseModel):
 
 
 class UpdateSkillStatusRequest(BaseModel):
-    skill_id: int
+    skill_id: int = Field(gt=0)
     skill_status: SkillStatus
 
 
@@ -588,7 +639,7 @@ class UpdateSkillStatusResponse(BaseModel):
 
 
 class DeleteSkillRequest(BaseModel):
-    skill_id: int
+    skill_id: int = Field(gt=0)
 
 
 class DeleteSkillResponse(BaseModel):

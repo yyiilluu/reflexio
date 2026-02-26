@@ -32,24 +32,19 @@ def _mock_storage(embedding=None):
 class TestRunUnifiedSearch(unittest.TestCase):
     """Tests for the top-level run_unified_search function."""
 
-    @patch(
-        "reflexio.server.services.unified_search_service.is_skill_generation_enabled",
-        return_value=False,
-    )
-    def test_empty_query_returns_success_with_no_results(self, _flag1):
-        """Empty query should return immediately with success=True."""
-        request = UnifiedSearchRequest(query="")
-        result = run_unified_search(
-            request=request,
-            org_id="test-org",
-            storage=_mock_storage(),
-            api_key_config=MagicMock(),
-            prompt_manager=MagicMock(),
-        )
+    def test_empty_query_rejected_by_validation(self):
+        """Empty query is now rejected at the Pydantic validation level."""
+        from pydantic import ValidationError
 
-        self.assertTrue(result.success)
-        self.assertEqual(result.profiles, [])
-        self.assertEqual(result.feedbacks, [])
+        with self.assertRaises(ValidationError):
+            UnifiedSearchRequest(query="")
+
+    def test_whitespace_query_rejected_by_validation(self):
+        """Whitespace-only query is rejected at the Pydantic validation level."""
+        from pydantic import ValidationError
+
+        with self.assertRaises(ValidationError):
+            UnifiedSearchRequest(query="   ")
 
     @patch("reflexio.server.services.unified_search_service.QueryRewriter")
     @patch(

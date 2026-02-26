@@ -1,22 +1,24 @@
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr, Field
+
+from reflexio_commons.api_schema.validators import NonEmptyStr
 
 
 class Token(BaseModel):
-    api_key: str
-    token_type: str
+    api_key: NonEmptyStr
+    token_type: NonEmptyStr
     feature_flags: Optional[dict[str, bool]] = None
     auto_verified: Optional[bool] = None
 
 
 class User(BaseModel):
-    email: str
+    email: EmailStr
 
 
 # Email verification models
 class VerifyEmailRequest(BaseModel):
-    token: str
+    token: NonEmptyStr
 
 
 class VerifyEmailResponse(BaseModel):
@@ -25,7 +27,7 @@ class VerifyEmailResponse(BaseModel):
 
 
 class ResendVerificationRequest(BaseModel):
-    email: str
+    email: EmailStr
 
 
 class ResendVerificationResponse(BaseModel):
@@ -35,7 +37,7 @@ class ResendVerificationResponse(BaseModel):
 
 # Password reset models
 class ForgotPasswordRequest(BaseModel):
-    email: str
+    email: EmailStr
 
 
 class ForgotPasswordResponse(BaseModel):
@@ -44,8 +46,8 @@ class ForgotPasswordResponse(BaseModel):
 
 
 class ResetPasswordRequest(BaseModel):
-    token: str
-    new_password: str
+    token: NonEmptyStr
+    new_password: str = Field(min_length=1)
 
 
 class ResetPasswordResponse(BaseModel):
