@@ -20,7 +20,7 @@ export const metadata: Metadata = {
 export default function Layout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={inter.className}>
+      <body className={inter.className} suppressHydrationWarning>
         <RootProvider search={{ options: { api: '/docs/api/search' } }}>
           <DocsLayout
             tree={source.pageTree}
