@@ -28,6 +28,15 @@ Client (SDK/Web)
           └─> AgentSuccessEvaluationService -> Evaluator(s) -> Storage
 ```
 
+## Prerequisites
+
+| Tool | Version | Purpose |
+|------|---------|---------|
+| Python | >= 3.10 | Backend runtime |
+| Poetry | latest | Python dependency management |
+| Node.js + npm | >= 18 | Frontend and docs build |
+| Supabase CLI | latest | Local database (optional for self-host) |
+
 ## Quick Start
 
 ```shell
@@ -36,6 +45,8 @@ source $(poetry env info --path)/bin/activate
 ./run_services.sh   # Starts API (8081), Website (8080), Docs (8082)
 ./stop_services.sh  # Stop all services
 ```
+
+**Claude Code users:** Run `/run-services` instead of `./run_services.sh` — it auto-installs missing dependencies, health-checks services, and diagnoses/retries on failure.
 
 **Package Setup:**
 
