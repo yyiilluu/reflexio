@@ -70,6 +70,9 @@ pip install reflexio-commons reflexio
 ## Database Setup
 
 **User Data (Local Supabase):**
+
+Prerequisite: [Docker Desktop](https://docs.docker.com/desktop/) must be installed and running.
+
 ```shell
 supabase start && supabase db reset  # Start and create schema
 ```
