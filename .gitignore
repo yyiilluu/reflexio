@@ -184,7 +184,8 @@ evaluation_results/
 reflexio/model_deployment/*/model/
 *.tar.gz
 *.pem
-demo/output/
+demo/output/*
+!demo/output/stable/
 
 # IDE
 .vscode/

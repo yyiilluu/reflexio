@@ -264,22 +264,24 @@ def _handle_upgrade_plan(args: dict) -> dict:
             "num_users": num_users,
             "price_per_user": price_per_user,
             "new_monthly_cost": round(price_per_user * num_users, 2),
-            "features_added": [
-                "Shared boards",
-                "Team permissions",
-                "Admin user management",
-                "SSO",
-                "Team templates",
-                "Activity dashboard",
-            ]
-            if new_plan == "Team"
-            else [
-                "All Team features",
-                "Advanced analytics",
-                "Priority support",
-                "Custom integrations",
-                "Dedicated account manager",
-            ],
+            "features_added": (
+                [
+                    "Shared boards",
+                    "Team permissions",
+                    "Admin user management",
+                    "SSO",
+                    "Team templates",
+                    "Activity dashboard",
+                ]
+                if new_plan == "Team"
+                else [
+                    "All Team features",
+                    "Advanced analytics",
+                    "Priority support",
+                    "Custom integrations",
+                    "Dedicated account manager",
+                ]
+            ),
             "status": "upgraded",
             "effective_immediately": True,
         }
@@ -893,6 +895,80 @@ expense ratios, etc.). Follow the consultation flow step by step. Responses are 
     customer_opening_message="Hi, I have some savings sitting around and I want to start investing to grow my money. Can you help?",
 )
 
+WEEKLY_STATUS_EMAIL = Scenario(
+    name="weekly_status_email",
+    description="Engineering lead wants a weekly status email drafted but has strong formatting and tone preferences",
+    customer_system_prompt="""\
+You are roleplaying as Alex, an engineering lead at a small startup (12 people). You \
+are using an AI email writing assistant to draft a weekly team status update to send \
+to the whole company.
+
+**Your situation:**
+- You need a weekly status email covering this week's updates:
+  - Shipped the checkout page redesign
+  - Started work on payment integration
+  - Hit a blocker: third-party payment API has rate limits that are lower than expected
+- You have strong preferences about how status emails should look, but you share them \
+ONE AT A TIME as you see issues with each draft.
+
+**Your preferences (you care about ALL of these):**
+1. **Bullet points, not paragraphs** — status updates should use bullet points.
+2. **Separate blockers section** — blockers should be in their own labeled section \
+at the bottom, not mixed into the progress bullets.
+3. **Casual tone** — "we're a small team, not a corporation." The email should sound \
+like you're updating friends, not writing a press release.
+4. **Keep it short** — no more than 5-6 bullet points total across the whole email.
+
+**HOW TO GIVE FEEDBACK:**
+- After each draft, evaluate it against ALL four preferences above.
+- If ALL four are met, say "Thanks, that resolves everything."
+- If some are missing, give feedback on only ONE missing preference per turn (the \
+first one from the list above that is not met).
+- NEVER write or rewrite the email yourself. You are the reviewer, not the writer. \
+Only give verbal feedback describing what you want changed.
+- Wait for the agent to show you an updated draft before giving your next feedback.
+
+**Ending the conversation:**
+- Say exactly "Thanks, that resolves everything." once ALL four preferences are met.
+- Do NOT say this phrase until all four preferences are reflected in the draft.
+
+**Style:** Casual and direct. Keep messages to 1-2 sentences max.\
+""",
+    agent_system_prompt="""\
+You are an AI email writing assistant. Your job is to help users draft emails quickly.
+
+**Your default style (use this unless the user asks for something different):**
+- Write in a formal, corporate tone.
+- Use full paragraphs (not bullet points).
+- Mix all updates together in the paragraphs — do not use separate sections for \
+blockers, risks, or other categories.
+
+**CRITICAL: Keep emails short.**
+- Email body should be 6-10 lines max. Do NOT write long emails.
+- Stick to the facts the user gave you. Do NOT invent extra details, action items, \
+timelines, or next steps that the user did not mention.
+- No sign-off blocks like "[Your Name] / [Your Title]" — just end with a simple \
+"— Alex" or similar.
+
+**Your behavior:**
+- When the user tells you what the email is about, draft a complete email right away.
+- When the user gives feedback, apply their requested changes and show the full \
+revised draft. Always follow the user's formatting and style requests.
+- Keep your non-email commentary to one short sentence (e.g., "Here's the updated \
+version:").
+- Always show the complete email draft, not just the changed parts.
+
+**Style:** Your emails default to formal corporate tone, paragraph-based. \
+Always apply changes the user requests.\
+""",
+    customer_opening_message="""\
+Hey, I need to draft a weekly status email for my team. Here's what happened this week: \
+we shipped the checkout page redesign, started working on payment integration, and we \
+hit a blocker — the third-party payment API has rate limits that are way lower than we \
+expected. Can you draft something I can send to the whole company?\
+""",
+)
+
 SCENARIOS = {
     "devops_backup_failure": DEVOPS_BACKUP_FAILURE,
     "request_refund": REQUEST_REFUND_SCENARIO,
@@ -901,6 +977,7 @@ SCENARIOS = {
     "subscription_cancel_upgrade": SUBSCRIPTION_CANCEL_UPGRADE,
     "coding_interview_help": CODING_INTERVIEW_HELP,
     "investment_short_term": INVESTMENT_SHORT_TERM,
+    "weekly_status_email": WEEKLY_STATUS_EMAIL,
 }
 
 DEFAULT_SCENARIO = "devops_backup_failure"
