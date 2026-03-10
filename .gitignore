@@ -177,6 +177,7 @@ tmp/
 sql_app.db
 data/
 reflexio/data
+!reflexio/data/__init__.py
 experiments/
 evaluation_results/
 
