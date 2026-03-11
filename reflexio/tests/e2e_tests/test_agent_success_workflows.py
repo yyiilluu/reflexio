@@ -90,6 +90,15 @@ def test_publish_interaction_agent_success_only(
     assert agent_success_results[0].session_id == session_id
     assert agent_success_results[0].agent_version == agent_version
     assert isinstance(agent_success_results[0].is_success, bool)
+    # Verify new evaluation metric fields
+    assert isinstance(agent_success_results[0].number_of_correction_per_session, int)
+    assert isinstance(agent_success_results[0].is_escalated, bool)
+    if agent_success_results[0].is_success:
+        assert agent_success_results[0].user_turns_to_resolution is None or isinstance(
+            agent_success_results[0].user_turns_to_resolution, int
+        )
+    else:
+        assert agent_success_results[0].user_turns_to_resolution is None
 
     # Verify NO profiles were generated (since profile config is not enabled)
     final_profiles = (
@@ -168,7 +177,6 @@ def test_get_agent_success_evaluations_end_to_end(
     assert isinstance(result.is_success, bool)
     assert isinstance(result.failure_type, str)
     assert isinstance(result.failure_reason, str)
-    assert isinstance(result.agent_prompt_update, str)
     assert result.created_at > 0
 
     # Step 4: Test filtering by agent_version (non-existent version)
@@ -427,7 +435,6 @@ def test_multiple_agent_versions_evaluation(
             assert isinstance(result.is_success, bool)
             assert isinstance(result.failure_type, str)
             assert isinstance(result.failure_reason, str)
-            assert isinstance(result.agent_prompt_update, str)
             assert result.created_at > 0
 
 

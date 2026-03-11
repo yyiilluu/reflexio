@@ -320,10 +320,6 @@ function ProfileRow({
                         <span className="text-slate-500">Request ID:</span>
                         <span className="font-mono text-xs text-slate-700">{editedProfile.generated_from_request_id}</span>
                       </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-slate-500">Embedding:</span>
-                        <span className="text-slate-700">{editedProfile.embedding.length} dimensions</span>
-                      </div>
                     </div>
                   </div>
                 </div>
@@ -387,10 +383,6 @@ function ProfileRow({
                           ? "Never (∞)"
                           : formatTimestamp(profile.expiration_timestamp)}
                       </span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-slate-500">Embedding:</span>
-                      <span className="text-slate-700">{profile.embedding.length} dimensions</span>
                     </div>
                   </div>
                 </div>

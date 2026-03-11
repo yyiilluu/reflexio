@@ -1,6 +1,9 @@
 import logging
 import random
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, Union
+
+# Roles considered as agent/system-side (not user turns) when counting user turns.
+_AGENT_ROLES = {"agent", "assistant", "system", "tool", "internal"}
 
 from reflexio.server.api_endpoints.request_context import RequestContext
 from reflexio.server.llm.litellm_client import LiteLLMClient
@@ -265,14 +268,9 @@ class AgentSuccessEvaluator:
             )
             return None
 
-        result = AgentSuccessEvaluationResult(
-            session_id=self.service_config.session_id,
-            agent_version=self.service_config.agent_version,
-            evaluation_name=self.config.evaluation_name,
-            is_success=evaluation_response.is_success,
-            failure_type=evaluation_response.failure_type or "",
-            failure_reason=evaluation_response.failure_reason or "",
-            agent_prompt_update=evaluation_response.agent_prompt_update or "",
+        result = self._build_evaluation_result(
+            evaluation_response=evaluation_response,
+            request_interaction_data_models=request_interaction_data_models,
         )
 
         return result
@@ -406,18 +404,91 @@ class AgentSuccessEvaluator:
             regular_is_request_1=regular_is_request_1,
         )
 
-        result = AgentSuccessEvaluationResult(
+        result = self._build_evaluation_result(
+            evaluation_response=evaluation_response,
+            request_interaction_data_models=request_interaction_data_models,
+            regular_vs_shadow=regular_vs_shadow,
+        )
+
+        return result
+
+    def _build_evaluation_result(
+        self,
+        evaluation_response: Union[
+            AgentSuccessEvaluationOutput, AgentSuccessEvaluationWithComparisonOutput
+        ],
+        request_interaction_data_models: list[RequestInteractionDataModel],
+        regular_vs_shadow: Optional[RegularVsShadow] = None,
+    ) -> AgentSuccessEvaluationResult:
+        """
+        Build an AgentSuccessEvaluationResult from LLM evaluation response and session data.
+
+        Args:
+            evaluation_response: The parsed LLM evaluation output
+            request_interaction_data_models: All request interaction data models in the session
+            regular_vs_shadow: Optional comparison result for shadow evaluation
+
+        Returns:
+            AgentSuccessEvaluationResult: The constructed evaluation result
+        """
+        return AgentSuccessEvaluationResult(
             session_id=self.service_config.session_id,
             agent_version=self.service_config.agent_version,
             evaluation_name=self.config.evaluation_name,
             is_success=evaluation_response.is_success,
             failure_type=evaluation_response.failure_type or "",
             failure_reason=evaluation_response.failure_reason or "",
-            agent_prompt_update=evaluation_response.agent_prompt_update or "",
             regular_vs_shadow=regular_vs_shadow,
+            number_of_correction_per_session=self._get_correction_count(),
+            user_turns_to_resolution=(
+                self._count_user_turns(request_interaction_data_models)
+                if evaluation_response.is_success
+                else None
+            ),
+            is_escalated=evaluation_response.is_escalated,
         )
 
-        return result
+    def _count_user_turns(
+        self,
+        request_interaction_data_models: list[RequestInteractionDataModel],
+    ) -> int:
+        """
+        Count user-side turns across all interactions in the session.
+
+        A user-side turn is any interaction whose role is NOT one of the agent/system roles.
+
+        Args:
+            request_interaction_data_models: All request interaction data models in the session
+
+        Returns:
+            int: Number of user-side turns
+        """
+        agent_roles = _AGENT_ROLES
+        count = 0
+        for rdm in request_interaction_data_models:
+            for interaction in rdm.interactions:
+                if interaction.role.lower() not in agent_roles:
+                    count += 1
+        return count
+
+    def _get_correction_count(self) -> int:
+        """
+        Count raw feedbacks linked to the current session.
+
+        Returns:
+            int: Number of raw feedbacks for the session, defaulting to 0 on error.
+        """
+        try:
+            count = self.request_context.storage.count_raw_feedbacks_by_session(
+                self.service_config.session_id
+            )
+            return count if count is not None else 0
+        except Exception:
+            logger.warning(
+                "Failed to count raw feedbacks for session %s, defaulting to 0",
+                self.service_config.session_id,
+            )
+            return 0
 
     def _map_comparison_to_enum(
         self,

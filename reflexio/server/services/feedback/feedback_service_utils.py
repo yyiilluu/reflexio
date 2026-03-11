@@ -1,9 +1,12 @@
+import logging
 from dataclasses import dataclass
 from typing import Any, Optional
 
 from reflexio_commons.api_schema.internal_schema import RequestInteractionDataModel
 from reflexio_commons.api_schema.service_schemas import RawFeedback, BlockingIssue
 from pydantic import BaseModel, Field, ConfigDict, model_validator
+
+logger = logging.getLogger(__name__)
 
 from reflexio.server.services.feedback.feedback_service_constants import (
     FeedbackServiceConstants,
@@ -60,9 +63,29 @@ class StructuredFeedbackContent(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def handle_null_feedback_format(cls, data: Any) -> Any:
-        """Handle the {"feedback": null} format by converting it to empty dict."""
-        if isinstance(data, dict) and "feedback" in data and data["feedback"] is None:
-            return {}
+        """Handle wrapped feedback formats from LLMs.
+
+        Some models wrap the response in {"feedback": ...}. This handles:
+        - {"feedback": null} → empty (no feedback)
+        - {"feedback": [{...}, ...]} → first item extracted
+        - {"feedback": {...}} → inner dict extracted
+        """
+        if isinstance(data, dict) and "feedback" in data:
+            feedback_value = data["feedback"]
+            if feedback_value is None:
+                return {}
+            if isinstance(feedback_value, list) and len(feedback_value) > 0:
+                if len(feedback_value) > 1:
+                    logger.warning(
+                        "LLM returned %d feedback items in a list; using only the first",
+                        len(feedback_value),
+                    )
+                first = feedback_value[0]
+                if isinstance(first, dict):
+                    return first
+                return {}
+            if isinstance(feedback_value, dict):
+                return feedback_value
         return data
 
     @model_validator(mode="after")

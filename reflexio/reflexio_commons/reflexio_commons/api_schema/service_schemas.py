@@ -265,12 +265,14 @@ class AgentSuccessEvaluationResult(BaseModel):
     is_success: bool
     failure_type: Optional[str] = None
     failure_reason: Optional[str] = None
-    agent_prompt_update: Optional[str] = None
     evaluation_name: Optional[str] = None
     created_at: int = Field(
         default_factory=lambda: int(datetime.now(timezone.utc).timestamp())
     )
     regular_vs_shadow: Optional[RegularVsShadow] = None
+    number_of_correction_per_session: int = 0
+    user_turns_to_resolution: Optional[int] = None
+    is_escalated: bool = False
     embedding: EmbeddingVector = []
 
 

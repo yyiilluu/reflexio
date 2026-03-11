@@ -431,6 +431,7 @@ class BaseStorage(ABC):
         status_filter: Optional[list[Optional[Status]]] = None,
         start_time: Optional[int] = None,
         end_time: Optional[int] = None,
+        include_embedding: bool = False,
     ) -> list[RawFeedback]:
         """
         Get raw feedbacks from storage.
@@ -445,6 +446,7 @@ class BaseStorage(ABC):
                 If None, returns feedbacks with all statuses.
             start_time (int, optional): Unix timestamp. Only return feedbacks created at or after this time.
             end_time (int, optional): Unix timestamp. Only return feedbacks created at or before this time.
+            include_embedding (bool): If True, fetch and parse embedding vectors. Defaults to False.
 
         Returns:
             list[RawFeedback]: List of raw feedback objects
@@ -474,6 +476,19 @@ class BaseStorage(ABC):
 
         Returns:
             int: Count of raw feedbacks matching the filters
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def count_raw_feedbacks_by_session(self, session_id: str) -> int:
+        """
+        Count raw feedbacks linked to a session via request_id -> requests.session_id.
+
+        Args:
+            session_id (str): The session ID to count raw feedbacks for
+
+        Returns:
+            int: Count of raw feedbacks linked to the session
         """
         raise NotImplementedError
 

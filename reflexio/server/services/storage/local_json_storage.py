@@ -1198,6 +1198,7 @@ class LocalJsonStorage(BaseStorage):
         status_filter: Optional[list[Optional[Status]]] = None,
         start_time: Optional[int] = None,
         end_time: Optional[int] = None,
+        include_embedding: bool = False,
     ) -> list[RawFeedback]:
         """
         Get raw feedbacks from storage.
@@ -1212,6 +1213,7 @@ class LocalJsonStorage(BaseStorage):
                 If None, returns feedbacks with all statuses.
             start_time (int, optional): Unix timestamp. Only return feedbacks created at or after this time.
             end_time (int, optional): Unix timestamp. Only return feedbacks created at or before this time.
+            include_embedding (bool): If True, include embedding vectors. Defaults to False.
 
         Returns:
             list[RawFeedback]: List of raw feedback objects
@@ -1301,6 +1303,37 @@ class LocalJsonStorage(BaseStorage):
                 continue
 
             count += 1
+
+        return count
+
+    def count_raw_feedbacks_by_session(self, session_id: str) -> int:
+        """
+        Count raw feedbacks linked to a session via request_id -> requests.session_id.
+
+        Args:
+            session_id (str): The session ID to count raw feedbacks for
+
+        Returns:
+            int: Count of raw feedbacks linked to the session
+        """
+        all_memories = self._load()
+
+        # Get all request_ids for this session
+        request_ids = set()
+        for request_json in all_memories.get("requests", []):
+            request = Request.model_validate_json(request_json)
+            if request.session_id == session_id:
+                request_ids.add(request.request_id)
+
+        if not request_ids:
+            return 0
+
+        # Count raw feedbacks with those request_ids
+        count = 0
+        for feedback_json in all_memories.get("raw_feedbacks", []):
+            feedback = RawFeedback.model_validate_json(feedback_json)
+            if feedback.request_id in request_ids:
+                count += 1
 
         return count
 

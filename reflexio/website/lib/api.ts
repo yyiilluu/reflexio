@@ -583,8 +583,10 @@ export interface AgentSuccessEvaluationResult {
   is_success: boolean
   failure_type: string
   failure_reason: string
-  agent_prompt_update: string
   created_at: number
+  number_of_correction_per_session: number
+  user_turns_to_resolution?: number | null
+  is_escalated: boolean
   embedding: number[]
   regular_vs_shadow?: RegularVsShadow | null
 }
