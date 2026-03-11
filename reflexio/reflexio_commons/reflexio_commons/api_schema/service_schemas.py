@@ -263,9 +263,9 @@ class AgentSuccessEvaluationResult(BaseModel):
     agent_version: str
     session_id: str
     is_success: bool
-    failure_type: str
-    failure_reason: str
-    agent_prompt_update: str
+    failure_type: Optional[str] = None
+    failure_reason: Optional[str] = None
+    agent_prompt_update: Optional[str] = None
     evaluation_name: Optional[str] = None
     created_at: int = Field(
         default_factory=lambda: int(datetime.now(timezone.utc).timestamp())
