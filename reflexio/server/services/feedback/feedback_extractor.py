@@ -425,7 +425,11 @@ class FeedbackExtractor:
         Returns:
             RawFeedback or None if no feedback should be generated
         """
-        if not response or not response.has_feedback:
+        if (
+            not response
+            or not isinstance(response, StructuredFeedbackContent)
+            or not response.has_feedback
+        ):
             return None
 
         # Format to canonical string

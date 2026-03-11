@@ -219,10 +219,6 @@ function RawFeedbackRow({ feedback, onDelete }: RawFeedbackRowProps) {
                     <span className="text-slate-500">Created At:</span>
                     <span className="text-xs text-slate-700">{formatTimestamp(feedback.created_at)}</span>
                   </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-slate-500">Embedding:</span>
-                    <span className="text-slate-700">{feedback.embedding.length} dimensions</span>
-                  </div>
                 </div>
               </div>
             </div>
@@ -396,10 +392,6 @@ function FeedbackRow({ feedback, onUpdateStatus, onDelete, isUpdating = false }:
                   <div className="flex justify-between text-sm">
                     <span className="text-slate-500">Created At:</span>
                     <span className="text-xs text-slate-700">{formatTimestamp(feedback.created_at)}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-slate-500">Embedding:</span>
-                    <span className="text-slate-700">{feedback.embedding.length} dimensions</span>
                   </div>
                 </div>
               </div>

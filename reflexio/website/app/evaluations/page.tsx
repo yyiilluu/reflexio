@@ -19,6 +19,9 @@ import {
   RefreshCw,
   GitCompare,
   Loader2,
+  ArrowUpRight,
+  MessageSquare,
+  RotateCcw,
 } from "lucide-react"
 import {
   getAgentSuccessEvaluationResults,
@@ -227,18 +230,6 @@ function FailureDetailsSection({ result }: FailureDetailsSectionProps) {
         </div>
       )}
 
-      {/* Suggested Prompt Update */}
-      {result.agent_prompt_update && (
-        <div>
-          <div className="flex items-center gap-2 mb-2">
-            <TrendingUp className="h-4 w-4 text-indigo-600" />
-            <span className="text-sm font-semibold text-slate-800">Suggested Improvement</span>
-          </div>
-          <p className="text-sm text-slate-700 bg-indigo-50 p-3 rounded-lg border border-indigo-100">
-            {result.agent_prompt_update}
-          </p>
-        </div>
-      )}
     </div>
   )
 }
@@ -344,6 +335,13 @@ function EvaluationRow({ result }: EvaluationRowProps) {
                     {result.failure_type}
                   </Badge>
                 )}
+                {/* Escalation badge */}
+                {result.is_escalated && (
+                  <Badge className="text-xs bg-amber-100 text-amber-700 hover:bg-amber-100">
+                    <ArrowUpRight className="h-3 w-3 mr-1" />
+                    Escalated
+                  </Badge>
+                )}
                 {/* Comparison badge */}
                 {comparisonStyle && (
                   <Badge className={`text-xs ${comparisonStyle.bg} ${comparisonStyle.text} hover:${comparisonStyle.bg}`}>
@@ -358,6 +356,18 @@ function EvaluationRow({ result }: EvaluationRowProps) {
                   </Badge>
                 )}
                 <span className="truncate">Version: {result.agent_version}</span>
+                {result.number_of_correction_per_session > 0 && (
+                  <span className="flex items-center gap-1 text-slate-500">
+                    <RotateCcw className="h-3 w-3" />
+                    {result.number_of_correction_per_session} correction{result.number_of_correction_per_session !== 1 ? "s" : ""}
+                  </span>
+                )}
+                {result.is_success && result.user_turns_to_resolution != null && (
+                  <span className="flex items-center gap-1 text-slate-500">
+                    <MessageSquare className="h-3 w-3" />
+                    {result.user_turns_to_resolution} turn{result.user_turns_to_resolution !== 1 ? "s" : ""} to resolve
+                  </span>
+                )}
               </div>
             </div>
           </div>

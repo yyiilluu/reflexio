@@ -491,10 +491,12 @@ def agent_success_evaluation_result_to_data(
         "is_success": result.is_success,
         "failure_type": result.failure_type,
         "failure_reason": result.failure_reason,
-        "agent_prompt_update": result.agent_prompt_update,
         "regular_vs_shadow": (
             result.regular_vs_shadow.value if result.regular_vs_shadow else None
         ),
+        "number_of_correction_per_session": result.number_of_correction_per_session,
+        "user_turns_to_resolution": result.user_turns_to_resolution,
+        "is_escalated": result.is_escalated,
         "embedding": result.embedding if len(result.embedding) > 0 else None,
     }
 

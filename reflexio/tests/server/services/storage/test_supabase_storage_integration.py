@@ -1795,7 +1795,7 @@ def test_agent_success_evaluation_results(supabase_storage):
     except Exception:
         pass
 
-    # Create test evaluation results
+    # Create test evaluation results with new fields
     results = [
         AgentSuccessEvaluationResult(
             session_id=f"eval_group_{i}",
@@ -1803,7 +1803,9 @@ def test_agent_success_evaluation_results(supabase_storage):
             is_success=i % 2 == 0,  # Alternating success/failure
             failure_type="timeout" if i % 2 != 0 else "",
             failure_reason="Request timed out" if i % 2 != 0 else "",
-            agent_prompt_update="Consider caching" if i % 2 != 0 else "",
+            number_of_correction_per_session=i,
+            user_turns_to_resolution=3 if i % 2 == 0 else None,
+            is_escalated=i == 3,
         )
         for i in range(4)
     ]
@@ -1829,6 +1831,19 @@ def test_agent_success_evaluation_results(supabase_storage):
     assert len(success_results) == 2, "Should have 2 success results"
     assert len(failure_results) == 2, "Should have 2 failure results"
 
+    # Test new fields round-trip
+    for r in filtered:
+        assert isinstance(r.number_of_correction_per_session, int)
+        assert isinstance(r.is_escalated, bool)
+        if r.is_success:
+            assert r.user_turns_to_resolution == 3
+        else:
+            assert r.user_turns_to_resolution is None
+
+    # Verify escalation flag
+    escalated = [r for r in filtered if r.is_escalated]
+    assert len(escalated) == 1, "Should have exactly 1 escalated result"
+
     # Test 4: Delete all results (use table delete for targeted cleanup)
     storage.client.table("agent_success_evaluation_result").delete().eq(
         "agent_version", agent_version
@@ -1839,6 +1854,72 @@ def test_agent_success_evaluation_results(supabase_storage):
         agent_version=agent_version, limit=100
     )
     assert len(after_delete) == 0, "Should have no results after deletion"
+
+
+@skip_in_precommit
+def test_count_raw_feedbacks_by_session(supabase_storage):
+    """Test counting raw feedbacks by session ID.
+
+    This test verifies:
+    1. count_raw_feedbacks_by_session returns 0 for unknown session
+    2. count_raw_feedbacks_by_session returns correct count for session with feedbacks
+    """
+    storage = supabase_storage
+    session_id = "test_count_session"
+
+    # Test 1: Unknown session returns 0
+    count = storage.count_raw_feedbacks_by_session(session_id="nonexistent_session")
+    assert count == 0, "Should return 0 for unknown session"
+
+    # Test 2: Session with feedbacks returns correct count
+    # Create requests linked to the session
+    test_user_id = "count_test_user"
+    test_agent_version = "count_test_agent"
+    requests = [
+        Request(
+            request_id=f"count_test_req_{i}",
+            user_id=test_user_id,
+            session_id=session_id,
+        )
+        for i in range(2)
+    ]
+    for req in requests:
+        storage.add_request(req)
+
+    # Create raw feedbacks linked to those requests
+    feedbacks = [
+        RawFeedback(
+            user_id=test_user_id,
+            agent_version=test_agent_version,
+            request_id="count_test_req_0",
+            feedback_content="feedback 1",
+        ),
+        RawFeedback(
+            user_id=test_user_id,
+            agent_version=test_agent_version,
+            request_id="count_test_req_0",
+            feedback_content="feedback 2",
+        ),
+        RawFeedback(
+            user_id=test_user_id,
+            agent_version=test_agent_version,
+            request_id="count_test_req_1",
+            feedback_content="feedback 3",
+        ),
+    ]
+    storage.save_raw_feedbacks(feedbacks)
+
+    count = storage.count_raw_feedbacks_by_session(session_id=session_id)
+    assert count == 3, f"Should return 3 for session with 3 feedbacks, got {count}"
+
+    # Cleanup
+    for req in requests:
+        storage.client.table("raw_feedbacks").delete().eq(
+            "request_id", req.request_id
+        ).execute()
+        storage.client.table("requests").delete().eq(
+            "request_id", req.request_id
+        ).execute()
 
 
 @skip_in_precommit

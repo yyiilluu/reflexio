@@ -68,6 +68,19 @@ from reflexio.server.site_var.site_var_manager import SiteVarManager
 
 logger = logging.getLogger(__name__)
 
+# Explicit column lists to avoid fetching embedding vectors (512-dim float, ~2KB each as JSON).
+# IMPORTANT: When adding a new column to any table, update the corresponding constant here.
+_PROFILE_COLUMNS = "profile_id, user_id, content, last_modified_timestamp, generated_from_request_id, profile_time_to_live, expiration_timestamp, custom_features, created_at, source, status, extractor_names"
+_INTERACTION_COLUMNS = "interaction_id, user_id, content, request_id, created_at, role, user_action, user_action_description, interacted_image_url, shadow_content, tools_used"
+_REQUEST_COLUMNS = "request_id, user_id, created_at, source, agent_version, session_id"
+_RAW_FEEDBACK_COLUMNS = "raw_feedback_id, user_id, feedback_name, created_at, request_id, agent_version, feedback_content, do_action, do_not_action, when_condition, blocking_issue, status, source, source_interaction_ids, indexed_content"
+_RAW_FEEDBACK_COLUMNS_WITH_EMBEDDING = _RAW_FEEDBACK_COLUMNS + ", embedding"
+_FEEDBACK_COLUMNS = "feedback_id, feedback_name, created_at, agent_version, feedback_content, do_action, do_not_action, when_condition, blocking_issue, feedback_status, feedback_metadata, status"
+# Note: embedding intentionally excluded — eval result embeddings are only used for writing/search, not retrieval.
+_EVAL_RESULT_COLUMNS = "result_id, session_id, agent_version, evaluation_name, is_success, failure_type, failure_reason, created_at, regular_vs_shadow, number_of_correction_per_session, user_turns_to_resolution, is_escalated"
+_SKILL_COLUMNS = "skill_id, skill_name, description, version, agent_version, feedback_name, instructions, allowed_tools, blocking_issues, raw_feedback_ids, skill_status, created_at, updated_at"
+_OPERATION_STATE_COLUMNS = "service_name, operation_state, updated_at"
+
 
 def _parse_blocking_issue(data: dict) -> Optional[BlockingIssue]:
     """Safely parse a blocking_issue JSONB value from the database.
@@ -234,7 +247,7 @@ class SupabaseStorage(BaseStorage):
         if status_filter is None:
             status_filter = [None]  # Default to current profiles (status=None)
 
-        query = self.client.table("profiles").select("*")
+        query = self.client.table("profiles").select(_PROFILE_COLUMNS)
 
         # Convert Status enum values to strings for database query
         # Handle None values and Status.CURRENT (which has value None)
@@ -268,7 +281,7 @@ class SupabaseStorage(BaseStorage):
     def get_all_interactions(self, limit: int = 100) -> list[Interaction]:
         response = (
             self.client.table("interactions")
-            .select("*")
+            .select(_INTERACTION_COLUMNS)
             .order("created_at", desc=True)
             .limit(limit)
             .execute()
@@ -287,7 +300,7 @@ class SupabaseStorage(BaseStorage):
         current_timestamp = int(datetime.now(timezone.utc).timestamp())
         query = (
             self.client.table("profiles")
-            .select("*")
+            .select(_PROFILE_COLUMNS)
             .eq("user_id", user_id)
             .gte("expiration_timestamp", current_timestamp)
         )
@@ -321,7 +334,7 @@ class SupabaseStorage(BaseStorage):
     def get_user_interaction(self, user_id: str) -> list[Interaction]:
         response = (
             self.client.table("interactions")
-            .select("*")
+            .select(_INTERACTION_COLUMNS)
             .eq("user_id", user_id)
             .execute()
         )
@@ -452,7 +465,11 @@ class SupabaseStorage(BaseStorage):
         Returns:
             int: Total number of interactions
         """
-        result = self.client.table("interactions").select("*", count="exact").execute()
+        result = (
+            self.client.table("interactions")
+            .select("interaction_id", count="exact")
+            .execute()
+        )
         return result.count or 0
 
     @handle_exceptions
@@ -615,7 +632,7 @@ class SupabaseStorage(BaseStorage):
         """
         response = (
             self.client.table("requests")
-            .select("*")
+            .select(_REQUEST_COLUMNS)
             .eq("request_id", request_id)
             .execute()
         )
@@ -702,7 +719,7 @@ class SupabaseStorage(BaseStorage):
         """
         response = (
             self.client.table("requests")
-            .select("*")
+            .select(_REQUEST_COLUMNS)
             .eq("user_id", user_id)
             .eq("session_id", session_id)
             .execute()
@@ -743,9 +760,7 @@ class SupabaseStorage(BaseStorage):
         Returns:
             dict[str, list[RequestInteractionDataModel]]: Dictionary mapping session_id to list of RequestInteractionDataModel objects
         """
-        # Explicit interaction columns to avoid fetching embedding vector(1536) and content_fts
-        interaction_columns = "interaction_id,user_id,content,request_id,created_at,role,user_action,user_action_description,interacted_image_url,shadow_content,tools_used"
-        select_expr = f"*, interactions({interaction_columns})"
+        select_expr = f"*, interactions({_INTERACTION_COLUMNS})"
         query = (
             self.client.table("requests")
             .select(select_expr)
@@ -1158,11 +1173,7 @@ class SupabaseStorage(BaseStorage):
                     source=item.get("source"),
                     status=Status(item["status"]) if item.get("status") else None,
                     source_interaction_ids=item.get("source_interaction_ids") or [],
-                    embedding=(
-                        [float(x) for x in item["embedding"].strip("[]").split(",")]
-                        if item.get("embedding")
-                        else []
-                    ),
+                    embedding=[],
                 )
                 for item in response.data
             ]
@@ -1213,7 +1224,7 @@ class SupabaseStorage(BaseStorage):
 
         db_query = (
             self.client.table("raw_feedbacks")
-            .select("*")
+            .select(_RAW_FEEDBACK_COLUMNS)
             .order("created_at", desc=True)
             .limit(match_count)
         )
@@ -1251,11 +1262,7 @@ class SupabaseStorage(BaseStorage):
                 status=Status(item["status"]) if item.get("status") else None,
                 source=item.get("source"),
                 source_interaction_ids=item.get("source_interaction_ids") or [],
-                embedding=(
-                    [float(x) for x in item["embedding"].strip("[]").split(",")]
-                    if item.get("embedding")
-                    else []
-                ),
+                embedding=[],
             )
             for item in response.data
         ]
@@ -1338,11 +1345,7 @@ class SupabaseStorage(BaseStorage):
                     feedback_status=item["feedback_status"],
                     agent_version=item["agent_version"],
                     feedback_metadata=item.get("feedback_metadata") or "",
-                    embedding=(
-                        [float(x) for x in item["embedding"].strip("[]").split(",")]
-                        if item.get("embedding")
-                        else []
-                    ),
+                    embedding=[],
                     status=Status(item["status"]) if item.get("status") else None,
                 )
                 for item in response.data
@@ -1386,7 +1389,7 @@ class SupabaseStorage(BaseStorage):
         # No query - use regular table query with Supabase filters
         db_query = (
             self.client.table("feedbacks")
-            .select("*")
+            .select(_FEEDBACK_COLUMNS)
             .order("created_at", desc=True)
             .limit(match_count)
         )
@@ -1421,11 +1424,7 @@ class SupabaseStorage(BaseStorage):
                 blocking_issue=_parse_blocking_issue(item),
                 feedback_status=item["feedback_status"],
                 feedback_metadata=item.get("feedback_metadata") or "",
-                embedding=(
-                    [float(x) for x in item["embedding"].strip("[]").split(",")]
-                    if item.get("embedding")
-                    else []
-                ),
+                embedding=[],
                 status=Status(item["status"]) if item.get("status") else None,
             )
             for item in response.data
@@ -1498,6 +1497,7 @@ class SupabaseStorage(BaseStorage):
         status_filter: Optional[list[Optional[Status]]] = None,
         start_time: Optional[int] = None,
         end_time: Optional[int] = None,
+        include_embedding: bool = False,
     ) -> list[RawFeedback]:
         """
         Get raw feedbacks from storage.
@@ -1512,13 +1512,19 @@ class SupabaseStorage(BaseStorage):
                 If None, returns feedbacks with all statuses.
             start_time (int, optional): Unix timestamp. Only return feedbacks created at or after this time.
             end_time (int, optional): Unix timestamp. Only return feedbacks created at or before this time.
+            include_embedding (bool): If True, fetch and parse embedding vectors. Defaults to False.
 
         Returns:
             list[RawFeedback]: List of raw feedback objects
         """
+        columns = (
+            _RAW_FEEDBACK_COLUMNS_WITH_EMBEDDING
+            if include_embedding
+            else _RAW_FEEDBACK_COLUMNS
+        )
         query = (
             self.client.table("raw_feedbacks")
-            .select("*")
+            .select(columns)
             .order("created_at", desc=True)
             .limit(limit)
         )
@@ -1594,7 +1600,7 @@ class SupabaseStorage(BaseStorage):
                 source_interaction_ids=item.get("source_interaction_ids") or [],
                 embedding=(
                     [float(x) for x in item["embedding"].strip("[]").split(",")]
-                    if item["embedding"]
+                    if include_embedding and item.get("embedding")
                     else []
                 ),
             )
@@ -1625,7 +1631,9 @@ class SupabaseStorage(BaseStorage):
         Returns:
             int: Count of raw feedbacks matching the filters
         """
-        query = self.client.table("raw_feedbacks").select("*", count="exact")
+        query = self.client.table("raw_feedbacks").select(
+            "raw_feedback_id", count="exact"
+        )
 
         # Add user_id filter if specified
         if user_id is not None:
@@ -1677,6 +1685,40 @@ class SupabaseStorage(BaseStorage):
         return response.count if response.count is not None else 0
 
     @handle_exceptions
+    def count_raw_feedbacks_by_session(self, session_id: str) -> int:
+        """
+        Count raw feedbacks linked to a session via request_id -> requests.session_id.
+
+        Args:
+            session_id (str): The session ID to count raw feedbacks for
+
+        Returns:
+            int: Count of raw feedbacks linked to the session
+        """
+        # First get all request_ids for this session
+        requests_response = (
+            self.client.table("requests")
+            .select("request_id")
+            .eq("session_id", session_id)
+            .execute()
+        )
+
+        if not requests_response.data:
+            return 0
+
+        request_ids = [r["request_id"] for r in requests_response.data]
+
+        # Count raw_feedbacks with those request_ids
+        count_response = (
+            self.client.table("raw_feedbacks")
+            .select("request_id", count="exact")
+            .in_("request_id", request_ids)
+            .execute()
+        )
+
+        return count_response.count if count_response.count is not None else 0
+
+    @handle_exceptions
     def get_feedbacks(
         self,
         limit: int = 100,
@@ -1699,7 +1741,7 @@ class SupabaseStorage(BaseStorage):
         """
         query = (
             self.client.table("feedbacks")
-            .select("*")
+            .select(_FEEDBACK_COLUMNS)
             .order("created_at", desc=True)
             .limit(limit)
         )
@@ -1744,11 +1786,7 @@ class SupabaseStorage(BaseStorage):
                 blocking_issue=_parse_blocking_issue(item),
                 feedback_status=item["feedback_status"],
                 feedback_metadata=item["feedback_metadata"] or "",
-                embedding=(
-                    [float(x) for x in item["embedding"].strip("[]").split(",")]
-                    if item["embedding"]
-                    else []
-                ),
+                embedding=[],
                 status=item.get("status"),
             )
             for item in response.data
@@ -2173,7 +2211,7 @@ class SupabaseStorage(BaseStorage):
         """
         for result in results:
             # Generate embedding from combined content
-            embedding_text = f"{result.failure_type} {result.failure_reason} {result.agent_prompt_update}"
+            embedding_text = f"{result.failure_type} {result.failure_reason}"
             if embedding_text.strip():
                 embedding = self._get_embedding(embedding_text)
                 result.embedding = embedding
@@ -2200,7 +2238,7 @@ class SupabaseStorage(BaseStorage):
         """
         query = (
             self.client.table("agent_success_evaluation_result")
-            .select("*")
+            .select(_EVAL_RESULT_COLUMNS)
             .order("created_at", desc=True)
             .limit(limit)
         )
@@ -2219,18 +2257,19 @@ class SupabaseStorage(BaseStorage):
                 is_success=item["is_success"],
                 failure_type=item["failure_type"],
                 failure_reason=item["failure_reason"],
-                agent_prompt_update=item["agent_prompt_update"],
                 created_at=self._parse_datetime_to_timestamp(item["created_at"]),
                 regular_vs_shadow=(
                     RegularVsShadow(item["regular_vs_shadow"])
                     if item.get("regular_vs_shadow")
                     else None
                 ),
-                embedding=(
-                    [float(x) for x in item["embedding"].strip("[]").split(",")]
-                    if item["embedding"]
-                    else []
-                ),
+                number_of_correction_per_session=item.get(
+                    "number_of_correction_per_session", 0
+                )
+                or 0,
+                user_turns_to_resolution=item.get("user_turns_to_resolution"),
+                is_escalated=item.get("is_escalated", False) or False,
+                embedding=[],
             )
             for item in response.data
         ]
@@ -2628,7 +2667,7 @@ class SupabaseStorage(BaseStorage):
         """
         response = (
             self.client.table("_operation_state")
-            .select("*")
+            .select(_OPERATION_STATE_COLUMNS)
             .eq("service_name", service_name)
             .execute()
         )
@@ -2948,7 +2987,11 @@ class SupabaseStorage(BaseStorage):
         Returns:
             list[dict]: List of all operation state records
         """
-        response = self.client.table("_operation_state").select("*").execute()
+        response = (
+            self.client.table("_operation_state")
+            .select(_OPERATION_STATE_COLUMNS)
+            .execute()
+        )
         return [
             {
                 "service_name": item["service_name"],
@@ -3080,7 +3123,7 @@ class SupabaseStorage(BaseStorage):
         """
         db_query = (
             self.client.table("skills")
-            .select("*")
+            .select(_SKILL_COLUMNS)
             .eq("org_id", self.org_id)
             .order("created_at", desc=True)
             .limit(limit)
@@ -3200,7 +3243,7 @@ class SupabaseStorage(BaseStorage):
 
         response = (
             self.client.table("interactions")
-            .select("*")
+            .select(_INTERACTION_COLUMNS)
             .in_("request_id", request_ids)
             .order("created_at", desc=False)
             .execute()
