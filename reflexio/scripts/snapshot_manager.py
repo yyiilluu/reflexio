@@ -305,13 +305,49 @@ def cmd_restore(args: argparse.Namespace) -> int:
         table, old_col = left.rsplit(".", 1)
         rename_columns.setdefault(table, {})[old_col] = new_col
 
-    if exclude_tables or rename_columns:
+    # Auto-detect columns in snapshot that don't exist in current DB schema
+    drop_columns: dict[str, set[str]] = {}
+    conn_check = psycopg2.connect(db_url)
+    try:
+        cursor_check = conn_check.cursor()
+        for line in filtered_sql.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("COPY public."):
+                table_name = stripped.split(".", 1)[1].split(" ", 1)[0].strip('"')
+                # Extract column list from COPY statement
+                col_start = stripped.index("(") + 1
+                col_end = stripped.index(")")
+                snapshot_cols = [
+                    c.strip() for c in stripped[col_start:col_end].split(",")
+                ]
+                # Get current DB columns
+                cursor_check.execute(
+                    "SELECT column_name FROM information_schema.columns "
+                    "WHERE table_schema = 'public' AND table_name = %s",
+                    (table_name,),
+                )
+                db_cols = {row[0] for row in cursor_check.fetchall()}
+                missing = {c for c in snapshot_cols if c not in db_cols}
+                if missing:
+                    drop_columns[table_name] = missing
+                    logger.info(
+                        "Table '%s': dropping columns not in current schema: %s",
+                        table_name,
+                        ", ".join(sorted(missing)),
+                    )
+    finally:
+        conn_check.close()
+
+    if exclude_tables or rename_columns or drop_columns:
         if exclude_tables:
             logger.info("Excluding tables from restore: %s", ", ".join(exclude_tables))
         if rename_columns:
             logger.info("Renaming columns during restore: %s", rename_columns)
         result_lines = []
         skipping = False
+        # Track column indices to drop for current COPY block
+        current_drop_indices: set[int] = set()
+        in_copy_data = False
         for line in filtered_sql.splitlines(keepends=True):
             stripped = line.strip()
             if stripped.startswith("COPY public."):
@@ -323,12 +359,45 @@ def cmd_restore(args: argparse.Namespace) -> int:
                 if table_name in rename_columns:
                     for old_col, new_col in rename_columns[table_name].items():
                         line = line.replace(old_col, new_col)
+                # Handle dropping columns
+                current_drop_indices = set()
+                if table_name in drop_columns:
+                    col_start = stripped.index("(") + 1
+                    col_end = stripped.index(")")
+                    cols = [c.strip() for c in stripped[col_start:col_end].split(",")]
+                    current_drop_indices = {
+                        i for i, c in enumerate(cols) if c in drop_columns[table_name]
+                    }
+                    kept_cols = [
+                        c for i, c in enumerate(cols) if i not in current_drop_indices
+                    ]
+                    # Rebuild the COPY line
+                    prefix = line[: line.index("(") + 1]
+                    suffix = line[line.index(")") :]
+                    line = prefix + ", ".join(kept_cols) + suffix
+                in_copy_data = True
+                result_lines.append(line)
+                continue
             if skipping:
-                # End of COPY block is a line with just "\."
                 if stripped == "\\.":
                     skipping = False
                 continue
-            result_lines.append(line)
+            if in_copy_data:
+                if stripped == "\\.":
+                    in_copy_data = False
+                    current_drop_indices = set()
+                    result_lines.append(line)
+                elif current_drop_indices:
+                    # Drop columns from tab-separated data row
+                    fields = line.rstrip("\n").split("\t")
+                    kept_fields = [
+                        f for i, f in enumerate(fields) if i not in current_drop_indices
+                    ]
+                    result_lines.append("\t".join(kept_fields) + "\n")
+                else:
+                    result_lines.append(line)
+            else:
+                result_lines.append(line)
         filtered_sql = "".join(result_lines)
 
     restore_sql = (
