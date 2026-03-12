@@ -6,7 +6,7 @@ import { useAuth } from "@/lib/auth-context"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { UserPlus, Loader2, AlertCircle, Mail, CheckCircle, Check, X } from "lucide-react"
+import { UserPlus, Loader2, AlertCircle, Mail, CheckCircle, Eye, EyeOff, Check, X } from "lucide-react"
 import Link from "next/link"
 
 export default function RegisterPage() {
@@ -18,6 +18,7 @@ export default function RegisterPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [showVerificationNotice, setShowVerificationNotice] = useState(false)
   const [showAutoVerifiedNotice, setShowAutoVerifiedNotice] = useState(false)
+  const [showPasswords, setShowPasswords] = useState(false)
   const [invitationRequired, setInvitationRequired] = useState(false)
   const { register, isAuthenticated, isSelfHost } = useAuth()
   const router = useRouter()
@@ -227,16 +228,33 @@ export default function RegisterPage() {
                 >
                   Password
                 </label>
-                <Input
-                  id="password"
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  autoComplete="new-password"
-                  disabled={isLoading}
-                  placeholder="••••••••"
-                />
+                <div className="relative">
+                  <Input
+                    id="password"
+                    type={showPasswords ? "text" : "password"}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    autoComplete="new-password"
+                    disabled={isLoading}
+                    placeholder="••••••••"
+                    className="pr-10"
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                    onClick={() => setShowPasswords(!showPasswords)}
+                    tabIndex={-1}
+                  >
+                    {showPasswords ? (
+                      <EyeOff className="h-4 w-4 text-muted-foreground" />
+                    ) : (
+                      <Eye className="h-4 w-4 text-muted-foreground" />
+                    )}
+                  </Button>
+                </div>
                 {password.length > 0 && (
                   <ul className="space-y-1 text-sm mt-2">
                     {([
@@ -269,16 +287,33 @@ export default function RegisterPage() {
                 >
                   Confirm Password
                 </label>
-                <Input
-                  id="confirmPassword"
-                  type="password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  required
-                  autoComplete="new-password"
-                  disabled={isLoading}
-                  placeholder="••••••••"
-                />
+                <div className="relative">
+                  <Input
+                    id="confirmPassword"
+                    type={showPasswords ? "text" : "password"}
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    required
+                    autoComplete="new-password"
+                    disabled={isLoading}
+                    placeholder="••••••••"
+                    className="pr-10"
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                    onClick={() => setShowPasswords(!showPasswords)}
+                    tabIndex={-1}
+                  >
+                    {showPasswords ? (
+                      <EyeOff className="h-4 w-4 text-muted-foreground" />
+                    ) : (
+                      <Eye className="h-4 w-4 text-muted-foreground" />
+                    )}
+                  </Button>
+                </div>
               </div>
 
               {/* Invitation Code Field */}
