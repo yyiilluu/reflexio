@@ -190,7 +190,7 @@ def register_organization(
     if org:
         raise HTTPException(
             status_code=status.HTTP_412_PRECONDITION_FAILED,
-            detail="user email has already been registered",
+            detail="This email is already registered. Please sign in or use a different email.",
         )
 
     hashed_password = get_password_hash(password)

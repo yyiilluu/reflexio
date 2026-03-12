@@ -496,16 +496,6 @@ def register(
         if invitation_only and invitation_code:
             release_invitation_code(session=session, code=invitation_code)
         raise
-    if not org:
-        # Release the invitation code if org creation returned None (e.g., duplicate email)
-        if invitation_only and invitation_code:
-            release_invitation_code(session=session, code=invitation_code)
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect organization email or password",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
     if invitation_only:
         # Auto-verify the organization (code already claimed atomically above)
         org.is_verified = True
