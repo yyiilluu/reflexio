@@ -18,8 +18,25 @@ export default function RegisterPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [showVerificationNotice, setShowVerificationNotice] = useState(false)
   const [showAutoVerifiedNotice, setShowAutoVerifiedNotice] = useState(false)
+  const [invitationRequired, setInvitationRequired] = useState(false)
   const { register, isAuthenticated, isSelfHost } = useAuth()
   const router = useRouter()
+
+  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || ""
+
+  // Fetch registration config to determine if invitation code is required
+  useEffect(() => {
+    fetch(`${API_BASE_URL}/api/registration-config`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.invitation_code_required) {
+          setInvitationRequired(true)
+        }
+      })
+      .catch(() => {
+        // Default to optional on error
+      })
+  }, [API_BASE_URL])
 
   const passwordChecks = {
     minLength: password.length >= 12,
@@ -270,13 +287,14 @@ export default function RegisterPage() {
                   htmlFor="invitationCode"
                   className="block text-sm font-medium"
                 >
-                  Invitation Code <span className="text-muted-foreground font-normal">(optional)</span>
+                  Invitation Code {!invitationRequired && <span className="text-muted-foreground font-normal">(optional)</span>}
                 </label>
                 <Input
                   id="invitationCode"
                   type="text"
                   value={invitationCode}
                   onChange={(e) => setInvitationCode(e.target.value)}
+                  required={invitationRequired}
                   autoComplete="off"
                   disabled={isLoading}
                   placeholder="REFLEXIO-XXXX-XXXX"
