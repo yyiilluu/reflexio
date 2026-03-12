@@ -135,9 +135,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             message = error.detail.map((e: { msg?: string }) => e.msg || String(e)).join("; ")
           }
         } catch {
-          if (response.status === 429) {
-            message = "Too many attempts, please try again later"
-          } else if (response.statusText) {
+          if (response.statusText) {
             message = response.statusText
           }
         }
