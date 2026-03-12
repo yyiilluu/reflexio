@@ -43,6 +43,8 @@ export default function AccountPage() {
   const [deleteAccountPassword, setDeleteAccountPassword] = useState("")
   const [deletingAccount, setDeletingAccount] = useState(false)
   const [deleteAccountError, setDeleteAccountError] = useState<string | null>(null)
+  const [deleteAccountSuccess, setDeleteAccountSuccess] = useState(false)
+  const [countdown, setCountdown] = useState(10)
 
   const fetchTokens = useCallback(async () => {
     if (isSelfHost || !token) return
@@ -133,13 +135,29 @@ client = ReflexioClient()`
       await deleteAccount(deleteAccountPassword)
       setDeleteAccountOpen(false)
       await logout()
-      router.push("/")
+      setDeleteAccountSuccess(true)
+      setCountdown(10)
     } catch (error) {
       setDeleteAccountError(error instanceof Error ? error.message : "Failed to delete account")
     } finally {
       setDeletingAccount(false)
     }
   }
+
+  useEffect(() => {
+    if (!deleteAccountSuccess) return
+    const interval = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev <= 1) {
+          clearInterval(interval)
+          router.push("/register")
+          return 0
+        }
+        return prev - 1
+      })
+    }, 1000)
+    return () => clearInterval(interval)
+  }, [deleteAccountSuccess, router])
 
   const handleCloseDeleteAccount = () => {
     setDeleteAccountOpen(false)
@@ -278,6 +296,31 @@ client = ReflexioClient()`
                   ) : (
                     "Delete My Account"
                   )}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* Delete Account Success Dialog */}
+          <Dialog open={deleteAccountSuccess}>
+            <DialogContent className="[&>button]:hidden" onPointerDownOutside={(e) => e.preventDefault()} onEscapeKeyDown={(e) => e.preventDefault()}>
+              <DialogHeader>
+                <DialogTitle className="text-emerald-600">Account Deleted</DialogTitle>
+                <DialogDescription>
+                  Your account has been successfully deleted. All your data has been removed.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="py-2">
+                <p className="text-sm text-slate-500 text-center">
+                  Redirecting to sign up in {countdown} second{countdown !== 1 ? "s" : ""}...
+                </p>
+              </div>
+              <DialogFooter className="gap-2 sm:gap-0">
+                <Button variant="outline" onClick={() => router.push("/")}>
+                  Go to Home
+                </Button>
+                <Button onClick={() => router.push("/register")}>
+                  Sign Up
                 </Button>
               </DialogFooter>
             </DialogContent>
