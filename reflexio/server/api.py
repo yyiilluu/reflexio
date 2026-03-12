@@ -364,6 +364,14 @@ def health_check():
     return {"status": "healthy"}
 
 
+@app.get("/api/registration-config")
+def get_registration_config():
+    """Return public registration configuration (no auth required)."""
+    return {
+        "invitation_code_required": is_invitation_only_enabled(),
+    }
+
+
 @app.post("/api/logout")
 def logout_endpoint(
     org_id: str = Depends(get_org_id_for_self_host),
