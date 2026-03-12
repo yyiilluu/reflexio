@@ -112,11 +112,6 @@ class StructuredFeedbackContent(BaseModel):
         return has_condition and has_action
 
 
-# ===============================
-# Pydantic classes for feedback_generation prompt output schema (v2.1.0+)
-# ===============================
-
-
 class FeedbackAggregationOutput(BaseModel):
     """
     Output schema for feedback_generation prompt (version >= 2.1.0).
@@ -154,6 +149,40 @@ class SkillGenerationOutput(BaseModel):
     )
 
 
+def format_structured_feedback_content(structured: StructuredFeedbackContent) -> str:
+    """
+    Format structured feedback content to prompt instruction format.
+
+    Converts structured fields to bullet format:
+    - When: "condition."
+    - Do: "action."
+    - Don't: "avoid action."
+
+    Args:
+        structured (StructuredFeedbackContent): The structured feedback content
+
+    Returns:
+        str: Formatted feedback content string for prompts
+    """
+    lines = []
+
+    if structured.when_condition:
+        lines.append(f'When: "{structured.when_condition}"')
+
+    if structured.do_action:
+        lines.append(f'Do: "{structured.do_action}"')
+
+    if structured.do_not_action:
+        lines.append(f'Don\'t: "{structured.do_not_action}"')
+
+    if structured.blocking_issue:
+        lines.append(
+            f"Blocked by: [{structured.blocking_issue.kind.value}] {structured.blocking_issue.details}"
+        )
+
+    return "\n".join(lines)
+
+
 @dataclass
 class SkillGeneratorRequest:
     agent_version: str
@@ -185,7 +214,6 @@ def construct_feedback_extraction_messages_from_sessions(
     request_interaction_data_models: list[RequestInteractionDataModel],
     agent_context_prompt: str,
     feedback_definition_prompt: str,
-    existing_raw_feedbacks: Optional[list[RawFeedback]] = None,
     tool_can_use: Optional[str] = None,
 ) -> list[dict]:
     """
@@ -199,7 +227,6 @@ def construct_feedback_extraction_messages_from_sessions(
         request_interaction_data_models: List of request interaction groups to extract feedback from
         agent_context_prompt: Context about the agent for system message
         feedback_definition_prompt: Definition of what feedback should contain
-        existing_raw_feedbacks: Optional list of existing raw feedbacks from past 7 days
         tool_can_use: Optional formatted string of tools available to the agent
 
     Returns:
@@ -216,21 +243,11 @@ def construct_feedback_extraction_messages_from_sessions(
         },
     )
 
-    # Format existing feedbacks for context
-    formatted_existing_feedbacks = ""
-    if existing_raw_feedbacks:
-        formatted_existing_feedbacks = "\n".join(
-            [f"- {feedback.feedback_content}" for feedback in existing_raw_feedbacks]
-        )
-    else:
-        formatted_existing_feedbacks = "(No existing feedbacks)"
-
     # Configure final user message (after interactions)
     # Only dynamic per-call data goes in user message
     user_config = PromptConfig(
         prompt_id=FeedbackServiceConstants.RAW_FEEDBACK_EXTRACTION_PROMPT_ID,
         variables={
-            "existing_feedbacks": formatted_existing_feedbacks,
             "interactions": format_sessions_to_history_string(
                 request_interaction_data_models
             ),
@@ -257,7 +274,6 @@ def construct_incremental_feedback_extraction_messages(
     request_interaction_data_models: list[RequestInteractionDataModel],
     agent_context_prompt: str,
     feedback_definition_prompt: str,
-    existing_raw_feedbacks: Optional[list[RawFeedback]] = None,
     previously_extracted: Optional[list[RawFeedback]] = None,
     tool_can_use: Optional[str] = None,
 ) -> list[dict]:
@@ -272,7 +288,6 @@ def construct_incremental_feedback_extraction_messages(
         request_interaction_data_models: List of request interaction groups to extract feedback from
         agent_context_prompt: Context about the agent for system message
         feedback_definition_prompt: Definition of what feedback should contain
-        existing_raw_feedbacks: Optional list of existing raw feedbacks from past 7 days
         previously_extracted: Flattened list of all RawFeedback from previous extractors
         tool_can_use: Optional formatted string of tools available to the agent
 
@@ -289,15 +304,6 @@ def construct_incremental_feedback_extraction_messages(
         },
     )
 
-    # Format existing feedbacks for context
-    formatted_existing_feedbacks = ""
-    if existing_raw_feedbacks:
-        formatted_existing_feedbacks = "\n".join(
-            [f"- {feedback.feedback_content}" for feedback in existing_raw_feedbacks]
-        )
-    else:
-        formatted_existing_feedbacks = "(No existing feedbacks)"
-
     # Format previously extracted feedbacks
     formatted_previously_extracted = ""
     if previously_extracted:
@@ -311,7 +317,6 @@ def construct_incremental_feedback_extraction_messages(
     user_config = PromptConfig(
         prompt_id=FeedbackServiceConstants.RAW_FEEDBACK_EXTRACTION_INCREMENTAL_PROMPT_ID,
         variables={
-            "existing_feedbacks": formatted_existing_feedbacks,
             "previously_extracted_feedbacks": formatted_previously_extracted,
             "interactions": format_sessions_to_history_string(
                 request_interaction_data_models

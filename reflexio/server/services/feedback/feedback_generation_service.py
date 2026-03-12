@@ -44,7 +44,6 @@ class FeedbackGenerationServiceConfig:
         agent_version: The agent version
         user_id: The user ID for per-user feedback extraction
         source: Source of the interactions
-        existing_data: Existing raw feedbacks for the user (from past 7 days)
         allow_manual_trigger: Whether to allow extractors with manual_trigger=True
         rerun_start_time: Optional start time filter for rerun flows (Unix timestamp)
         rerun_end_time: Optional end time filter for rerun flows (Unix timestamp)
@@ -56,7 +55,6 @@ class FeedbackGenerationServiceConfig:
     agent_version: str
     user_id: Optional[str] = None
     source: Optional[str] = None
-    existing_data: list[RawFeedback] = field(default_factory=list)
     allow_manual_trigger: bool = False
     rerun_start_time: Optional[int] = None
     rerun_end_time: Optional[int] = None
@@ -111,29 +109,11 @@ class FeedbackGenerationService(
         Returns:
             FeedbackGenerationServiceConfig object
         """
-        # Get existing raw feedbacks for the user from past 7 days
-        # Skip for rerun flows (output_pending_status=True) to generate fresh feedbacks
-        existing_feedbacks: list[RawFeedback] = []
-        if request.user_id and not self.output_pending_status:
-            from datetime import datetime, timezone, timedelta
-
-            seven_days_ago = int(
-                (datetime.now(timezone.utc) - timedelta(days=7)).timestamp()
-            )
-            existing_feedbacks = self.storage.get_raw_feedbacks(
-                user_id=request.user_id,
-                agent_version=request.agent_version,
-                status_filter=[None],  # Get current feedbacks only
-                start_time=seven_days_ago,
-                limit=100,
-            )
-
         return FeedbackGenerationServiceConfig(
             request_id=request.request_id,
             agent_version=request.agent_version,
             user_id=request.user_id,
             source=request.source,
-            existing_data=existing_feedbacks,
             allow_manual_trigger=self.allow_manual_trigger,
             rerun_start_time=request.rerun_start_time,
             rerun_end_time=request.rerun_end_time,
@@ -253,27 +233,28 @@ class FeedbackGenerationService(
             if isinstance(result, list):
                 all_feedbacks.extend(result)
 
-        # Deduplicate if multiple extractors returned results and deduplicator is enabled
-        if len(results) > 1:
-            from reflexio.server.site_var.feature_flags import is_deduplicator_enabled
+        # Deduplicate against existing feedbacks in DB when deduplicator is enabled
+        existing_ids_to_delete: list[int] = []
+        from reflexio.server.site_var.feature_flags import is_deduplicator_enabled
 
-            if is_deduplicator_enabled(self.org_id):
-                from reflexio.server.services.feedback.feedback_deduplicator import (
-                    FeedbackDeduplicator,
-                )
+        if is_deduplicator_enabled(self.org_id):
+            from reflexio.server.services.feedback.feedback_deduplicator import (
+                FeedbackDeduplicator,
+            )
 
-                deduplicator = FeedbackDeduplicator(
-                    request_context=self.request_context,
-                    llm_client=self.client,
-                )
-                deduplicated_feedbacks = deduplicator.deduplicate(
-                    results,
-                    self.service_config.request_id,
-                    self.service_config.agent_version,
-                )
-                logger.info("Feedbacks after deduplication: %s", deduplicated_feedbacks)
-                if deduplicated_feedbacks:
-                    all_feedbacks = deduplicated_feedbacks
+            deduplicator = FeedbackDeduplicator(
+                request_context=self.request_context,
+                llm_client=self.client,
+            )
+            deduplicated_feedbacks, existing_ids_to_delete = deduplicator.deduplicate(
+                results,
+                self.service_config.request_id,
+                self.service_config.agent_version,
+                user_id=self.service_config.user_id,
+            )
+            logger.info("Feedbacks after deduplication: %d", len(deduplicated_feedbacks))
+            if deduplicated_feedbacks:
+                all_feedbacks = deduplicated_feedbacks
 
         # Set status and source for all feedbacks
         for feedback in all_feedbacks:
@@ -293,6 +274,21 @@ class FeedbackGenerationService(
         if all_feedbacks:
             try:
                 self.storage.save_raw_feedbacks(all_feedbacks)
+
+                # Delete superseded existing feedbacks only after save succeeds
+                if existing_ids_to_delete:
+                    try:
+                        deleted_count = self.storage.delete_raw_feedbacks_by_ids(
+                            existing_ids_to_delete
+                        )
+                        logger.info(
+                            "Deleted %d superseded existing feedbacks", deleted_count
+                        )
+                    except Exception as e:
+                        logger.error(
+                            "Failed to delete superseded existing feedbacks: %s",
+                            str(e),
+                        )
             except Exception as e:
                 logger.error(
                     "Failed to save %s results for request id: %s due to %s, exception type: %s",

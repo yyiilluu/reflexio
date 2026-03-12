@@ -1,6 +1,7 @@
 """Service to generate user profiles from interactions"""
 
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 import logging
 import uuid
 from typing import Any, Optional, Union
@@ -8,6 +9,7 @@ from typing import Any, Optional, Union
 from reflexio_commons.api_schema.internal_schema import RequestInteractionDataModel
 from reflexio_commons.api_schema.service_schemas import (
     DeleteUserProfileRequest,
+    ProfileChangeLog,
     RerunProfileGenerationRequest,
     RerunProfileGenerationResponse,
     ManualProfileGenerationRequest,
@@ -22,7 +24,6 @@ from reflexio.server.services.profile.profile_extractor import ProfileExtractor
 from reflexio.server.services.profile.profile_generation_service_utils import (
     ProfileGenerationRequest,
     ProfileGenerationServiceConstants,
-    ProfileUpdates,
 )
 from reflexio.server.services.base_generation_service import (
     BaseGenerationService,
@@ -64,7 +65,7 @@ class ProfileGenerationServiceConfig:
     rerun_end_time: Optional[int] = None
     auto_run: bool = True
     is_incremental: bool = False
-    previously_extracted: list[ProfileUpdates] = field(default_factory=list)
+    previously_extracted: list[list[UserProfile]] = field(default_factory=list)
 
 
 class ProfileGenerationService(
@@ -132,19 +133,24 @@ class ProfileGenerationService(
             auto_run=request.auto_run,
         )
 
-    def _process_results(self, results: list[ProfileUpdates]) -> None:
+    def _process_results(self, results: list[list[UserProfile]]) -> None:
         """
-        Process, deduplicate, and apply all profile updates. Called once after all extractors complete.
+        Process, deduplicate, and apply all extracted profiles. Called once after all extractors complete.
 
         Args:
-            results: List of ProfileUpdates from extractors (one per successful extractor)
+            results: List of profile lists from extractors (one list per successful extractor)
         """
         user_id = self.service_config.user_id
         source = self.service_config.source
         request_id = self.service_config.request_id
 
-        # Deduplicate if multiple extractors returned results and deduplicator is enabled
-        if len(results) > 1:
+        # Flatten all new profiles
+        all_new_profiles = [p for result in results if result for p in result]
+        existing_ids_to_delete: list[str] = []
+        superseded_profiles: list[UserProfile] = []
+
+        # Always run deduplicator when enabled and there are new profiles
+        if all_new_profiles:
             from reflexio.server.site_var.feature_flags import is_deduplicator_enabled
 
             if is_deduplicator_enabled(self.org_id):
@@ -156,66 +162,76 @@ class ProfileGenerationService(
                     request_context=self.request_context,
                     llm_client=self.client,
                 )
-                deduplicated_results = deduplicator.deduplicate(
-                    results, user_id, request_id
+                all_new_profiles, existing_ids_to_delete, superseded_profiles = (
+                    deduplicator.deduplicate(all_new_profiles, user_id, request_id)
                 )
                 logger.info(
-                    "Profile updates after deduplication: %s", deduplicated_results
+                    "Profile updates after deduplication: %d profiles, %d existing to delete",
+                    len(all_new_profiles),
+                    len(existing_ids_to_delete),
                 )
-                if deduplicated_results:
-                    results = deduplicated_results
 
         # Set source and status for all profiles
-        for update in results:
-            if update and update.add_profiles:
-                for profile in update.add_profiles:
-                    profile.source = source
-                    profile.status = (
-                        Status.PENDING if self.output_pending_status else None
-                    )
+        for profile in all_new_profiles:
+            profile.source = source
+            profile.status = (
+                Status.PENDING if self.output_pending_status else None
+            )
 
-        # Apply updates
-        for profile_update in results:
+        # Save new profiles
+        if all_new_profiles:
             try:
-                self._apply_profiles_for_user(user_id, profile_update)
+                self.storage.add_user_profile(user_id, all_new_profiles)
             except Exception as e:
                 logger.error(
-                    "Failed to apply profile update for user id: %s due to %s, exception type: %s",
+                    "Failed to save profiles for user id: %s due to %s, exception type: %s",
                     user_id,
                     str(e),
                     type(e).__name__,
                 )
-                continue
+                return
+
+        # Delete superseded existing profiles
+        if existing_ids_to_delete:
+            for profile_id in existing_ids_to_delete:
+                try:
+                    self.storage.delete_user_profile(
+                        DeleteUserProfileRequest(
+                            user_id=user_id,
+                            profile_id=profile_id,
+                        )
+                    )
+                except Exception as e:
+                    logger.error(
+                        "Failed to delete superseded profile %s for user %s: %s",
+                        profile_id,
+                        user_id,
+                        str(e),
+                    )
+
+        # Create profile changelog post-deduplication
+        if all_new_profiles or superseded_profiles:
+            try:
+                profile_change_log = ProfileChangeLog(
+                    id=0,  # Auto-generated by storage
+                    user_id=user_id,
+                    request_id=request_id,
+                    created_at=int(datetime.now(timezone.utc).timestamp()),
+                    added_profiles=all_new_profiles,
+                    removed_profiles=superseded_profiles,
+                    mentioned_profiles=[],
+                )
+                self.storage.add_profile_change_log(profile_change_log)
+            except Exception as e:
+                logger.error(
+                    "Failed to add profile change log for user %s: %s",
+                    user_id,
+                    str(e),
+                )
 
     def check_and_update_profiles(self, profiles: list[UserProfile]):
         """check if the profiles are expired and update them if they are"""
         raise NotImplementedError
-
-    # ===============================
-    # private methods
-    # ===============================
-
-    def _apply_profiles_for_user(self, user_id: str, profile_updates: ProfileUpdates):
-        """apply profile updates for user
-
-        Args:
-            user_id (str): _description_
-            profile_updates (ProfileUpdates): _description_
-        """
-        # delete profiles based on profile_updates
-        for tobe_removed_profile in profile_updates.delete_profiles or []:
-            delete_user_profile_request = DeleteUserProfileRequest(
-                user_id=user_id,
-                profile_id=tobe_removed_profile.profile_id,
-            )
-            self.storage.delete_user_profile(delete_user_profile_request)
-        # add profiles based on profile_updates
-        self.storage.add_user_profile(user_id, profile_updates.add_profiles)
-        # mention profiles based on profile_updates
-        for mentioned_profile in profile_updates.mention_profiles or []:
-            self.storage.update_user_profile_by_id(
-                user_id, mentioned_profile.profile_id, mentioned_profile
-            )
 
     def _load_extractor_configs(self) -> list[ProfileExtractorConfig]:
         """

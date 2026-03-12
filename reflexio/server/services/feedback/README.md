@@ -22,8 +22,8 @@ Description: Feedback extraction, aggregation, deduplication, and skill generati
 
 ```
 Interactions
-  -> FeedbackExtractor (per-extractor, parallel)
-    -> FeedbackDeduplicator (optional, if multiple extractors)
+  -> FeedbackExtractor (per-extractor, extraction-only, parallel)
+    -> FeedbackDeduplicator (deduplicates new vs existing DB feedbacks)
       -> RawFeedback (with optional blocking_issue) -> Storage
         -> FeedbackAggregator (manual trigger)
           -> Feedback (aggregated insights) -> Storage
@@ -57,7 +57,7 @@ Triggered manually via `/api/run_feedback_aggregation`. Clusters raw feedbacks a
 
 ### Feedback Deduplication (`feedback_deduplicator.py`)
 
-When multiple extractors produce overlapping feedback, deduplicates via LLM semantic matching. Uses `deduplication_utils.py` base class.
+Deduplicates newly extracted feedbacks against existing feedbacks in the database via LLM semantic matching. Identifies duplicates between new extractions and existing DB feedbacks, merging where appropriate.
 
 ### Skill Generation (`skill_generator.py`)
 

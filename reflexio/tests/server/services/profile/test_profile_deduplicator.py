@@ -3,7 +3,7 @@ Unit tests for ProfileDeduplicator.
 
 Tests the deduplicator's responsibilities for:
 - Pydantic output schema validation
-- Profile deduplication with LLM
+- Profile deduplication with LLM and hybrid search
 - Profile formatting for prompts
 - Building deduplicated results
 - Merging custom features
@@ -33,9 +33,7 @@ from reflexio.server.services.profile.profile_deduplicator import (
     ProfileDuplicateGroup,
     ProfileDeduplicationOutput,
 )
-from reflexio.server.services.profile.profile_generation_service_utils import (
-    ProfileUpdates,
-)
+from reflexio.server.services.deduplication_utils import parse_item_id
 
 
 # ===============================
@@ -47,15 +45,18 @@ from reflexio.server.services.profile.profile_generation_service_utils import (
 def mock_llm_client():
     """Create a mock LLM client."""
     client = MagicMock(spec=LiteLLMClient)
+    client.get_embeddings.return_value = [[0.1] * 10, [0.2] * 10, [0.3] * 10]
     return client
 
 
 @pytest.fixture
 def mock_request_context():
-    """Create a mock request context with prompt manager."""
+    """Create a mock request context with prompt manager and storage."""
     context = MagicMock(spec=RequestContext)
     context.prompt_manager = MagicMock()
     context.prompt_manager.render_prompt.return_value = "test prompt"
+    context.storage = MagicMock()
+    context.storage.search_user_profile.return_value = []
     return context
 
 
@@ -103,28 +104,6 @@ def sample_profiles():
     ]
 
 
-@pytest.fixture
-def sample_profile_updates(sample_profiles):
-    """Create sample ProfileUpdates from different extractors."""
-    return [
-        ProfileUpdates(
-            add_profiles=[sample_profiles[0]],
-            delete_profiles=[],
-            mention_profiles=[],
-        ),
-        ProfileUpdates(
-            add_profiles=[sample_profiles[1]],
-            delete_profiles=[],
-            mention_profiles=[],
-        ),
-        ProfileUpdates(
-            add_profiles=[sample_profiles[2]],
-            delete_profiles=[],
-            mention_profiles=[],
-        ),
-    ]
-
-
 # ===============================
 # Test: Pydantic Models
 # ===============================
@@ -136,12 +115,12 @@ class TestPydanticModels:
     def test_duplicate_group_creation(self):
         """Test that ProfileDuplicateGroup can be created with valid data."""
         group = ProfileDuplicateGroup(
-            item_indices=[0, 1],
+            item_ids=["NEW-0", "NEW-1", "EXISTING-0"],
             merged_content="User prefers dark mode",
             merged_time_to_live="one_month",
             reasoning="Both profiles are about dark mode preferences",
         )
-        assert group.item_indices == [0, 1]
+        assert group.item_ids == ["NEW-0", "NEW-1", "EXISTING-0"]
         assert group.merged_content == "User prefers dark mode"
         assert group.merged_time_to_live == "one_month"
 
@@ -149,7 +128,7 @@ class TestPydanticModels:
         """Test that ProfileDuplicateGroup forbids extra fields."""
         with pytest.raises(Exception):
             ProfileDuplicateGroup(
-                item_indices=[0],
+                item_ids=["NEW-0"],
                 merged_content="test",
                 merged_time_to_live="one_day",
                 reasoning="test",
@@ -161,39 +140,51 @@ class TestPydanticModels:
         output = ProfileDeduplicationOutput(
             duplicate_groups=[
                 ProfileDuplicateGroup(
-                    item_indices=[0, 1],
+                    item_ids=["NEW-0", "NEW-1"],
                     merged_content="merged",
                     merged_time_to_live="one_week",
                     reasoning="duplicates",
                 )
             ],
-            unique_indices=[2, 3],
+            unique_ids=["NEW-2", "NEW-3"],
         )
         assert len(output.duplicate_groups) == 1
-        assert output.unique_indices == [2, 3]
+        assert output.unique_ids == ["NEW-2", "NEW-3"]
 
     def test_deduplication_output_empty_defaults(self):
         """Test that ProfileDeduplicationOutput has empty list defaults."""
         output = ProfileDeduplicationOutput()
         assert output.duplicate_groups == []
-        assert output.unique_indices == []
+        assert output.unique_ids == []
 
     def test_deduplication_output_from_dict(self):
         """Test that ProfileDeduplicationOutput can be validated from dict."""
         data = {
             "duplicate_groups": [
                 {
-                    "item_indices": [0, 1],
+                    "item_ids": ["NEW-0", "NEW-1", "EXISTING-0"],
                     "merged_content": "test",
                     "merged_time_to_live": "one_day",
                     "reasoning": "reason",
                 }
             ],
-            "unique_indices": [2],
+            "unique_ids": ["NEW-2"],
         }
         output = ProfileDeduplicationOutput.model_validate(data)
         assert len(output.duplicate_groups) == 1
-        assert output.unique_indices == [2]
+        assert output.unique_ids == ["NEW-2"]
+
+    def test_parse_item_id_valid(self):
+        """Test parse_item_id with valid inputs."""
+        assert parse_item_id("NEW-0") == ("NEW", 0)
+        assert parse_item_id("EXISTING-1") == ("EXISTING", 1)
+        assert parse_item_id("new-5") == ("NEW", 5)
+
+    def test_parse_item_id_invalid(self):
+        """Test parse_item_id returns None for invalid inputs."""
+        assert parse_item_id("INVALID-0") is None
+        assert parse_item_id("NOHYPHEN") is None
+        assert parse_item_id("NEW-abc") is None
 
 
 # ===============================
@@ -247,16 +238,16 @@ class TestFormatProfilesForPrompt:
         mock_site_var_manager,
         sample_profiles,
     ):
-        """Test that profiles are formatted correctly."""
+        """Test that profiles are formatted correctly with NEW prefix."""
         deduplicator = ProfileDeduplicator(
             request_context=mock_request_context,
             llm_client=mock_llm_client,
         )
         result = deduplicator._format_items_for_prompt(sample_profiles)
 
-        assert "[0]" in result
-        assert "[1]" in result
-        assert "[2]" in result
+        assert "[NEW-0]" in result
+        assert "[NEW-1]" in result
+        assert "[NEW-2]" in result
         assert "User prefers dark mode for coding" in result
         assert "User likes dark theme in their IDE" in result
         assert "one_month" in result
@@ -307,6 +298,33 @@ class TestFormatProfilesForPrompt:
         )
         result = deduplicator._format_items_for_prompt(profiles)
         assert "Source: unknown" in result
+
+    def test_format_existing_profiles(
+        self,
+        mock_request_context,
+        mock_llm_client,
+        mock_site_var_manager,
+        sample_profiles,
+    ):
+        """Test that existing profiles are formatted with EXISTING prefix."""
+        deduplicator = ProfileDeduplicator(
+            request_context=mock_request_context,
+            llm_client=mock_llm_client,
+        )
+        result = deduplicator._format_profiles_with_prefix(sample_profiles, "EXISTING")
+        assert "[EXISTING-0]" in result
+        assert "[EXISTING-1]" in result
+
+    def test_format_empty_profiles(
+        self, mock_request_context, mock_llm_client, mock_site_var_manager
+    ):
+        """Test formatting empty profile list returns (None)."""
+        deduplicator = ProfileDeduplicator(
+            request_context=mock_request_context,
+            llm_client=mock_llm_client,
+        )
+        result = deduplicator._format_profiles_with_prefix([], "NEW")
+        assert result == "(None)"
 
 
 # ===============================
@@ -409,119 +427,12 @@ class TestMergeCustomFeatures:
 
 
 # ===============================
-# Test: Identify Duplicates
-# ===============================
-
-
-class TestIdentifyDuplicates:
-    """Tests for LLM-based duplicate identification."""
-
-    def test_identify_duplicates_returns_output(
-        self,
-        mock_request_context,
-        mock_llm_client,
-        mock_site_var_manager,
-        sample_profiles,
-    ):
-        """Test that identify_duplicates returns ProfileDeduplicationOutput."""
-        mock_llm_client.generate_chat_response.return_value = (
-            ProfileDeduplicationOutput(
-                duplicate_groups=[
-                    ProfileDuplicateGroup(
-                        item_indices=[0, 1],
-                        merged_content="User prefers dark mode",
-                        merged_time_to_live="one_month",
-                        reasoning="Both about dark mode",
-                    )
-                ],
-                unique_indices=[2],
-            )
-        )
-
-        deduplicator = ProfileDeduplicator(
-            request_context=mock_request_context,
-            llm_client=mock_llm_client,
-        )
-        result = deduplicator._identify_duplicates(sample_profiles)
-
-        assert result is not None
-        assert isinstance(result, ProfileDeduplicationOutput)
-        assert len(result.duplicate_groups) == 1
-        assert result.unique_indices == [2]
-
-    def test_identify_duplicates_handles_pydantic_response(
-        self,
-        mock_request_context,
-        mock_llm_client,
-        mock_site_var_manager,
-        sample_profiles,
-    ):
-        """Test that identify_duplicates handles ProfileDeduplicationOutput directly."""
-        expected_output = ProfileDeduplicationOutput(
-            duplicate_groups=[
-                ProfileDuplicateGroup(
-                    item_indices=[0, 1],
-                    merged_content="merged",
-                    merged_time_to_live="one_week",
-                    reasoning="duplicate",
-                )
-            ],
-            unique_indices=[2],
-        )
-        mock_llm_client.generate_chat_response.return_value = expected_output
-
-        deduplicator = ProfileDeduplicator(
-            request_context=mock_request_context,
-            llm_client=mock_llm_client,
-        )
-        result = deduplicator._identify_duplicates(sample_profiles)
-
-        assert result == expected_output
-
-    def test_identify_duplicates_returns_none_on_error(
-        self,
-        mock_request_context,
-        mock_llm_client,
-        mock_site_var_manager,
-        sample_profiles,
-    ):
-        """Test that identify_duplicates returns None on LLM error."""
-        mock_llm_client.generate_chat_response.side_effect = Exception("LLM Error")
-
-        deduplicator = ProfileDeduplicator(
-            request_context=mock_request_context,
-            llm_client=mock_llm_client,
-        )
-        result = deduplicator._identify_duplicates(sample_profiles)
-
-        assert result is None
-
-    def test_identify_duplicates_returns_none_on_unexpected_type(
-        self,
-        mock_request_context,
-        mock_llm_client,
-        mock_site_var_manager,
-        sample_profiles,
-    ):
-        """Test that identify_duplicates returns None on unexpected response type."""
-        mock_llm_client.generate_chat_response.return_value = "unexpected string"
-
-        deduplicator = ProfileDeduplicator(
-            request_context=mock_request_context,
-            llm_client=mock_llm_client,
-        )
-        result = deduplicator._identify_duplicates(sample_profiles)
-
-        assert result is None
-
-
-# ===============================
 # Test: Build Deduplicated Results
 # ===============================
 
 
 class TestBuildDeduplicatedResults:
-    """Tests for building deduplicated ProfileUpdates."""
+    """Tests for building deduplicated profile results."""
 
     def test_build_deduplicated_results_merges_duplicates(
         self,
@@ -529,43 +440,39 @@ class TestBuildDeduplicatedResults:
         mock_llm_client,
         mock_site_var_manager,
         sample_profiles,
-        sample_profile_updates,
     ):
         """Test that duplicates are merged into a single profile."""
         dedup_output = ProfileDeduplicationOutput(
             duplicate_groups=[
                 ProfileDuplicateGroup(
-                    item_indices=[0, 1],
+                    item_ids=["NEW-0", "NEW-1"],
                     merged_content="User prefers dark mode in their IDE",
                     merged_time_to_live="one_month",
                     reasoning="Both about dark mode preferences",
                 )
             ],
-            unique_indices=[2],
+            unique_ids=["NEW-2"],
         )
 
         deduplicator = ProfileDeduplicator(
             request_context=mock_request_context,
             llm_client=mock_llm_client,
         )
-        result = deduplicator._build_deduplicated_results(
-            results=sample_profile_updates,
-            all_add_profiles=sample_profiles,
+        result_profiles, delete_ids, superseded = deduplicator._build_deduplicated_results(
+            new_profiles=sample_profiles,
+            existing_profiles=[],
             dedup_output=dedup_output,
             user_id="test_user",
             request_id="test_request",
         )
 
-        assert len(result) == 1
-        assert len(result[0].add_profiles) == 2  # 1 merged + 1 unique
+        assert len(result_profiles) == 2  # 1 merged + 1 unique
+        assert len(delete_ids) == 0
+        assert len(superseded) == 0
 
         # Find the merged profile
         merged_profile = next(
-            (
-                p
-                for p in result[0].add_profiles
-                if p.profile_content == "User prefers dark mode in their IDE"
-            ),
+            (p for p in result_profiles if p.profile_content == "User prefers dark mode in their IDE"),
             None,
         )
         assert merged_profile is not None
@@ -577,28 +484,26 @@ class TestBuildDeduplicatedResults:
         mock_llm_client,
         mock_site_var_manager,
         sample_profiles,
-        sample_profile_updates,
     ):
         """Test that unique profiles are preserved."""
         dedup_output = ProfileDeduplicationOutput(
             duplicate_groups=[],
-            unique_indices=[0, 1, 2],
+            unique_ids=["NEW-0", "NEW-1", "NEW-2"],
         )
 
         deduplicator = ProfileDeduplicator(
             request_context=mock_request_context,
             llm_client=mock_llm_client,
         )
-        result = deduplicator._build_deduplicated_results(
-            results=sample_profile_updates,
-            all_add_profiles=sample_profiles,
+        result_profiles, delete_ids, superseded = deduplicator._build_deduplicated_results(
+            new_profiles=sample_profiles,
+            existing_profiles=[],
             dedup_output=dedup_output,
             user_id="test_user",
             request_id="test_request",
         )
 
-        assert len(result) == 1
-        assert len(result[0].add_profiles) == 3
+        assert len(result_profiles) == 3
 
     def test_build_deduplicated_results_handles_invalid_ttl(
         self,
@@ -606,39 +511,34 @@ class TestBuildDeduplicatedResults:
         mock_llm_client,
         mock_site_var_manager,
         sample_profiles,
-        sample_profile_updates,
     ):
         """Test that invalid TTL from LLM falls back to template TTL."""
         dedup_output = ProfileDeduplicationOutput(
             duplicate_groups=[
                 ProfileDuplicateGroup(
-                    item_indices=[0, 1],
+                    item_ids=["NEW-0", "NEW-1"],
                     merged_content="merged content",
                     merged_time_to_live="invalid_ttl",
                     reasoning="test",
                 )
             ],
-            unique_indices=[2],
+            unique_ids=["NEW-2"],
         )
 
         deduplicator = ProfileDeduplicator(
             request_context=mock_request_context,
             llm_client=mock_llm_client,
         )
-        result = deduplicator._build_deduplicated_results(
-            results=sample_profile_updates,
-            all_add_profiles=sample_profiles,
+        result_profiles, _, _ = deduplicator._build_deduplicated_results(
+            new_profiles=sample_profiles,
+            existing_profiles=[],
             dedup_output=dedup_output,
             user_id="test_user",
             request_id="test_request",
         )
 
         merged_profile = next(
-            (
-                p
-                for p in result[0].add_profiles
-                if p.profile_content == "merged content"
-            ),
+            (p for p in result_profiles if p.profile_content == "merged content"),
             None,
         )
         assert merged_profile is not None
@@ -651,136 +551,81 @@ class TestBuildDeduplicatedResults:
         mock_llm_client,
         mock_site_var_manager,
         sample_profiles,
-        sample_profile_updates,
     ):
         """Test that profiles not mentioned by LLM are added as-is."""
         # LLM only mentions indices 0 and 1, not 2
         dedup_output = ProfileDeduplicationOutput(
             duplicate_groups=[
                 ProfileDuplicateGroup(
-                    item_indices=[0, 1],
+                    item_ids=["NEW-0", "NEW-1"],
                     merged_content="merged",
                     merged_time_to_live="one_week",
                     reasoning="test",
                 )
             ],
-            unique_indices=[],  # LLM forgot to mention index 2
+            unique_ids=[],  # LLM forgot to mention index 2
         )
 
         deduplicator = ProfileDeduplicator(
             request_context=mock_request_context,
             llm_client=mock_llm_client,
         )
-        result = deduplicator._build_deduplicated_results(
-            results=sample_profile_updates,
-            all_add_profiles=sample_profiles,
+        result_profiles, _, _ = deduplicator._build_deduplicated_results(
+            new_profiles=sample_profiles,
+            existing_profiles=[],
             dedup_output=dedup_output,
             user_id="test_user",
             request_id="test_request",
         )
 
-        # Should still include all 3 profiles (1 merged + 1 unmentioned)
-        assert len(result[0].add_profiles) == 2
+        # Should still include all profiles (1 merged + 1 unmentioned)
+        assert len(result_profiles) == 2
 
-    def test_build_deduplicated_results_collects_delete_profiles(
+    def test_build_deduplicated_results_collects_existing_to_delete(
         self,
         mock_request_context,
         mock_llm_client,
         mock_site_var_manager,
         sample_profiles,
     ):
-        """Test that delete_profiles are collected from all results."""
+        """Test that existing profiles marked for deletion are collected."""
         timestamp = int(datetime.now(timezone.utc).timestamp())
-        delete_profile = UserProfile(
-            profile_id="delete_1",
+        existing_profile = UserProfile(
+            profile_id="existing_1",
             user_id="test_user",
-            profile_content="to delete",
+            profile_content="Old dark mode preference",
             last_modified_timestamp=timestamp,
-            generated_from_request_id="req",
+            generated_from_request_id="old_req",
         )
 
-        results = [
-            ProfileUpdates(
-                add_profiles=[sample_profiles[0]],
-                delete_profiles=[delete_profile],
-                mention_profiles=[],
-            ),
-            ProfileUpdates(
-                add_profiles=[sample_profiles[1]],
-                delete_profiles=[],
-                mention_profiles=[],
-            ),
-        ]
-
         dedup_output = ProfileDeduplicationOutput(
-            duplicate_groups=[],
-            unique_indices=[0, 1],
+            duplicate_groups=[
+                ProfileDuplicateGroup(
+                    item_ids=["NEW-0", "EXISTING-0"],
+                    merged_content="User prefers dark mode (updated)",
+                    merged_time_to_live="one_month",
+                    reasoning="New profile supersedes existing",
+                )
+            ],
+            unique_ids=["NEW-1", "NEW-2"],
         )
 
         deduplicator = ProfileDeduplicator(
             request_context=mock_request_context,
             llm_client=mock_llm_client,
         )
-        result = deduplicator._build_deduplicated_results(
-            results=results,
-            all_add_profiles=sample_profiles[:2],
+        result_profiles, delete_ids, superseded = deduplicator._build_deduplicated_results(
+            new_profiles=sample_profiles,
+            existing_profiles=[existing_profile],
             dedup_output=dedup_output,
             user_id="test_user",
             request_id="test_request",
         )
 
-        assert len(result[0].delete_profiles) == 1
-        assert result[0].delete_profiles[0].profile_id == "delete_1"
-
-    def test_build_deduplicated_results_deduplicates_delete_profiles(
-        self,
-        mock_request_context,
-        mock_llm_client,
-        mock_site_var_manager,
-        sample_profiles,
-    ):
-        """Test that duplicate delete_profiles are deduplicated by profile_id."""
-        timestamp = int(datetime.now(timezone.utc).timestamp())
-        delete_profile = UserProfile(
-            profile_id="delete_1",
-            user_id="test_user",
-            profile_content="to delete",
-            last_modified_timestamp=timestamp,
-            generated_from_request_id="req",
-        )
-
-        results = [
-            ProfileUpdates(
-                add_profiles=[sample_profiles[0]],
-                delete_profiles=[delete_profile],
-                mention_profiles=[],
-            ),
-            ProfileUpdates(
-                add_profiles=[sample_profiles[1]],
-                delete_profiles=[delete_profile],  # Same profile referenced again
-                mention_profiles=[],
-            ),
-        ]
-
-        dedup_output = ProfileDeduplicationOutput(
-            duplicate_groups=[],
-            unique_indices=[0, 1],
-        )
-
-        deduplicator = ProfileDeduplicator(
-            request_context=mock_request_context,
-            llm_client=mock_llm_client,
-        )
-        result = deduplicator._build_deduplicated_results(
-            results=results,
-            all_add_profiles=sample_profiles[:2],
-            dedup_output=dedup_output,
-            user_id="test_user",
-            request_id="test_request",
-        )
-
-        # Should only have one delete_profile despite being mentioned twice
-        assert len(result[0].delete_profiles) == 1
+        assert len(delete_ids) == 1
+        assert delete_ids[0] == "existing_1"
+        assert len(superseded) == 1
+        assert superseded[0].profile_id == "existing_1"
 
 
 # ===============================
@@ -791,68 +636,26 @@ class TestBuildDeduplicatedResults:
 class TestDeduplicate:
     """Tests for the main deduplicate() method."""
 
-    def test_deduplicate_returns_original_when_single_profile(
-        self,
-        mock_request_context,
-        mock_llm_client,
-        mock_site_var_manager,
-        sample_profiles,
-    ):
-        """Test that original results are returned when there's only one profile."""
-        results = [
-            ProfileUpdates(
-                add_profiles=[sample_profiles[0]],
-                delete_profiles=[],
-                mention_profiles=[],
-            )
-        ]
-
-        deduplicator = ProfileDeduplicator(
-            request_context=mock_request_context,
-            llm_client=mock_llm_client,
-        )
-        result = deduplicator.deduplicate(
-            results=results,
-            user_id="test_user",
-            request_id="test_request",
-        )
-
-        # Should return original results without calling LLM
-        assert result == results
-        mock_llm_client.generate_chat_response.assert_not_called()
-
-    def test_deduplicate_returns_original_when_no_add_profiles(
+    def test_deduplicate_returns_original_when_empty(
         self,
         mock_request_context,
         mock_llm_client,
         mock_site_var_manager,
     ):
-        """Test that original results are returned when no add_profiles exist."""
-        results = [
-            ProfileUpdates(
-                add_profiles=[],
-                delete_profiles=[],
-                mention_profiles=[],
-            ),
-            ProfileUpdates(
-                add_profiles=[],
-                delete_profiles=[],
-                mention_profiles=[],
-            ),
-        ]
-
+        """Test that empty input returns empty output."""
         deduplicator = ProfileDeduplicator(
             request_context=mock_request_context,
             llm_client=mock_llm_client,
         )
-        result = deduplicator.deduplicate(
-            results=results,
+        profiles, delete_ids, superseded = deduplicator.deduplicate(
+            new_profiles=[],
             user_id="test_user",
             request_id="test_request",
         )
 
-        assert result == results
-        mock_llm_client.generate_chat_response.assert_not_called()
+        assert profiles == []
+        assert delete_ids == []
+        assert superseded == []
 
     def test_deduplicate_returns_original_when_no_duplicates_found(
         self,
@@ -860,13 +663,12 @@ class TestDeduplicate:
         mock_llm_client,
         mock_site_var_manager,
         sample_profiles,
-        sample_profile_updates,
     ):
-        """Test that original results are returned when LLM finds no duplicates."""
+        """Test that original profiles are returned when LLM finds no duplicates."""
         mock_llm_client.generate_chat_response.return_value = (
             ProfileDeduplicationOutput(
                 duplicate_groups=[],
-                unique_indices=[0, 1, 2],
+                unique_ids=["NEW-0", "NEW-1", "NEW-2"],
             )
         )
 
@@ -874,13 +676,15 @@ class TestDeduplicate:
             request_context=mock_request_context,
             llm_client=mock_llm_client,
         )
-        result = deduplicator.deduplicate(
-            results=sample_profile_updates,
+        profiles, delete_ids, superseded = deduplicator.deduplicate(
+            new_profiles=sample_profiles,
             user_id="test_user",
             request_id="test_request",
         )
 
-        assert result == sample_profile_updates
+        assert profiles == sample_profiles
+        assert delete_ids == []
+        assert superseded == []
 
     def test_deduplicate_returns_original_when_llm_fails(
         self,
@@ -888,22 +692,23 @@ class TestDeduplicate:
         mock_llm_client,
         mock_site_var_manager,
         sample_profiles,
-        sample_profile_updates,
     ):
-        """Test that original results are returned when LLM call fails."""
+        """Test that original profiles are returned when LLM call fails."""
         mock_llm_client.generate_chat_response.side_effect = Exception("LLM Error")
 
         deduplicator = ProfileDeduplicator(
             request_context=mock_request_context,
             llm_client=mock_llm_client,
         )
-        result = deduplicator.deduplicate(
-            results=sample_profile_updates,
+        profiles, delete_ids, superseded = deduplicator.deduplicate(
+            new_profiles=sample_profiles,
             user_id="test_user",
             request_id="test_request",
         )
 
-        assert result == sample_profile_updates
+        assert profiles == sample_profiles
+        assert delete_ids == []
+        assert superseded == []
 
     def test_deduplicate_merges_duplicates(
         self,
@@ -911,20 +716,19 @@ class TestDeduplicate:
         mock_llm_client,
         mock_site_var_manager,
         sample_profiles,
-        sample_profile_updates,
     ):
         """Test that duplicates are properly merged."""
         mock_llm_client.generate_chat_response.return_value = (
             ProfileDeduplicationOutput(
                 duplicate_groups=[
                     ProfileDuplicateGroup(
-                        item_indices=[0, 1],
+                        item_ids=["NEW-0", "NEW-1"],
                         merged_content="User prefers dark mode",
                         merged_time_to_live="one_month",
                         reasoning="Both about dark mode",
                     )
                 ],
-                unique_indices=[2],
+                unique_ids=["NEW-2"],
             )
         )
 
@@ -932,49 +736,47 @@ class TestDeduplicate:
             request_context=mock_request_context,
             llm_client=mock_llm_client,
         )
-        result = deduplicator.deduplicate(
-            results=sample_profile_updates,
+        profiles, delete_ids, superseded = deduplicator.deduplicate(
+            new_profiles=sample_profiles,
             user_id="test_user",
             request_id="test_request",
         )
 
-        assert len(result) == 1
         # Should have 2 profiles: 1 merged + 1 unique
-        assert len(result[0].add_profiles) == 2
+        assert len(profiles) == 2
+        assert len(delete_ids) == 0
 
-    def test_deduplicate_handles_none_results(
+    def test_deduplicate_with_existing_profiles_to_delete(
         self,
         mock_request_context,
         mock_llm_client,
         mock_site_var_manager,
         sample_profiles,
     ):
-        """Test that None results in the list are handled."""
-        results = [
-            ProfileUpdates(
-                add_profiles=[sample_profiles[0]],
-                delete_profiles=[],
-                mention_profiles=[],
-            ),
-            None,
-            ProfileUpdates(
-                add_profiles=[sample_profiles[1]],
-                delete_profiles=[],
-                mention_profiles=[],
-            ),
-        ]
+        """Test deduplication that supersedes existing profiles."""
+        timestamp = int(datetime.now(timezone.utc).timestamp())
+        existing_profile = UserProfile(
+            profile_id="existing_1",
+            user_id="test_user",
+            profile_content="Old dark mode preference",
+            last_modified_timestamp=timestamp,
+            generated_from_request_id="old_req",
+        )
+
+        # Mock storage to return existing profile via hybrid search
+        mock_request_context.storage.search_user_profile.return_value = [existing_profile]
 
         mock_llm_client.generate_chat_response.return_value = (
             ProfileDeduplicationOutput(
                 duplicate_groups=[
                     ProfileDuplicateGroup(
-                        item_indices=[0, 1],
-                        merged_content="merged",
-                        merged_time_to_live="one_week",
-                        reasoning="duplicates",
+                        item_ids=["NEW-0", "EXISTING-0"],
+                        merged_content="User prefers dark mode (updated)",
+                        merged_time_to_live="one_month",
+                        reasoning="New supersedes existing",
                     )
                 ],
-                unique_indices=[],
+                unique_ids=["NEW-1", "NEW-2"],
             )
         )
 
@@ -982,14 +784,16 @@ class TestDeduplicate:
             request_context=mock_request_context,
             llm_client=mock_llm_client,
         )
-        result = deduplicator.deduplicate(
-            results=results,
+        profiles, delete_ids, superseded = deduplicator.deduplicate(
+            new_profiles=sample_profiles,
             user_id="test_user",
             request_id="test_request",
         )
 
-        assert len(result) == 1
-        assert len(result[0].add_profiles) == 1
+        assert len(profiles) == 3  # 1 merged + 2 unique
+        assert len(delete_ids) == 1
+        assert delete_ids[0] == "existing_1"
+        assert len(superseded) == 1
 
 
 # ===============================
@@ -1010,7 +814,7 @@ class TestIntegration:
         timestamp = int(datetime.now(timezone.utc).timestamp())
 
         # Create profiles from different extractors with duplicates
-        profiles = [
+        new_profiles = [
             UserProfile(
                 profile_id="p1",
                 user_id="user",
@@ -1042,51 +846,35 @@ class TestIntegration:
             ),
         ]
 
-        results = [
-            ProfileUpdates(
-                add_profiles=[profiles[0]], delete_profiles=[], mention_profiles=[]
-            ),
-            ProfileUpdates(
-                add_profiles=[profiles[1]], delete_profiles=[], mention_profiles=[]
-            ),
-            ProfileUpdates(
-                add_profiles=[profiles[2]], delete_profiles=[], mention_profiles=[]
-            ),
-        ]
-
         mock_llm_client.generate_chat_response.return_value = ProfileDeduplicationOutput(
             duplicate_groups=[
                 ProfileDuplicateGroup(
-                    item_indices=[0, 1],
+                    item_ids=["NEW-0", "NEW-1"],
                     merged_content="User works in the financial services industry",
                     merged_time_to_live="one_year",
                     reasoning="Both profiles describe the user's industry as finance/financial services",
                 )
             ],
-            unique_indices=[2],
+            unique_ids=["NEW-2"],
         )
 
         deduplicator = ProfileDeduplicator(
             request_context=mock_request_context,
             llm_client=mock_llm_client,
         )
-        result = deduplicator.deduplicate(
-            results=results,
+        result_profiles, delete_ids, superseded = deduplicator.deduplicate(
+            new_profiles=new_profiles,
             user_id="user",
             request_id="test_request",
         )
 
         # Verify structure
-        assert len(result) == 1
-        assert len(result[0].add_profiles) == 2
+        assert len(result_profiles) == 2
+        assert len(delete_ids) == 0
 
         # Find merged profile
         merged = next(
-            (
-                p
-                for p in result[0].add_profiles
-                if "financial services industry" in p.profile_content
-            ),
+            (p for p in result_profiles if "financial services industry" in p.profile_content),
             None,
         )
         assert merged is not None
@@ -1097,7 +885,7 @@ class TestIntegration:
 
         # Find unique profile
         unique = next(
-            (p for p in result[0].add_profiles if "Python" in p.profile_content), None
+            (p for p in result_profiles if "Python" in p.profile_content), None
         )
         assert unique is not None
         assert unique.profile_content == "User prefers Python programming"

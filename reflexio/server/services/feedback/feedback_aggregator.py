@@ -35,6 +35,7 @@ from reflexio.server.services.feedback.feedback_service_utils import (
     FeedbackAggregatorRequest,
     FeedbackAggregationOutput,
     StructuredFeedbackContent,
+    format_structured_feedback_content,
 )
 
 
@@ -895,7 +896,7 @@ class FeedbackAggregator:
                 do_not_action=do_not_action,
                 when_condition=when_condition,
             )
-            feedback_content = self._format_structured_feedback_content(structured)
+            feedback_content = format_structured_feedback_content(structured)
 
             return Feedback(
                 feedback_name=cluster_feedbacks[0].feedback_name,
@@ -970,7 +971,7 @@ class FeedbackAggregator:
             return None
 
         # Format to canonical string
-        feedback_content = self._format_structured_feedback_content(structured)
+        feedback_content = format_structured_feedback_content(structured)
 
         return Feedback(
             feedback_name=cluster_feedbacks[0].feedback_name,
@@ -983,44 +984,6 @@ class FeedbackAggregator:
             feedback_status=FeedbackStatus.PENDING,
             feedback_metadata="",
         )
-
-    def _format_structured_feedback_content(
-        self, structured: StructuredFeedbackContent
-    ) -> str:
-        """
-        Format structured feedback content to prompt instruction format.
-
-        Converts structured fields to bullet format:
-        - When: "condition."
-        - Do: "action."
-        - Don't: "avoid action."
-
-        Args:
-            structured: The structured feedback content
-
-        Returns:
-            str: Formatted feedback content string for prompts
-        """
-        lines = []
-
-        # When condition always comes first
-        lines.append(f'When: "{structured.when_condition}"')
-
-        # Add Do if present
-        if structured.do_action:
-            lines.append(f'Do: "{structured.do_action}"')
-
-        # Add Don't if present
-        if structured.do_not_action:
-            lines.append(f'Don\'t: "{structured.do_not_action}"')
-
-        # Add Blocked by if present
-        if structured.blocking_issue:
-            lines.append(
-                f"Blocked by: [{structured.blocking_issue.kind.value}] {structured.blocking_issue.details}"
-            )
-
-        return "\n".join(lines)
 
     def _get_feedback_aggregator_config(
         self, feedback_name: str

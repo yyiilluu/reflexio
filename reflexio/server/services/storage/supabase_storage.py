@@ -2097,6 +2097,22 @@ class SupabaseStorage(BaseStorage):
         return deleted_count
 
     @handle_exceptions
+    def delete_raw_feedbacks_by_ids(self, raw_feedback_ids: list[int]) -> int:
+        """
+        Delete raw feedbacks by their IDs.
+
+        Args:
+            raw_feedback_ids: List of raw_feedback_id values to delete
+
+        Returns:
+            int: Number of raw feedbacks deleted
+        """
+        if not raw_feedback_ids:
+            return 0
+        response = self.client.table("raw_feedbacks").delete().in_("raw_feedback_id", raw_feedback_ids).execute()
+        return len(response.data)
+
+    @handle_exceptions
     def has_raw_feedbacks_with_status(
         self,
         status: Optional[Status],

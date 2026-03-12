@@ -238,7 +238,7 @@ Called by API endpoints via `Reflexio`
 - `extractor_config_utils.py`: Shared utility for filtering extractor configs by source, `allow_manual_trigger`, and extractor names
 - `extractor_interaction_utils.py`: Per-extractor utilities for stride checking and source filtering
 - `operation_state_utils.py`: Centralized `OperationStateManager` for all `_operation_state` table interactions (progress tracking, concurrency locks, extractor/aggregator bookmarks, simple locks)
-- `deduplication_utils.py`: Base deduplicator class for LLM-based semantic matching (used by ProfileDeduplicator and FeedbackDeduplicator)
+- `deduplication_utils.py`: Shared utilities for LLM-based deduplication (used by ProfileDeduplicator and FeedbackDeduplicator)
 - `service_utils.py`: Utilities (`construct_messages_from_interactions()`, `format_interactions_to_history_string()` (prepends tool usage info when `tools_used` is present), `extract_json_from_string()`, `log_model_response()` for colored LLM response logging)
 
 **Operation State Management** (via `OperationStateManager` in `operation_state_utils.py`):
@@ -262,9 +262,9 @@ Key files:
 - `profile_generation_service.py`: Service orchestrator
 - `profile_extractor.py`: Extractor that generates profile updates
 - `profile_updater.py`: Applies updates (add/delete/mention) to storage
-- `profile_deduplicator.py`: Merges duplicate profiles from multiple extractors using LLM
+- `profile_deduplicator.py`: Deduplicates newly extracted profiles against existing DB profiles using LLM
 
-**Flow**: Interactions → ProfileExtractor → ProfileDeduplicator (optional) → ProfileUpdater → Storage
+**Flow**: Interactions → ProfileExtractor (extraction-only) → ProfileDeduplicator (deduplicates new vs existing DB profiles) → ProfileUpdater → Storage
 
 **Generation Modes** (detailed comparison):
 
@@ -328,11 +328,11 @@ Key files:
 - `feedback_generation_service.py`: Service orchestrator
 - `feedback_extractor.py`: Extractor that extracts raw feedback
 - `feedback_aggregator.py`: Aggregates similar raw feedbacks (with cluster-level change detection to skip unchanged clusters)
-- `feedback_deduplicator.py`: Merges duplicate feedbacks from multiple extractors using LLM
+- `feedback_deduplicator.py`: Deduplicates newly extracted feedbacks against existing DB feedbacks using LLM
 - `skill_generator.py`: Generates rich skills from clustered raw feedbacks enriched with interaction context
 
 **Flow**:
-- Interactions → FeedbackExtractor → FeedbackDeduplicator (optional) → RawFeedback (with optional `blocking_issue`) → Storage
+- Interactions → FeedbackExtractor (extraction-only) → FeedbackDeduplicator (deduplicates new vs existing DB feedbacks) → RawFeedback (with optional `blocking_issue`) → Storage
 - RawFeedback (manual trigger) → FeedbackAggregator → cluster fingerprint comparison → LLM only for changed clusters → Feedback (with optional `blocking_issue`) → Storage
 - RawFeedback → SkillGenerator (clusters + interaction enrichment + LLM) → Skill → Storage
 

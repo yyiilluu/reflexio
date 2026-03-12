@@ -28,7 +28,7 @@ from reflexio.server.services.profile.profile_generation_service import (
     ProfileGenerationServiceConfig,
 )
 from reflexio.server.services.profile.profile_generation_service_utils import (
-    ProfileUpdateOutput,
+    StructuredProfilesOutput,
 )
 from reflexio.server.llm.litellm_client import LiteLLMClient
 
@@ -42,8 +42,8 @@ from reflexio.server.llm.litellm_client import LiteLLMClient
 def mock_llm_client():
     """Create a mock LLM client."""
     client = MagicMock(spec=LiteLLMClient)
-    # Return an empty ProfileUpdateOutput for profile extraction
-    client.generate_chat_response.return_value = ProfileUpdateOutput()
+    # Return an empty StructuredProfilesOutput for profile extraction
+    client.generate_chat_response.return_value = StructuredProfilesOutput()
     return client
 
 
@@ -517,12 +517,12 @@ class TestRun:
 
 
 # ===============================
-# Test: Null guard for delete/mention update_content
+# Test: Convert Raw to User Profiles
 # ===============================
 
 
-class TestProfileUpdateNullContent:
-    """Regression tests for None/empty update_content in delete and mention actions."""
+class TestConvertRawToUserProfiles:
+    """Tests for converting raw profile dicts to UserProfile objects."""
 
     def _make_extractor(self, request_context, mock_llm_client, service_config):
         config = ProfileExtractorConfig(
@@ -537,83 +537,75 @@ class TestProfileUpdateNullContent:
             agent_context="Test agent",
         )
 
-    def _make_existing_profile(self) -> UserProfile:
-        return UserProfile(
-            profile_id="p1",
-            user_id="test_user",
-            profile_content="User prefers dark mode",
-            last_modified_timestamp=1000,
-            generated_from_request_id="req1",
-        )
-
-    def test_delete_with_none_content_does_not_crash(
+    def test_converts_valid_profiles(
         self, request_context, mock_llm_client, service_config
     ):
-        """delete action with None update_content should be skipped, not crash."""
+        """Test converting valid raw profile dicts."""
         extractor = self._make_extractor(
             request_context, mock_llm_client, service_config
         )
-        existing = [self._make_existing_profile()]
 
-        result = extractor._get_profile_updates_from_existing_profiles(
+        raw_profiles = [
+            {"content": "User prefers dark mode", "time_to_live": "one_month"},
+            {"content": "User's name is John", "time_to_live": "infinity"},
+        ]
+
+        result = extractor._convert_raw_to_user_profiles(
+            raw_profiles=raw_profiles,
             user_id="test_user",
-            request_id="req2",
-            existing_profiles=existing,
-            profile_updates={"delete": None},
+            request_id="test_request",
         )
 
-        assert result is None
+        assert len(result) == 2
+        assert result[0].profile_content == "User prefers dark mode"
+        assert result[0].user_id == "test_user"
+        assert result[0].extractor_names == ["test_extractor"]
+        assert result[1].profile_content == "User's name is John"
 
-    def test_delete_with_empty_list_does_not_crash(
+    def test_skips_invalid_profiles(
         self, request_context, mock_llm_client, service_config
     ):
-        """delete action with empty list should be skipped, not crash."""
+        """Test that invalid profile dicts are skipped."""
         extractor = self._make_extractor(
             request_context, mock_llm_client, service_config
         )
-        existing = [self._make_existing_profile()]
 
-        result = extractor._get_profile_updates_from_existing_profiles(
+        raw_profiles = [
+            {"content": "Valid profile", "time_to_live": "one_month"},
+            {"no_content_key": "Invalid"},
+            "not_a_dict",
+        ]
+
+        result = extractor._convert_raw_to_user_profiles(
+            raw_profiles=raw_profiles,
             user_id="test_user",
-            request_id="req2",
-            existing_profiles=existing,
-            profile_updates={"delete": []},
+            request_id="test_request",
         )
 
-        assert result is None
+        assert len(result) == 1
+        assert result[0].profile_content == "Valid profile"
 
-    def test_mention_with_none_content_does_not_crash(
+    def test_custom_features_extracted(
         self, request_context, mock_llm_client, service_config
     ):
-        """mention action with None update_content should be skipped, not crash."""
+        """Test that extra fields become custom_features."""
         extractor = self._make_extractor(
             request_context, mock_llm_client, service_config
         )
-        existing = [self._make_existing_profile()]
 
-        result = extractor._get_profile_updates_from_existing_profiles(
+        raw_profiles = [
+            {
+                "content": "Likes pizza",
+                "time_to_live": "one_month",
+                "metadata": "pizza",
+            },
+        ]
+
+        result = extractor._convert_raw_to_user_profiles(
+            raw_profiles=raw_profiles,
             user_id="test_user",
-            request_id="req2",
-            existing_profiles=existing,
-            profile_updates={"mention": None},
+            request_id="test_request",
         )
 
-        assert result is None
-
-    def test_mention_with_empty_list_does_not_crash(
-        self, request_context, mock_llm_client, service_config
-    ):
-        """mention action with empty list should be skipped, not crash."""
-        extractor = self._make_extractor(
-            request_context, mock_llm_client, service_config
-        )
-        existing = [self._make_existing_profile()]
-
-        result = extractor._get_profile_updates_from_existing_profiles(
-            user_id="test_user",
-            request_id="req2",
-            existing_profiles=existing,
-            profile_updates={"mention": []},
-        )
-
-        assert result is None
+        assert len(result) == 1
+        assert result[0].custom_features == {"metadata": "pizza"}

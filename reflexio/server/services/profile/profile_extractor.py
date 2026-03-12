@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 import logging
 import time
-from typing import Any, Optional, TYPE_CHECKING
+from typing import Optional, TYPE_CHECKING
 import uuid
 import os
 
@@ -9,7 +9,6 @@ from reflexio.server.api_endpoints.request_context import RequestContext
 from reflexio.server.llm.litellm_client import LiteLLMClient
 from reflexio_commons.api_schema.service_schemas import (
     UserProfile,
-    ProfileChangeLog,
 )
 from reflexio_commons.api_schema.internal_schema import RequestInteractionDataModel
 
@@ -25,11 +24,9 @@ if TYPE_CHECKING:
         ProfileGenerationServiceConfig,
     )
 from reflexio.server.services.profile.profile_generation_service_utils import (
-    ProfileUpdates,
-    ProfileUpdateOutput,
+    StructuredProfilesOutput,
     construct_profile_extraction_messages_from_sessions,
     calculate_expiration_timestamp,
-    check_string_token_overlap,
 )
 from reflexio.server.services.service_utils import (
     format_messages_for_logging,
@@ -46,13 +43,17 @@ logger = logging.getLogger(__name__)
 PROFILE_EXTRACTION_TIMEOUT_SECONDS = 300
 PROFILE_EXTRACTION_MAX_RETRIES = 2
 
+# Maximum number of existing profiles to include in extraction prompt for context
+MAX_EXISTING_PROFILES_FOR_CONTEXT = 5
+
 
 class ProfileExtractor:
     """
     Extract user profile information from interactions.
 
-    This class analyzes user interactions to identify, update, and manage user profiles,
-    including adding new information, removing outdated information, and tracking mentions.
+    This class analyzes user interactions to extract new user profile information.
+    It focuses purely on extraction — deduplication against existing profiles
+    is handled separately by ProfileDeduplicator.
     """
 
     def __init__(
@@ -182,32 +183,37 @@ class ProfileExtractor:
             user_id=self.service_config.user_id,
         )
 
-    def run(self) -> Optional[ProfileUpdates]:
+    def run(self) -> Optional[list[UserProfile]]:
         """
-        Extract profile updates from request interaction groups.
+        Extract profiles from request interaction groups.
 
         This extractor handles its own data collection:
         1. Gets interactions based on its config (window size, source filtering)
         2. Applies time range filter for rerun flows
-        3. Updates operation state after processing
+        3. Calls LLM to extract profiles
+        4. Converts raw extraction to UserProfile objects
+        5. Updates operation state after processing
 
         Returns:
-            Optional[ProfileUpdates]: Profile updates/changes log, or None if no updates
+            Optional[list[UserProfile]]: List of extracted profiles, or None if no profiles found
         """
         # Collect interactions using extractor's own window/stride settings
         request_interaction_data_models = self._get_interactions()
         if not request_interaction_data_models:
-            # No interactions or stride not met
             return None
 
-        existing_profiles = self.service_config.existing_data
-
-        # should_extract check is handled at the service level (consolidated across all extractors)
+        # Limit existing profiles to most recent for context
+        existing_profiles = self.service_config.existing_data or []
+        context_profiles = sorted(
+            existing_profiles,
+            key=lambda p: p.last_modified_timestamp,
+            reverse=True,
+        )[:MAX_EXISTING_PROFILES_FOR_CONTEXT]
 
         try:
-            raw_updates = self._generate_raw_updates_from_sessions(
+            raw_profiles = self._generate_raw_updates_from_sessions(
                 request_interaction_data_models=request_interaction_data_models,
-                existing_profiles=existing_profiles,
+                existing_profiles=context_profiles,
             )
         except Exception as e:
             logger.error(
@@ -217,169 +223,100 @@ class ProfileExtractor:
                 type(e).__name__,
                 str(e),
             )
-            # Do not advance bookmark on extraction failure.
-            # Keeping the bookmark unchanged allows the same interactions to be
-            # retried on subsequent runs after transient LLM/provider issues.
             raise RuntimeError(
                 f"Profile extraction failed for user {self.service_config.user_id}"
             ) from e
 
-        logger.info("Generated raw updates: %s", raw_updates)
-        if raw_updates:
-            profile_updates = self._get_profile_updates_from_existing_profiles(
+        logger.info("Generated raw profiles: %s", raw_profiles)
+        if raw_profiles:
+            user_profiles = self._convert_raw_to_user_profiles(
+                raw_profiles=raw_profiles,
                 user_id=self.service_config.user_id,
                 request_id=self.service_config.request_id,
-                existing_profiles=existing_profiles,
-                profile_updates=raw_updates,
             )
 
             # Update operation state after successful processing
             self._update_operation_state(request_interaction_data_models)
 
-            return profile_updates
+            return user_profiles if user_profiles else None
         return None
 
-    def _get_profile_updates_from_existing_profiles(
+    def _convert_raw_to_user_profiles(
         self,
+        raw_profiles: list[dict],
         user_id: str,
         request_id: str,
-        existing_profiles: list[UserProfile],
-        profile_updates: dict[str, Any],
-    ) -> ProfileUpdates | None:
-        """get profile updates from existing profiles
+    ) -> list[UserProfile]:
+        """
+        Convert raw profile dicts from LLM to UserProfile objects.
 
         Args:
-            user_id (str): user id
-            request_id (str): request id
-            existing_profiles (list[UserProfile]): existing profiles
-            profile_updates (dict[str, Any]): profile updates
+            raw_profiles: List of profile dicts with content, time_to_live, and optional metadata
+            user_id: User ID
+            request_id: Request ID
 
         Returns:
-            ProfileUpdates | None: profile updates/changes log
+            List of UserProfile objects
         """
         new_profiles = []
-        tobe_removed_profiles = []
-        mention_profiles = []
-        for update_type, update_content in profile_updates.items():
-            if update_type == "add":
-                for profile_content in update_content:
-                    if (
-                        not isinstance(profile_content, dict)
-                        or "content" not in profile_content
-                    ):
-                        logger.warning("Invalid profile content: %s", profile_content)
-                        continue
+        for profile_content in raw_profiles:
+            if (
+                not isinstance(profile_content, dict)
+                or "content" not in profile_content
+            ):
+                logger.warning("Invalid profile content: %s", profile_content)
+                continue
 
-                    # Get all custom features by excluding content and time_to_live
-                    custom_features = {
-                        k: v
-                        for k, v in profile_content.items()
-                        if k not in ["content", "time_to_live"]
-                    }
+            # Get all custom features by excluding content and time_to_live
+            custom_features = {
+                k: v
+                for k, v in profile_content.items()
+                if k not in ["content", "time_to_live"]
+            }
 
-                    added_profile = UserProfile(
-                        profile_id=str(uuid.uuid4()),
-                        user_id=user_id,
-                        profile_content=profile_content["content"],
-                        last_modified_timestamp=int(
-                            datetime.now(timezone.utc).timestamp()
-                        ),
-                        generated_from_request_id=request_id,
-                        profile_time_to_live=ProfileTimeToLive(
-                            profile_content.get("time_to_live", "infinity")
-                        ),
-                        expiration_timestamp=calculate_expiration_timestamp(
-                            int(
-                                datetime.now(timezone.utc).timestamp()
-                            ),  # Convert float to int
-                            ProfileTimeToLive(
-                                profile_content.get("time_to_live", "infinity")
-                            ),
-                        ),
-                        custom_features=custom_features,
-                        extractor_names=[self.config.extractor_name],
-                    )
+            now_ts = int(datetime.now(timezone.utc).timestamp())
+            ttl = ProfileTimeToLive(
+                profile_content.get("time_to_live", "infinity")
+            )
 
-                    new_profiles.append(added_profile)
-            elif update_type == "delete":
-                if not update_content:
-                    continue
-                tobe_removed_profiles = [
-                    profile
-                    for profile in existing_profiles
-                    if any(
-                        check_string_token_overlap(profile.profile_content, content)
-                        for content in update_content
-                    )
-                ]
-            elif update_type == "mention":
-                if not update_content:
-                    continue
-                for profile in existing_profiles:
-                    if any(
-                        check_string_token_overlap(profile.profile_content, content)
-                        for content in update_content
-                    ):
-                        profile.last_modified_timestamp = int(
-                            datetime.now(timezone.utc).timestamp()
-                        )
-                        profile.generated_from_request_id = request_id
-                        profile.expiration_timestamp = calculate_expiration_timestamp(
-                            profile.last_modified_timestamp,
-                            profile.profile_time_to_live,
-                        )
-                        mention_profiles.append(profile)
+            added_profile = UserProfile(
+                profile_id=str(uuid.uuid4()),
+                user_id=user_id,
+                profile_content=profile_content["content"],
+                last_modified_timestamp=now_ts,
+                generated_from_request_id=request_id,
+                profile_time_to_live=ttl,
+                expiration_timestamp=calculate_expiration_timestamp(now_ts, ttl),
+                custom_features=custom_features if custom_features else None,
+                extractor_names=[self.config.extractor_name],
+            )
 
-        if not new_profiles and not tobe_removed_profiles and not mention_profiles:
-            return None
-
-        # Rename variable to avoid confusion with parameter name
-        profile_updates_result = ProfileUpdates(
-            add_profiles=new_profiles,
-            delete_profiles=tobe_removed_profiles,
-            mention_profiles=mention_profiles,
-        )
-
-        # update profile change log to db
-        profile_change_log = ProfileChangeLog(
-            id=0,  # This will be auto-generated by the storage
-            user_id=user_id,
-            request_id=request_id,
-            created_at=int(datetime.now(timezone.utc).timestamp()),
-            added_profiles=new_profiles,
-            removed_profiles=tobe_removed_profiles,
-            mentioned_profiles=mention_profiles,
-        )
-
-        self.request_context.storage.add_profile_change_log(profile_change_log)
-
-        return profile_updates_result
+            new_profiles.append(added_profile)
+        return new_profiles
 
     def _generate_raw_updates_from_sessions(
         self,
         request_interaction_data_models: list[RequestInteractionDataModel],
         existing_profiles: list[UserProfile],
-    ) -> dict[str, Any]:
+    ) -> list[dict]:
         """
-        Generate raw profile updates from request interaction groups.
+        Generate raw profile extractions from request interaction groups.
 
         Args:
             request_interaction_data_models: List of request interaction groups
-            existing_profiles: List of existing user profiles
+            existing_profiles: List of existing user profiles for context
 
         Returns:
-            dict[str, Any]: Raw profile updates with add/delete/mention operations
+            list[dict]: List of profile dicts with content, time_to_live, and optional metadata
         """
         # Check if mock mode is enabled
         mock_env_for_raw = os.getenv("MOCK_LLM_RESPONSE", "")
         if mock_env_for_raw.lower() == "true":
-            # Return mock profile updates based on interactions
-            return self._generate_profile_updates_from_sessions(
+            return self._generate_mock_profiles(
                 request_interaction_data_models=request_interaction_data_models,
-                existing_profiles=existing_profiles,
             )
 
-        # get user profile prompt from configurator or use the default prompt
+        # Build messages for LLM
         if self.service_config.is_incremental:
             from reflexio.server.services.profile.profile_generation_service_utils import (
                 construct_incremental_profile_extraction_messages,
@@ -421,7 +358,7 @@ class ProfileExtractor:
                 ),
                 existing_profiles=existing_profiles,
             )
-        # Messages are already in dict format from construct_messages_from_interactions
+
         messages_dict = messages
         session_count = len(request_interaction_data_models)
         interaction_count = sum(
@@ -442,7 +379,7 @@ class ProfileExtractor:
             self.default_generation_model_name,
             PROFILE_EXTRACTION_TIMEOUT_SECONDS,
             PROFILE_EXTRACTION_MAX_RETRIES,
-            True,
+            "StructuredProfilesOutput",
         )
 
         logger.info(
@@ -450,13 +387,13 @@ class ProfileExtractor:
             format_messages_for_logging(messages_dict),
         )
 
-        # Use ProfileUpdateOutput schema for structured output
+        # Use StructuredProfilesOutput schema for structured output
         extract_start = time.perf_counter()
         try:
             update_response = self.client.generate_chat_response(
                 messages=messages_dict,
                 model=self.default_generation_model_name,
-                response_format=ProfileUpdateOutput,
+                response_format=StructuredProfilesOutput,
                 timeout=PROFILE_EXTRACTION_TIMEOUT_SECONDS,
                 max_retries=PROFILE_EXTRACTION_MAX_RETRIES,
             )
@@ -476,11 +413,11 @@ class ProfileExtractor:
             )
             raise
 
-        log_model_response(logger, "Profile updates model response", update_response)
-        if not update_response or not isinstance(update_response, ProfileUpdateOutput):
+        log_model_response(logger, "Profile extraction model response", update_response)
+        if not update_response or not isinstance(update_response, StructuredProfilesOutput):
             elapsed_seconds = time.perf_counter() - extract_start
             logger.info(
-                "event=profile_extract_llm_end user_id=%s extractor_name=%s model=%s timeout=%d max_retries=%d elapsed_seconds=%.3f success=%s response_type=%s add_count=%d delete_count=%d mention_count=%d",
+                "event=profile_extract_llm_end user_id=%s extractor_name=%s model=%s timeout=%d max_retries=%d elapsed_seconds=%.3f success=%s response_type=%s profile_count=%d",
                 self.service_config.user_id,
                 self.config.extractor_name,
                 self.default_generation_model_name,
@@ -490,14 +427,13 @@ class ProfileExtractor:
                 False,
                 type(update_response).__name__,
                 0,
-                0,
-                0,
             )
-            return {}
+            return []
 
         elapsed_seconds = time.perf_counter() - extract_start
+        profiles = update_response.profiles or []
         logger.info(
-            "event=profile_extract_llm_end user_id=%s extractor_name=%s model=%s timeout=%d max_retries=%d elapsed_seconds=%.3f success=%s response_type=%s add_count=%d delete_count=%d mention_count=%d",
+            "event=profile_extract_llm_end user_id=%s extractor_name=%s model=%s timeout=%d max_retries=%d elapsed_seconds=%.3f success=%s response_type=%s profile_count=%d",
             self.service_config.user_id,
             self.config.extractor_name,
             self.default_generation_model_name,
@@ -506,109 +442,73 @@ class ProfileExtractor:
             elapsed_seconds,
             True,
             type(update_response).__name__,
-            len(update_response.add or []),
-            len(update_response.delete or []),
-            len(update_response.mention or []),
+            len(profiles),
         )
 
-        # Convert Pydantic model to dict for downstream processing
-        update_response = update_response.model_dump()
-
-        if self._has_profile_update_actions(update_response):
-            return update_response
+        if profiles:
+            # Convert Pydantic models to dicts
+            return [p.model_dump() for p in profiles]
         else:
-            logger.warning(
-                "Profile extraction response could not be parsed into actions"
-            )
-            return {}
+            return []
 
-    def _has_profile_update_actions(self, updates: dict[str, Any]) -> bool:
-        """
-        Determine whether the parsed updates contain any actionable profile operations.
-        """
-        if not updates:
-            return False
-
-        actionable_keys = {"add", "delete", "mention"}
-        for key in actionable_keys:
-            if key in updates and updates.get(key):
-                return True
-        return False
-
-    def _generate_profile_updates_from_sessions(
+    def _generate_mock_profiles(
         self,
         request_interaction_data_models: list[RequestInteractionDataModel],
-        existing_profiles: list[UserProfile],
-    ) -> dict[str, Any]:
+    ) -> list[dict]:
         """
-        Generate heuristic profile updates based on recent request interaction groups.
-
-        This is used both in mock mode and as a fallback when LLM responses are not
-        parseable. The content mirrors the expected structure from the prompt.
+        Generate mock profile extractions for testing.
 
         Args:
             request_interaction_data_models: List of request interaction groups
-            existing_profiles: List of existing user profiles
 
         Returns:
-            dict[str, Any]: Mock profile updates in the expected format
+            list[dict]: Mock profile dicts
         """
-        # Extract flat interactions from sessions
         interactions = extract_interactions_from_request_interaction_data_models(
             request_interaction_data_models
         )
 
-        # Analyze interactions to generate realistic mock updates
-        mock_updates = {}
+        if not interactions:
+            return []
 
-        # Extract some sample content from interactions for realistic mocks
-        if interactions:
-            sample_content = (
-                interactions[-1].content[:50]
-                if interactions[-1].content
-                else "sample interaction"
-            )
+        sample_content = (
+            interactions[-1].content[:50]
+            if interactions[-1].content
+            else "sample interaction"
+        )
 
-            # Capture additional context that contains helpful keywords (e.g. product mentions)
-            highlight_keywords = {
-                "software",
-                "solution",
-                "product",
-                "company",
-                "service",
-            }
-            highlighted_snippet = next(
-                (
-                    interaction.content[:80]
-                    for interaction in reversed(interactions)
-                    if interaction.content
-                    and any(
-                        keyword in interaction.content.lower()
-                        for keyword in highlight_keywords
-                    )
-                ),
-                "",
-            )
+        # Capture additional context that contains helpful keywords
+        highlight_keywords = {
+            "software",
+            "solution",
+            "product",
+            "company",
+            "service",
+        }
+        highlighted_snippet = next(
+            (
+                interaction.content[:80]
+                for interaction in reversed(interactions)
+                if interaction.content
+                and any(
+                    keyword in interaction.content.lower()
+                    for keyword in highlight_keywords
+                )
+            ),
+            "",
+        )
 
-            summary_parts = [f"User mentioned: {sample_content}"]
-            if highlighted_snippet and highlighted_snippet not in sample_content:
-                summary_parts.append(f"Key context: {highlighted_snippet}")
+        summary_parts = [f"User mentioned: {sample_content}"]
+        if highlighted_snippet and highlighted_snippet not in sample_content:
+            summary_parts.append(f"Key context: {highlighted_snippet}")
 
-            # Add a new profile based on the interaction
-            mock_updates["add"] = [
-                {
-                    "content": " ".join(summary_parts),
-                    "time_to_live": "one_month",
-                }
-            ]
+        mock_profile = {
+            "content": " ".join(summary_parts),
+            "time_to_live": "one_month",
+        }
 
-            # If metadata definition exists, add mock metadata
-            if self.config.metadata_definition_prompt:
-                mock_updates["add"][0]["metadata"] = "mock_metadata_value"
+        # If metadata definition exists, add mock metadata
+        if self.config.metadata_definition_prompt:
+            mock_profile["metadata"] = "mock_metadata_value"
 
-        # Check for profile mentions (if existing profiles exist)
-        if existing_profiles and len(existing_profiles) > 0:
-            # Mock a mention of an existing profile
-            mock_updates["mention"] = [existing_profiles[0].profile_content]
-
-        return mock_updates
+        return [mock_profile]

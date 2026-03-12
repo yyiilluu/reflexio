@@ -1845,6 +1845,11 @@ class LocalJsonStorage(BaseStorage):
         logger.info(f"Deleted {deleted_count} raw feedbacks with status {status}")
         return deleted_count
 
+    def delete_raw_feedbacks_by_ids(self, raw_feedback_ids: list[int]) -> int:
+        """Delete raw feedbacks by their IDs. No-op for local storage."""
+        logger.warning("delete_raw_feedbacks_by_ids is not supported in local storage, skipping deletion of %d feedbacks", len(raw_feedback_ids))
+        return 0
+
     def has_raw_feedbacks_with_status(
         self,
         status: Optional[Status],

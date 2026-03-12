@@ -96,7 +96,7 @@ class ProfileAddItem(BaseModel):
 
 class ProfileUpdateOutput(BaseModel):
     """
-    Output schema for profile_update_main prompt.
+    Legacy output schema for profile_update_main prompt (kept for backward compatibility).
     Represents the complete set of profile updates including additions, deletions, and mentions.
 
     Attributes:
@@ -119,6 +119,26 @@ class ProfileUpdateOutput(BaseModel):
     )
 
     # OpenAI schema parsing requires explicitly forbidding additional properties
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={"additionalProperties": False},
+    )
+
+
+class StructuredProfilesOutput(BaseModel):
+    """
+    Output schema for extraction-only profile extraction.
+    Only extracts profiles — no delete/mention operations.
+
+    Attributes:
+        profiles (list[ProfileAddItem], optional): List of extracted profiles with content, time_to_live, and optional metadata
+    """
+
+    profiles: Optional[list[ProfileAddItem]] = Field(
+        default=None,
+        description="List of extracted profiles with content, time_to_live, and optional metadata",
+    )
+
     model_config = ConfigDict(
         extra="forbid",
         json_schema_extra={"additionalProperties": False},
@@ -155,7 +175,7 @@ def calculate_expiration_timestamp(
         raise ValueError(f"Invalid profile time to live: {profile_time_to_live}")
     try:
         return int(expiration_timestamp.timestamp())
-    except:
+    except (OverflowError, OSError, ValueError):
         import sys
 
         return sys.maxsize
@@ -270,7 +290,7 @@ def construct_incremental_profile_extraction_messages(
     agent_context_prompt: str,
     context_prompt: str,
     profile_content_definition_prompt: str,
-    previously_extracted: list["ProfileUpdates"],
+    previously_extracted: list[list[UserProfile]],
     metadata_definition_prompt: Optional[str] = None,
 ) -> list[dict]:
     """
@@ -286,7 +306,7 @@ def construct_incremental_profile_extraction_messages(
         agent_context_prompt: Context about the agent for system message
         context_prompt: Additional context for system message
         profile_content_definition_prompt: Definition of what profiles should contain
-        previously_extracted: List of ProfileUpdates from all previous extractors
+        previously_extracted: List of profile lists from all previous extractors
         metadata_definition_prompt: Optional definition for profile metadata
 
     Returns:
@@ -297,25 +317,15 @@ def construct_incremental_profile_extraction_messages(
         [profile.profile_content for profile in existing_profiles]
     )
 
-    # Format previously extracted updates
+    # Format previously extracted profiles
     previously_added = []
-    previously_deleted = []
-    for update in previously_extracted:
-        if update.add_profiles:
-            for profile in update.add_profiles:
-                previously_added.append(profile.profile_content)
-        if update.delete_profiles:
-            for profile in update.delete_profiles:
-                previously_deleted.append(profile.profile_content)
+    for profile_list in previously_extracted:
+        for profile in profile_list:
+            previously_added.append(profile.profile_content)
 
     formatted_previously_added = (
         "\n".join([f"- {content}" for content in previously_added])
         if previously_added
-        else "(None)"
-    )
-    formatted_previously_deleted = (
-        "\n".join([f"- {content}" for content in previously_deleted])
-        if previously_deleted
         else "(None)"
     )
 
@@ -336,7 +346,6 @@ def construct_incremental_profile_extraction_messages(
         variables={
             "existing_profiles": formatted_existing_profiles,
             "previously_added_profiles": formatted_previously_added,
-            "previously_deleted_profiles": formatted_previously_deleted,
             "interactions": format_sessions_to_history_string(
                 request_interaction_data_models
             ),
