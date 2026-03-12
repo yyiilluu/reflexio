@@ -502,7 +502,7 @@ def register(
             release_invitation_code(session=session, code=invitation_code)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect organization email or password",
+            detail="Registration failed. Please try again.",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
