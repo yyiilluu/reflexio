@@ -16,6 +16,7 @@ from reflexio.server.services.operation_state_utils import OperationStateManager
 from reflexio.server.services.feedback.feedback_service_utils import (
     construct_feedback_extraction_messages_from_sessions,
     StructuredFeedbackContent,
+    format_structured_feedback_content,
 )
 from reflexio.server.services.service_utils import (
     format_messages_for_logging,
@@ -224,9 +225,6 @@ class FeedbackExtractor:
         Returns:
             list[RawFeedback]: List of extracted feedback
         """
-        # Get existing feedbacks from service config (past 7 days)
-        existing_feedbacks = self.service_config.existing_data or []
-
         # Collect source interaction IDs
         source_interaction_ids = [
             interaction.interaction_id
@@ -239,7 +237,7 @@ class FeedbackExtractor:
         if os.getenv("MOCK_LLM_RESPONSE", "").lower() == "true":
             logger.info("Mock mode: generating mock feedback")
             structured = self._generate_mock_feedback(request_interaction_data_models)
-            feedback_content = self._format_structured_feedback_content(structured)
+            feedback_content = format_structured_feedback_content(structured)
             logger.info("Mock feedback: %s", feedback_content)
 
             return [
@@ -289,7 +287,6 @@ class FeedbackExtractor:
                     if self.config.feedback_definition_prompt
                     else ""
                 ),
-                existing_raw_feedbacks=existing_feedbacks,
                 previously_extracted=previously_extracted_flat,
                 tool_can_use=tool_can_use_str,
             )
@@ -303,7 +300,6 @@ class FeedbackExtractor:
                     if self.config.feedback_definition_prompt
                     else ""
                 ),
-                existing_raw_feedbacks=existing_feedbacks,
                 tool_can_use=tool_can_use_str,
             )
         logger.info(
@@ -372,44 +368,6 @@ class FeedbackExtractor:
             when_condition=when_condition,
         )
 
-    def _format_structured_feedback_content(
-        self, structured: StructuredFeedbackContent
-    ) -> str:
-        """
-        Format structured feedback content to prompt instruction format.
-
-        Converts structured fields to bullet format:
-        - When: "condition."
-        - Do: "action."
-        - Don't: "avoid action."
-
-        Args:
-            structured (StructuredFeedbackContent): The structured feedback content
-
-        Returns:
-            str: Formatted feedback content string for prompts
-        """
-        lines = []
-
-        # When condition always comes first
-        lines.append(f'When: "{structured.when_condition}"')
-
-        # Add Do if present
-        if structured.do_action:
-            lines.append(f'Do: "{structured.do_action}"')
-
-        # Add Don't if present
-        if structured.do_not_action:
-            lines.append(f'Don\'t: "{structured.do_not_action}"')
-
-        # Add blocking issue if present
-        if structured.blocking_issue:
-            lines.append(
-                f"Blocked by: [{structured.blocking_issue.kind.value}] {structured.blocking_issue.details}"
-            )
-
-        return "\n".join(lines)
-
     def _process_structured_response(
         self,
         response: StructuredFeedbackContent,
@@ -433,7 +391,7 @@ class FeedbackExtractor:
             return None
 
         # Format to canonical string
-        feedback_content = self._format_structured_feedback_content(response)
+        feedback_content = format_structured_feedback_content(response)
 
         return RawFeedback(
             feedback_name=self.config.feedback_name,

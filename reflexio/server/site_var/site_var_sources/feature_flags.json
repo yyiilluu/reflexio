@@ -7,7 +7,7 @@
         "enabled": true
     },
     "deduplicator": {
-        "enabled": false,
+        "enabled": true,
         "enabled_org_ids": []
     }
 }

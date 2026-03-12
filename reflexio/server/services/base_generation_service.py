@@ -485,7 +485,7 @@ class BaseGenerationService(
 
             for i, config in enumerate(extractor_configs):
                 if i > 0 and previously_extracted:
-                    # Re-fetch existing_data from storage (picks up saved results from previous extractor)
+                    # Re-load service config for next extractor
                     self.service_config = self._load_generation_service_config(request)
                     # Let subclass update config for incremental mode
                     self._update_config_for_incremental(previously_extracted)

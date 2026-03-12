@@ -23,7 +23,7 @@ from reflexio.server.services.profile.profile_generation_service import (
 )
 from reflexio.server.services.profile.profile_generation_service_utils import (
     ProfileGenerationRequest,
-    ProfileUpdateOutput,
+    StructuredProfilesOutput,
     ProfileAddItem,
 )
 from reflexio_commons.api_schema.internal_schema import RequestInteractionDataModel
@@ -66,8 +66,8 @@ def mock_chat_completion():
             and issubclass(response_format, BaseModel)
         ):
             # Return a ProfileUpdateOutput instance
-            return ProfileUpdateOutput(
-                add=[ProfileAddItem(content="like sushi", time_to_live="one_month")]
+            return StructuredProfilesOutput(
+                profiles=[ProfileAddItem(content="like sushi", time_to_live="one_month")]
             )
         else:
             # Return JSON string for non-structured responses

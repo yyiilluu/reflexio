@@ -780,6 +780,19 @@ class BaseStorage(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    def delete_raw_feedbacks_by_ids(self, raw_feedback_ids: list[int]) -> int:
+        """
+        Delete raw feedbacks by their IDs.
+
+        Args:
+            raw_feedback_ids: List of raw_feedback_id values to delete
+
+        Returns:
+            int: Number of raw feedbacks deleted
+        """
+        raise NotImplementedError
+
+    @abstractmethod
     def has_raw_feedbacks_with_status(
         self,
         status: Optional[Status],

@@ -17,6 +17,7 @@ from reflexio.server.services.feedback.feedback_aggregator import FeedbackAggreg
 from reflexio.server.services.feedback.feedback_service_utils import (
     StructuredFeedbackContent,
     FeedbackAggregationOutput,
+    format_structured_feedback_content,
 )
 
 
@@ -138,7 +139,7 @@ class TestFormatStructuredFeedbackContent:
             ),
         )
 
-        result = aggregator._format_structured_feedback_content(structured)
+        result = format_structured_feedback_content(structured)
 
         assert (
             "Blocked by: [external_dependency] Database service is unavailable"
@@ -152,7 +153,7 @@ class TestFormatStructuredFeedbackContent:
             when_condition="processing data",
         )
 
-        result = aggregator._format_structured_feedback_content(structured)
+        result = format_structured_feedback_content(structured)
 
         assert "Blocked by:" not in result
 

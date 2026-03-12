@@ -6,8 +6,11 @@ from datetime import datetime, timezone
 from reflexio_commons.api_schema.service_schemas import Interaction, Request
 from reflexio_commons.api_schema.internal_schema import RequestInteractionDataModel
 from reflexio.server.prompt.prompt_manager import PromptManager
+from reflexio_commons.api_schema.service_schemas import BlockingIssue, BlockingIssueKind
 from reflexio.server.services.feedback.feedback_service_utils import (
+    StructuredFeedbackContent,
     construct_feedback_extraction_messages_from_sessions,
+    format_structured_feedback_content,
 )
 
 
@@ -151,6 +154,93 @@ def test_construct_feedback_extraction_messages_with_empty_sessions():
 
     # Should still create messages (system message + user message with prompt)
     assert len(messages) > 0, "No messages were created for empty sessions"
+
+
+# ===============================
+# Tests for format_structured_feedback_content
+# ===============================
+
+
+class TestFormatStructuredFeedbackContent:
+    """Tests for the shared format_structured_feedback_content function."""
+
+    def test_all_fields_present(self):
+        """Test formatting with all fields populated."""
+        structured = StructuredFeedbackContent(
+            do_action="use clear language",
+            do_not_action="use jargon",
+            when_condition="explaining technical concepts to beginners",
+        )
+        result = format_structured_feedback_content(structured)
+        assert 'When: "explaining technical concepts to beginners"' in result
+        assert 'Do: "use clear language"' in result
+        assert "Don't: \"use jargon\"" in result
+
+    def test_when_condition_none(self):
+        """Test that None when_condition is omitted from output."""
+        structured = StructuredFeedbackContent(
+            do_action="use clear language",
+            do_not_action=None,
+            when_condition=None,
+        )
+        result = format_structured_feedback_content(structured)
+        assert "When:" not in result
+        assert 'Do: "use clear language"' in result
+
+    def test_when_condition_empty_string(self):
+        """Test that empty string when_condition is omitted from output."""
+        structured = StructuredFeedbackContent(
+            do_action="use clear language",
+            do_not_action=None,
+            when_condition=None,
+        )
+        result = format_structured_feedback_content(structured)
+        assert "When:" not in result
+
+    def test_only_do_action(self):
+        """Test formatting with only do_action."""
+        structured = StructuredFeedbackContent(
+            do_action="be concise",
+            do_not_action=None,
+            when_condition=None,
+        )
+        result = format_structured_feedback_content(structured)
+        assert 'Do: "be concise"' in result
+        assert "Don't:" not in result
+        assert "When:" not in result
+
+    def test_only_do_not_action(self):
+        """Test formatting with only do_not_action."""
+        structured = StructuredFeedbackContent(
+            do_action=None,
+            do_not_action="ramble",
+            when_condition=None,
+        )
+        result = format_structured_feedback_content(structured)
+        assert "Don't: \"ramble\"" in result
+        assert "Do:" not in result
+        assert "When:" not in result
+
+    def test_with_blocking_issue(self):
+        """Test formatting with blocking_issue."""
+        structured = StructuredFeedbackContent(
+            do_action="acknowledge limitation",
+            when_condition="user asks for real-time data",
+            blocking_issue=BlockingIssue(
+                kind=BlockingIssueKind.MISSING_TOOL,
+                details="No real-time data API available",
+            ),
+        )
+        result = format_structured_feedback_content(structured)
+        assert "Blocked by:" in result
+        assert "missing_tool" in result
+        assert "No real-time data API available" in result
+
+    def test_all_fields_none_returns_empty(self):
+        """Test that all-None fields returns empty string."""
+        structured = StructuredFeedbackContent()
+        result = format_structured_feedback_content(structured)
+        assert result == ""
 
 
 if __name__ == "__main__":
