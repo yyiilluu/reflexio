@@ -473,6 +473,7 @@ Skills search gated behind `skill_generation` feature flag. Pre-computed embeddi
   - `archive_feedbacks_by_ids(feedback_ids)` - Archive specific feedbacks by ID (skips APPROVED)
   - `restore_archived_feedbacks_by_ids(feedback_ids)` - Restore archived feedbacks by ID
   - `delete_feedbacks_by_ids(feedback_ids)` - Delete feedbacks by ID
+  - `delete_raw_feedbacks_by_ids(raw_feedback_ids)` - Delete raw feedbacks by ID
 - Vector search via LiteLLMClient embeddings
 - Operation state: `get_operation_state()`, `upsert_operation_state()`, `get_operation_state_with_new_request_interaction()`, `try_acquire_in_progress_lock()`
 - All operation state interactions are managed through `OperationStateManager` (in `operation_state_utils.py`)
