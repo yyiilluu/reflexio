@@ -73,7 +73,9 @@ class RdsConfigStorage(ConfigStorage):
 
             config_raw_encrypted = get_organization_config(client, self.org_id)
             if config_raw_encrypted is None:
-                logger.warning(f"Organization {self.org_id} not found or has no config")
+                logger.warning(
+                    "Organization %s not found or has no config", self.org_id
+                )
                 return self.get_default_config()
 
             config_raw_decrypted = self.encrypt_manager.decrypt(
@@ -81,7 +83,7 @@ class RdsConfigStorage(ConfigStorage):
             )
             return Config(**json.loads(str(config_raw_decrypted)))
         except Exception as e:
-            logger.error(f"Error loading config via Supabase: {e}")
+            logger.error("Error loading config via Supabase: %s", e)
             return self.get_default_config()
 
     def _load_config_session(self) -> Config:
@@ -147,15 +149,15 @@ class RdsConfigStorage(ConfigStorage):
 
             success = set_organization_config(client, self.org_id, config_raw_encrypted)
             if not success:
-                logger.error(f"Org {self.org_id} cannot be found!")
+                logger.error("Org %s cannot be found!", self.org_id)
                 return
 
-            logger.info(f"Config saved successfully for org {self.org_id}")
+            logger.info("Config saved successfully for org %s", self.org_id)
         except Exception as e:
-            logger.error(f"Error saving config via Supabase: {str(e)}")
+            logger.error("Error saving config via Supabase: %s", e)
             tbs = traceback.format_exc().split("\n")
             for tb in tbs:
-                logger.error(f"  {tb}")
+                logger.error("  %s", tb)
 
     def _save_config_session(self, config: Config) -> None:
         """
@@ -172,7 +174,7 @@ class RdsConfigStorage(ConfigStorage):
                     .first()
                 )
                 if not org:
-                    logger.error(f"Org {self.org_id} cannot be found!")
+                    logger.error("Org %s cannot be found!", self.org_id)
                     return
 
                 config_raw_decrypted: str = config.model_dump_json()
@@ -185,7 +187,7 @@ class RdsConfigStorage(ConfigStorage):
                 org.configuration_json = config_raw_encrypted  # type: ignore[reportAttributeAccessIssue]
                 session.commit()
             except Exception as e:
-                logger.error(f"{str(e)}")
+                logger.error("%s", e)
                 tbs = traceback.format_exc().split("\n")
                 for tb in tbs:
-                    logger.error(f"  {tb}")
+                    logger.error("  %s", tb)

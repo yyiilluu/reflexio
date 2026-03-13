@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from reflexio_commons.api_schema.internal_schema import RequestInteractionDataModel
@@ -30,7 +30,7 @@ class ProfileUpdates(BaseModel):
         "add_profiles", "delete_profiles", "mention_profiles", mode="before"
     )
     @classmethod
-    def coerce_none_to_list(cls, v):
+    def coerce_none_to_list(cls, v: Any) -> list[UserProfile]:
         return v if v is not None else []
 
 

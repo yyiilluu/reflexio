@@ -31,9 +31,9 @@ def get_login_supabase_client() -> Client | None:
                 _login_supabase_client = create_client(
                     LOGIN_SUPABASE_URL, LOGIN_SUPABASE_KEY
                 )
-                logger.info(f"Login Supabase client connected to {LOGIN_SUPABASE_URL}")
+                logger.info("Login Supabase client connected to %s", LOGIN_SUPABASE_URL)
             except Exception as e:
-                logger.error(f"Failed to create login Supabase client: {e}")
+                logger.error("Failed to create login Supabase client: %s", e)
                 return None
         else:
             logger.debug(

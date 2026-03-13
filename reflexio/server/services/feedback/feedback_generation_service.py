@@ -1,6 +1,13 @@
+from __future__ import annotations
+
 import logging
 import uuid
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from reflexio.server.api_endpoints.request_context import RequestContext
+    from reflexio.server.llm.litellm_client import LiteLLMClient
 
 from reflexio_commons.api_schema.internal_schema import RequestInteractionDataModel
 from reflexio_commons.api_schema.service_schemas import (
@@ -79,8 +86,8 @@ class FeedbackGenerationService(
 
     def __init__(
         self,
-        llm_client,
-        request_context,
+        llm_client: LiteLLMClient,
+        request_context: RequestContext,
         allow_manual_trigger: bool = False,
         output_pending_status: bool = False,
     ) -> None:
@@ -675,7 +682,9 @@ class FeedbackGenerationService(
     # Upgrade/Downgrade hook implementations (override base class methods)
     # ===============================
 
-    def _has_items_with_status(self, status, request) -> bool:
+    def _has_items_with_status(
+        self, status: Status | None, request: FeedbackGenerationRequest
+    ) -> bool:
         """Check if raw feedbacks exist with given status.
 
         Args:
@@ -691,7 +700,9 @@ class FeedbackGenerationService(
             feedback_name=getattr(request, "feedback_name", None),
         )
 
-    def _delete_items_by_status(self, status, request) -> int:
+    def _delete_items_by_status(
+        self, status: Status, request: FeedbackGenerationRequest
+    ) -> int:
         """Delete raw feedbacks with given status.
 
         Args:
@@ -709,10 +720,10 @@ class FeedbackGenerationService(
 
     def _update_items_status(
         self,
-        old_status,
-        new_status,
-        request,
-        user_ids=None,  # noqa: ARG002
+        old_status: Status | None,
+        new_status: Status | None,
+        request: FeedbackGenerationRequest,
+        user_ids: list[str] | None = None,  # noqa: ARG002
     ) -> int:
         """Update raw feedbacks from old_status to new_status with request filters.
 
@@ -733,7 +744,13 @@ class FeedbackGenerationService(
             feedback_name=getattr(request, "feedback_name", None),
         )
 
-    def _create_status_change_response(self, operation, success, counts, msg):
+    def _create_status_change_response(
+        self,
+        operation: StatusChangeOperation,
+        success: bool,
+        counts: dict,
+        msg: str,
+    ) -> UpgradeRawFeedbacksResponse | DowngradeRawFeedbacksResponse:
         """Create upgrade or downgrade response object for raw feedbacks.
 
         Args:

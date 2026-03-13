@@ -9,6 +9,7 @@ Supports three backends:
 
 import logging
 import os
+from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import datetime, timezone
 
@@ -73,7 +74,9 @@ def _supabase_row_to_organization(row: dict) -> db_models.Organization:
     wait=wait_exponential(multiplier=1, min=1, max=4),
     retry=retry_if_exception_type(Exception),
     before_sleep=lambda retry_state: logger.warning(
-        f"Retrying get_organization_by_email (attempt {retry_state.attempt_number}): {retry_state.outcome.exception()}"  # type: ignore[reportOptionalMemberAccess]
+        "Retrying get_organization_by_email (attempt %s): %s",
+        retry_state.attempt_number,
+        retry_state.outcome.exception(),  # type: ignore[reportOptionalMemberAccess]
     ),
     reraise=True,
 )
@@ -242,7 +245,7 @@ def update_organization(
 
 
 # Dependency
-def get_db_session():
+def get_db_session() -> Generator[Session | None, None, None]:
     """
     FastAPI dependency that yields a database session.
 
@@ -713,7 +716,7 @@ def add_db_model(session: Session, db_model: db_models.Base) -> db_models.Base: 
 
 
 @contextmanager
-def db_session_context():
+def db_session_context() -> Generator[Session | None, None, None]:
     """
     Context manager for database sessions.
 

@@ -424,7 +424,8 @@ class FeedbackAggregator:
             return
 
         logger.info(
-            f"Running aggregation for '{feedback_aggregator_request.feedback_name}'"
+            "Running aggregation for '%s'",
+            feedback_aggregator_request.feedback_name,
         )
 
         # Get existing APPROVED and PENDING feedbacks before archiving (to pass to LLM for deduplication)
@@ -434,7 +435,8 @@ class FeedbackAggregator:
             feedback_status_filter=[FeedbackStatus.APPROVED, FeedbackStatus.PENDING],
         )
         logger.info(
-            f"Found {len(existing_feedbacks)} existing feedbacks (approved + pending) to preserve"
+            "Found %s existing feedbacks (approved + pending) to preserve",
+            len(existing_feedbacks),
         )
 
         # get all raw feedbacks and generate clusters

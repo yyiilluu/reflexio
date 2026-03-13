@@ -210,7 +210,7 @@ async def _exchange_code_for_token(
     async with httpx.AsyncClient() as client:
         resp = await client.post(config["token_url"], data=data, headers=headers)
         if resp.status_code != 200:
-            logger.error(f"OAuth token exchange failed for {provider}: {resp.text}")
+            logger.error("OAuth token exchange failed for %s: %s", provider, resp.text)
             return None
 
         token_data = resp.json()
@@ -234,7 +234,7 @@ async def _get_user_email(provider: str, access_token: str) -> str | None:
     async with httpx.AsyncClient() as client:
         resp = await client.get(config["userinfo_url"], headers=headers)
         if resp.status_code != 200:
-            logger.error(f"Failed to get user info from {provider}: {resp.text}")
+            logger.error("Failed to get user info from %s: %s", provider, resp.text)
             return None
 
         user_data = resp.json()
@@ -281,7 +281,7 @@ def _redirect_frontend_success(
 
 
 @router.get("/{provider}/login")
-def oauth_login(provider: str, request: Request):
+def oauth_login(provider: str, request: Request) -> RedirectResponse:
     """
     Initiate OAuth login flow.
 
@@ -323,7 +323,7 @@ def oauth_register(
     provider: str,
     request: Request,
     invitation_code: str | None = None,
-):
+) -> RedirectResponse:
     """
     Initiate OAuth registration flow.
 
@@ -373,7 +373,7 @@ async def oauth_callback(
     state: str | None = None,
     error: str | None = None,
     session: Session = Depends(get_db_session),
-):
+) -> RedirectResponse:
     """
     Handle OAuth provider callback.
 

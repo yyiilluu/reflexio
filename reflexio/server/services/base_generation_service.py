@@ -450,7 +450,7 @@ class BaseGenerationService(
 
             if not extractor_configs:
                 source = getattr(self.service_config, "source", "N/A")
-                source_display = source if source else "N/A"
+                source_display = source or "N/A"
                 logger.info(
                     "No %s extractor configs enabled for source: %s",
                     self._get_service_name(),

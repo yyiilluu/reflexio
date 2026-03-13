@@ -110,7 +110,7 @@ class LiteLLMClient:
         """
         self.config = config
         self.logger = logging.getLogger(__name__)
-        self.logger.info(f"LiteLLM client initialized with model: {config.model}")
+        self.logger.info("LiteLLM client initialized with model: %s", config.model)
 
         # Pre-resolve API key configuration for the main model
         self._api_key, self._api_base, self._api_version = self._resolve_api_key()
@@ -490,8 +490,12 @@ class LiteLLMClient:
                         cache_info = f", cache_write: {cache_creation or 0}, cache_read: {cache_read or 0}"
 
                     self.logger.info(
-                        f"Token usage - model: {params.get('model')}, input: {usage.prompt_tokens}, "
-                        f"output: {usage.completion_tokens}, total: {usage.total_tokens}{cache_info}"
+                        "Token usage - model: %s, input: %s, output: %s, total: %s%s",
+                        params.get("model"),
+                        usage.prompt_tokens,
+                        usage.completion_tokens,
+                        usage.total_tokens,
+                        cache_info,
                     )
 
                 self.logger.info(
@@ -532,15 +536,18 @@ class LiteLLMClient:
 
                 # Check if error is non-retryable
                 if self._is_non_retryable_error(error_str):
-                    self.logger.error(f"Non-retryable error: {e}")
+                    self.logger.error("Non-retryable error: %s", e)
                     raise LiteLLMClientError(f"API call failed: {str(e)}") from e
 
                 # Log retry attempt or final failure
                 if attempt < max_retries - 1:
                     delay = self.config.retry_delay * (2**attempt)
                     self.logger.warning(
-                        f"Request failed (attempt {attempt + 1}/{max_retries}): {e}. "
-                        f"Retrying in {delay}s..."
+                        "Request failed (attempt %s/%s): %s. Retrying in %ss...",
+                        attempt + 1,
+                        max_retries,
+                        e,
+                        delay,
                     )
                     time.sleep(delay)
                 else:
@@ -693,7 +700,7 @@ class LiteLLMClient:
 
         media_type = self.MIME_TYPES.get(suffix, "image/png")
 
-        with open(path, "rb") as f:
+        with Path(path).open("rb") as f:
             base64_data = base64.b64encode(f.read()).decode("utf-8")
 
         return base64_data, media_type
@@ -760,7 +767,7 @@ class LiteLLMClient:
                 parsed = json.loads(sanitized)
                 return response_format.model_validate(parsed)
             except Exception as e:
-                self.logger.warning(f"Failed to parse structured output: {e}")
+                self.logger.warning("Failed to parse structured output: %s", e)
                 return content
 
     def _extract_json_from_string(self, content: str) -> str:
@@ -912,9 +919,9 @@ class LiteLLMClient:
         for key, value in kwargs.items():
             if hasattr(self.config, key):
                 setattr(self.config, key, value)
-                self.logger.debug(f"Updated config: {key} = {value}")
+                self.logger.debug("Updated config: %s = %s", key, value)
             else:
-                self.logger.warning(f"Unknown config parameter: {key}")
+                self.logger.warning("Unknown config parameter: %s", key)
 
     def get_model(self) -> str:
         """

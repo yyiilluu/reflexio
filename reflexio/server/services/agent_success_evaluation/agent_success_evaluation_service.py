@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from reflexio_commons.api_schema.internal_schema import RequestInteractionDataModel
 from reflexio_commons.config_schema import AgentSuccessConfig
 
+from reflexio.server.api_endpoints.request_context import RequestContext
+from reflexio.server.llm.litellm_client import LiteLLMClient
 from reflexio.server.services.agent_success_evaluation.agent_success_evaluation_utils import (
     AgentSuccessEvaluationRequest,
 )
@@ -45,7 +47,9 @@ class AgentSuccessEvaluationService(
     Runs multiple AgentSuccessEvaluator instances sequentially.
     """
 
-    def __init__(self, llm_client, request_context) -> None:
+    def __init__(
+        self, llm_client: LiteLLMClient, request_context: RequestContext
+    ) -> None:
         """Initialize service and reset per-run outcome flags."""
         super().__init__(llm_client=llm_client, request_context=request_context)
         self.last_run_result_count = 0

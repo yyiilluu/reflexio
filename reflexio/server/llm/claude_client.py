@@ -74,7 +74,7 @@ def encode_image_to_base64(image_path: str | Path) -> tuple[str, str]:
 
     media_type = SUPPORTED_IMAGE_TYPES[suffix]
 
-    with open(path, "rb") as f:
+    with Path(path).open("rb") as f:
         image_data = base64.standard_b64encode(f.read()).decode("utf-8")
 
     return image_data, media_type
@@ -164,7 +164,7 @@ class ClaudeClient:
                 f"Failed to initialize Claude client: {str(e)}"
             ) from e
 
-        self.logger.info(f"Claude client initialized with model: {self.config.model}")
+        self.logger.info("Claude client initialized with model: %s", self.config.model)
 
     def generate_response(
         self,
@@ -364,7 +364,7 @@ class ClaudeClient:
 
         for attempt in range(self.config.max_retries + 1):
             try:
-                self.logger.debug(f"Making Claude API request (attempt {attempt + 1})")
+                self.logger.debug("Making Claude API request (attempt %s)", attempt + 1)
 
                 response: Message = self.client.messages.create(**params)
 
@@ -396,7 +396,10 @@ class ClaudeClient:
             except Exception as e:  # noqa: PERF203
                 last_exception = e
                 self.logger.warning(
-                    f"Claude API request failed (attempt {attempt + 1}/{self.config.max_retries + 1}): {str(e)}"
+                    "Claude API request failed (attempt %s/%s): %s",
+                    attempt + 1,
+                    self.config.max_retries + 1,
+                    e,
                 )
 
                 # Don't retry on certain errors
@@ -520,9 +523,9 @@ class ClaudeClient:
         for key, value in kwargs.items():
             if hasattr(self.config, key):
                 setattr(self.config, key, value)
-                self.logger.debug(f"Updated config: {key} = {value}")
+                self.logger.debug("Updated config: %s = %s", key, value)
             else:
-                self.logger.warning(f"Unknown config parameter: {key}")
+                self.logger.warning("Unknown config parameter: %s", key)
 
     def get_config(self) -> ClaudeConfig:
         """

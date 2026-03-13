@@ -142,7 +142,7 @@ class PromptManager:
         """Load metadata.json for a prompt"""
         metadata_path = self.prompt_bank_path / prompt_id / "metadata.json"
         try:
-            with open(metadata_path, encoding="utf-8") as f:
+            with metadata_path.open(encoding="utf-8") as f:
                 return json.load(f)
         except FileNotFoundError:
             logger.warning(
@@ -162,7 +162,7 @@ class PromptManager:
         """Load prompt content from versioned file"""
         prompt_path = self.prompt_bank_path / prompt_id / f"{version}.prompt"
         try:
-            with open(prompt_path, encoding="utf-8") as f:
+            with prompt_path.open(encoding="utf-8") as f:
                 return f.read()
         except FileNotFoundError:
             logger.warning(

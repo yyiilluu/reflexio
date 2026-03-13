@@ -1,5 +1,6 @@
 import logging
 import uuid
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeoutError
 from datetime import datetime, timezone
@@ -199,8 +200,16 @@ class GenerationService:
                 scheduler = GroupEvaluationScheduler.get_instance()
                 key = (self.org_id, user_id, session_id)
 
-                def make_callback(_org_id, _user_id, _sid, _av, _src, _rc, _llm):
-                    def callback():
+                def make_callback(
+                    _org_id: str,
+                    _user_id: str,
+                    _sid: str,
+                    _av: str,
+                    _src: str | None,
+                    _rc: RequestContext,
+                    _llm: LiteLLMClient,
+                ) -> Callable[[], None]:
+                    def callback() -> None:
                         run_group_evaluation(
                             org_id=_org_id,
                             user_id=_user_id,

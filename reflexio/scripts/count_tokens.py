@@ -70,7 +70,7 @@ def count_tokens_in_file(file_path: Path, model: str = "gpt-4") -> dict[str, any
         dict: Dictionary with file info and token count
     """
     try:
-        with open(file_path, encoding="utf-8") as f:
+        with Path(file_path).open(encoding="utf-8") as f:
             content = f.read()
 
         token_count = count_tokens_in_text(content, model)

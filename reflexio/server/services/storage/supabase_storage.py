@@ -4,8 +4,9 @@ Storage class that uses Supabase as vector db for storing data
 
 import functools
 import logging
-import os
+from collections.abc import Callable
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, cast
 
 from reflexio_commons.api_schema.internal_schema import RequestInteractionDataModel
@@ -41,7 +42,7 @@ from reflexio_commons.config_schema import (
     StorageConfigSupabase,
 )
 
-import reflexio.data as data
+from reflexio import data
 from reflexio.server.llm.litellm_client import LiteLLMClient, LiteLLMConfig
 from reflexio.server.services.storage.error import StorageError
 from reflexio.server.services.storage.storage_base import BaseStorage
@@ -108,9 +109,9 @@ class SupabaseStorage(BaseStorage):
     """
 
     @staticmethod
-    def handle_exceptions(func):
+    def handle_exceptions(func: Callable[..., Any]) -> Callable[..., Any]:
         @functools.wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             try:
                 return func(*args, **kwargs)
             except Exception as e:
@@ -134,7 +135,7 @@ class SupabaseStorage(BaseStorage):
         config: StorageConfigSupabase,
         api_key_config: APIKeyConfig | None = None,
         llm_config: LLMConfig | None = None,
-    ):
+    ) -> None:
         super().__init__(org_id)
         self.api_key_config = api_key_config
 
@@ -150,12 +151,14 @@ class SupabaseStorage(BaseStorage):
             logger.error(err_msg)
             raise StorageError(err_msg)
 
-        logger.info(f"Supabase Storage for org {org_id} uses URL {self.supabase_url}")
+        logger.info(
+            "Supabase Storage for org %s uses URL %s", org_id, self.supabase_url
+        )
         try:
             self.client: Client = create_client(self.supabase_url, self.supabase_key)
         except Exception as e:
             err_msg = f"Supabase Storage failed to connect: {str(e)}"
-            logger.error(err_msg, exc_info=True)
+            logger.exception(err_msg)
             raise StorageError(err_msg) from e
 
         # Get site var for supabase settings (including search_mode)
@@ -191,7 +194,7 @@ class SupabaseStorage(BaseStorage):
             self.llm_client = LiteLLMClient(litellm_config)
         except Exception as e:
             err_msg = f"Supabase Storage failed to create LLM client: {str(e)}"
-            logger.error(err_msg, exc_info=True)
+            logger.exception(err_msg)
             raise StorageError(err_msg) from e
 
     def _current_timestamp(self) -> str:
@@ -216,27 +219,32 @@ class SupabaseStorage(BaseStorage):
         if not self.supabase_db_url:
             logger.error("Supabase Storage failed to migrate: no valid Supabase DB URL")
             return False
-        supabase_migrate_folder = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(data.__file__))),
-            "supabase",
-            "migrations",
+        supabase_migrate_folder = str(
+            Path(data.__file__).parent.parent.parent / "supabase" / "migrations"
         )
         logger.info(
-            f"Supabase Storage for org {self.org_id} try to migrate from {supabase_migrate_folder}"
+            "Supabase Storage for org %s try to migrate from %s",
+            self.org_id,
+            supabase_migrate_folder,
         )
-        if not os.path.isdir(supabase_migrate_folder):
+        if not Path(supabase_migrate_folder).is_dir():
             logger.error(
-                f"Supabase Storage failed to migrate: migration folder {supabase_migrate_folder} does not exist!"
+                "Supabase Storage failed to migrate: migration folder %s does not exist!",
+                supabase_migrate_folder,
             )
             return False
         success, message = execute_migration(db_url=self.supabase_db_url)
         if not success:
             logger.error(
-                f"Supabase Storage migration failed for org {self.org_id}: {message}"
+                "Supabase Storage migration failed for org %s: %s",
+                self.org_id,
+                message,
             )
             raise StorageError(message=f"Migration failed: {message}")
         logger.info(
-            f"Supabase Storage migration succeeded for org {self.org_id}: {message}"
+            "Supabase Storage migration succeeded for org %s: %s",
+            self.org_id,
+            message,
         )
         return True
 
@@ -343,7 +351,7 @@ class SupabaseStorage(BaseStorage):
         return response_list_to_interactions(response.data)
 
     @handle_exceptions
-    def add_user_profile(self, user_id: str, user_profiles: list[UserProfile]):  # noqa: ARG002
+    def add_user_profile(self, user_id: str, user_profiles: list[UserProfile]) -> None:  # noqa: ARG002
         for profile in user_profiles:
             embedding = self._get_embedding(
                 "\n".join([profile.profile_content, str(profile.custom_features)])
@@ -354,9 +362,9 @@ class SupabaseStorage(BaseStorage):
             ).execute()
 
     @handle_exceptions
-    def add_user_interaction(self, user_id: str, interaction: Interaction):  # noqa: ARG002
+    def add_user_interaction(self, user_id: str, interaction: Interaction) -> None:  # noqa: ARG002
         embedding = self._get_embedding(
-            "\n".join([interaction.content, interaction.user_action_description])
+            f"{interaction.content}\n{interaction.user_action_description}"
         )
         interaction.embedding = embedding
         self.client.table("interactions").upsert(
@@ -405,13 +413,13 @@ class SupabaseStorage(BaseStorage):
         self.client.table("interactions").upsert(data_list).execute()
 
     @handle_exceptions
-    def delete_user_interaction(self, request: DeleteUserInteractionRequest):
+    def delete_user_interaction(self, request: DeleteUserInteractionRequest) -> None:
         self.client.table("interactions").delete().eq("user_id", request.user_id).eq(
             "interaction_id", request.interaction_id
         ).execute()
 
     @handle_exceptions
-    def delete_user_profile(self, request: DeleteUserProfileRequest):
+    def delete_user_profile(self, request: DeleteUserProfileRequest) -> None:
         self.client.table("profiles").delete().eq("user_id", request.user_id).eq(
             "profile_id", request.profile_id
         ).execute()
@@ -419,7 +427,7 @@ class SupabaseStorage(BaseStorage):
     @handle_exceptions
     def update_user_profile_by_id(
         self, user_id: str, profile_id: str, new_profile: UserProfile
-    ):
+    ) -> None:
         current_timestamp = int(datetime.now(timezone.utc).timestamp())
         response = (
             self.client.table("profiles")
@@ -444,20 +452,20 @@ class SupabaseStorage(BaseStorage):
         ).execute()
 
     @handle_exceptions
-    def delete_all_interactions_for_user(self, user_id: str):
+    def delete_all_interactions_for_user(self, user_id: str) -> None:
         self.client.table("interactions").delete().eq("user_id", user_id).execute()
 
     @handle_exceptions
-    def delete_all_profiles_for_user(self, user_id: str):
+    def delete_all_profiles_for_user(self, user_id: str) -> None:
         self.client.table("profiles").delete().eq("user_id", user_id).execute()
 
     @handle_exceptions
-    def delete_all_profiles(self):
+    def delete_all_profiles(self) -> None:
         """Delete all profiles across all users."""
         self.client.table("profiles").delete().gte("profile_id", 0).execute()
 
     @handle_exceptions
-    def delete_all_interactions(self):
+    def delete_all_interactions(self) -> None:
         """Delete all interactions across all users."""
         self.client.table("interactions").delete().gte("interaction_id", 0).execute()
 
@@ -553,7 +561,10 @@ class SupabaseStorage(BaseStorage):
         # Count the number of rows updated
         updated_count = len(response.data) if response.data else 0
         logger.info(
-            f"Updated {updated_count} profiles from {old_status} to {new_status}"
+            "Updated %s profiles from %s to %s",
+            updated_count,
+            old_status,
+            new_status,
         )
         return updated_count
 
@@ -576,7 +587,7 @@ class SupabaseStorage(BaseStorage):
 
         # Count the number of rows deleted
         deleted_count = len(response.data) if response.data else 0
-        logger.info(f"Deleted {deleted_count} profiles with status {status}")
+        logger.info("Deleted %s profiles with status %s", deleted_count, status)
         return deleted_count
 
     @handle_exceptions
@@ -611,7 +622,7 @@ class SupabaseStorage(BaseStorage):
     # ==============================
 
     @handle_exceptions
-    def add_request(self, request: Request):
+    def add_request(self, request: Request) -> None:
         """
         Add a request to storage.
 
@@ -644,7 +655,7 @@ class SupabaseStorage(BaseStorage):
         return response_to_request(response.data[0])
 
     @handle_exceptions
-    def delete_request(self, request_id: str):
+    def delete_request(self, request_id: str) -> None:
         """
         Delete a request by its ID and all associated interactions.
 
@@ -695,7 +706,7 @@ class SupabaseStorage(BaseStorage):
         return request_count
 
     @handle_exceptions
-    def delete_all_requests(self):
+    def delete_all_requests(self) -> None:
         """Delete all requests and their associated interactions."""
         # First delete all interactions
         self.client.table("interactions").delete().neq(
@@ -804,7 +815,7 @@ class SupabaseStorage(BaseStorage):
             req = response_to_request(item)
 
             # Get the group name
-            group_name = req.session_id if req.session_id else ""
+            group_name = req.session_id or ""
 
             # Parse interactions
             interactions = []
@@ -910,7 +921,7 @@ class SupabaseStorage(BaseStorage):
     # ==============================
 
     @handle_exceptions
-    def add_profile_change_log(self, profile_change_log: ProfileChangeLog):
+    def add_profile_change_log(self, profile_change_log: ProfileChangeLog) -> None:
         data = profile_change_log_to_data(profile_change_log)
         self.client.table("profile_change_logs").upsert(data).execute()
 
@@ -926,13 +937,13 @@ class SupabaseStorage(BaseStorage):
         return response_list_to_profile_change_logs(response.data)
 
     @handle_exceptions
-    def delete_profile_change_log_for_user(self, user_id: str):
+    def delete_profile_change_log_for_user(self, user_id: str) -> None:
         self.client.table("profile_change_logs").delete().eq(
             "user_id", user_id
         ).execute()
 
     @handle_exceptions
-    def delete_all_profile_change_logs(self):
+    def delete_all_profile_change_logs(self) -> None:
         self.client.table("profile_change_logs").delete().gte("id", 0).execute()
 
     # ==============================
@@ -1449,7 +1460,7 @@ class SupabaseStorage(BaseStorage):
     # ==============================
 
     @handle_exceptions
-    def save_raw_feedbacks(self, raw_feedbacks: list[RawFeedback]):
+    def save_raw_feedbacks(self, raw_feedbacks: list[RawFeedback]) -> None:
         for raw_feedback in raw_feedbacks:
             # Use indexed_content if available, otherwise when_condition,
             # otherwise build from structured fields
@@ -1809,15 +1820,15 @@ class SupabaseStorage(BaseStorage):
         ]
 
     @handle_exceptions
-    def delete_all_raw_feedbacks(self):
+    def delete_all_raw_feedbacks(self) -> None:
         self.client.table("raw_feedbacks").delete().gte("raw_feedback_id", 0).execute()
 
     @handle_exceptions
-    def delete_all_feedbacks(self):
+    def delete_all_feedbacks(self) -> None:
         self.client.table("feedbacks").delete().gte("feedback_id", 0).execute()
 
     @handle_exceptions
-    def delete_feedback(self, feedback_id: int):
+    def delete_feedback(self, feedback_id: int) -> None:
         """Delete a feedback by ID.
 
         Args:
@@ -1826,7 +1837,7 @@ class SupabaseStorage(BaseStorage):
         self.client.table("feedbacks").delete().eq("feedback_id", feedback_id).execute()
 
     @handle_exceptions
-    def delete_raw_feedback(self, raw_feedback_id: int):
+    def delete_raw_feedback(self, raw_feedback_id: int) -> None:
         """Delete a raw feedback by ID.
 
         Args:
@@ -1839,7 +1850,7 @@ class SupabaseStorage(BaseStorage):
     @handle_exceptions
     def delete_all_raw_feedbacks_by_feedback_name(
         self, feedback_name: str, agent_version: str | None = None
-    ):
+    ) -> None:
         """
         Delete all raw feedbacks by feedback name from storage.
 
@@ -1862,7 +1873,7 @@ class SupabaseStorage(BaseStorage):
     @handle_exceptions
     def delete_all_feedbacks_by_feedback_name(
         self, feedback_name: str, agent_version: str | None = None
-    ):
+    ) -> None:
         """
         Delete all regular feedbacks by feedback name from storage.
 
@@ -1881,7 +1892,9 @@ class SupabaseStorage(BaseStorage):
         query.execute()
 
     @handle_exceptions
-    def update_feedback_status(self, feedback_id: int, feedback_status: FeedbackStatus):
+    def update_feedback_status(
+        self, feedback_id: int, feedback_status: FeedbackStatus
+    ) -> None:
         """
         Update the status of a specific feedback.
 
@@ -1911,7 +1924,7 @@ class SupabaseStorage(BaseStorage):
     @handle_exceptions
     def archive_feedbacks_by_feedback_name(
         self, feedback_name: str, agent_version: str | None = None
-    ):
+    ) -> None:
         """
         Archive non-APPROVED feedbacks by setting their status field to 'archived'.
         APPROVED feedbacks are left untouched to preserve user-approved feedback.
@@ -1936,7 +1949,7 @@ class SupabaseStorage(BaseStorage):
     @handle_exceptions
     def restore_archived_feedbacks_by_feedback_name(
         self, feedback_name: str, agent_version: str | None = None
-    ):
+    ) -> None:
         """
         Restore archived feedbacks by setting their status field to null.
 
@@ -1960,7 +1973,7 @@ class SupabaseStorage(BaseStorage):
     @handle_exceptions
     def delete_archived_feedbacks_by_feedback_name(
         self, feedback_name: str, agent_version: str | None = None
-    ):
+    ) -> None:
         """
         Permanently delete feedbacks that have status='archived'.
 
@@ -2073,7 +2086,10 @@ class SupabaseStorage(BaseStorage):
         # Count the number of rows updated
         updated_count = len(response.data) if response.data else 0
         logger.info(
-            f"Updated {updated_count} raw feedbacks from {old_status} to {new_status}"
+            "Updated %s raw feedbacks from %s to %s",
+            updated_count,
+            old_status,
+            new_status,
         )
         return updated_count
 
@@ -2109,7 +2125,7 @@ class SupabaseStorage(BaseStorage):
 
         # Count the number of rows deleted
         deleted_count = len(response.data) if response.data else 0
-        logger.info(f"Deleted {deleted_count} raw feedbacks with status {status}")
+        logger.info("Deleted %s raw feedbacks with status %s", deleted_count, status)
         return deleted_count
 
     @handle_exceptions
@@ -2240,7 +2256,7 @@ class SupabaseStorage(BaseStorage):
     @handle_exceptions
     def save_agent_success_evaluation_results(
         self, results: list[AgentSuccessEvaluationResult]
-    ):
+    ) -> None:
         """
         Save agent success evaluation results with embeddings.
 
@@ -2313,7 +2329,7 @@ class SupabaseStorage(BaseStorage):
         ]
 
     @handle_exceptions
-    def delete_all_agent_success_evaluation_results(self):
+    def delete_all_agent_success_evaluation_results(self) -> None:
         """Delete all agent success evaluation results from storage."""
         self.client.table("agent_success_evaluation_result").delete().gte(
             "result_id", 0
@@ -2661,7 +2677,7 @@ class SupabaseStorage(BaseStorage):
     # ==============================
 
     @handle_exceptions
-    def create_operation_state(self, service_name: str, operation_state: dict):
+    def create_operation_state(self, service_name: str, operation_state: dict) -> None:
         """
         Create operation state for a service.
 
@@ -2677,7 +2693,7 @@ class SupabaseStorage(BaseStorage):
         self.client.table("_operation_state").insert(data).execute()
 
     @handle_exceptions
-    def upsert_operation_state(self, service_name: str, operation_state: dict):
+    def upsert_operation_state(self, service_name: str, operation_state: dict) -> None:
         """
         Create or update operation state for a service.
 
@@ -3003,7 +3019,7 @@ class SupabaseStorage(BaseStorage):
         return sessions, flat_interactions
 
     @handle_exceptions
-    def update_operation_state(self, service_name: str, operation_state: dict):
+    def update_operation_state(self, service_name: str, operation_state: dict) -> None:
         """
         Update operation state for a specific service.
 
@@ -3043,7 +3059,7 @@ class SupabaseStorage(BaseStorage):
         ]
 
     @handle_exceptions
-    def delete_operation_state(self, service_name: str):
+    def delete_operation_state(self, service_name: str) -> None:
         """
         Delete operation state for a specific service.
 
@@ -3055,7 +3071,7 @@ class SupabaseStorage(BaseStorage):
         ).execute()
 
     @handle_exceptions
-    def delete_all_operation_states(self):
+    def delete_all_operation_states(self) -> None:
         """Delete all operation states."""
         self.client.table("_operation_state").delete().neq(
             "service_name", "impossible_value"
@@ -3118,7 +3134,7 @@ class SupabaseStorage(BaseStorage):
     # ==============================
 
     @handle_exceptions
-    def save_skills(self, skills: list[Skill]):
+    def save_skills(self, skills: list[Skill]) -> None:
         """
         Save skills with embeddings.
 
@@ -3243,7 +3259,7 @@ class SupabaseStorage(BaseStorage):
         )
 
     @handle_exceptions
-    def update_skill_status(self, skill_id: int, skill_status: SkillStatus):
+    def update_skill_status(self, skill_id: int, skill_status: SkillStatus) -> None:
         """
         Update the status of a specific skill.
 
@@ -3256,7 +3272,7 @@ class SupabaseStorage(BaseStorage):
         ).eq("org_id", self.org_id).execute()
 
     @handle_exceptions
-    def delete_skill(self, skill_id: int):
+    def delete_skill(self, skill_id: int) -> None:
         """
         Delete a skill by ID.
 
@@ -3268,7 +3284,7 @@ class SupabaseStorage(BaseStorage):
         ).execute()
 
     @handle_exceptions
-    def delete_all_skills(self):
+    def delete_all_skills(self) -> None:
         """Delete all skills for this organization."""
         self.client.table("skills").delete().eq("org_id", self.org_id).execute()
 

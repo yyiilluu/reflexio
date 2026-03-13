@@ -237,7 +237,7 @@ class ProfileExtractor:
             # Update operation state after successful processing
             self._update_operation_state(request_interaction_data_models)
 
-            return user_profiles if user_profiles else None
+            return user_profiles or None
         return None
 
     def _convert_raw_to_user_profiles(
@@ -284,7 +284,7 @@ class ProfileExtractor:
                 generated_from_request_id=request_id,
                 profile_time_to_live=ttl,
                 expiration_timestamp=calculate_expiration_timestamp(now_ts, ttl),
-                custom_features=custom_features if custom_features else None,
+                custom_features=custom_features or None,
                 extractor_names=[self.config.extractor_name],
             )
 

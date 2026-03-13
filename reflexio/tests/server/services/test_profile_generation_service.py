@@ -402,9 +402,7 @@ def test_profile_extraction_message_construction():
     finally:
         # Always restore MOCK_LLM_RESPONSE to "true" for test isolation
         # This ensures other tests in the same process don't fail
-        os.environ["MOCK_LLM_RESPONSE"] = (
-            original_mock_llm if original_mock_llm else "true"
-        )
+        os.environ["MOCK_LLM_RESPONSE"] = original_mock_llm or "true"
 
 
 def test_refresh_profiles_with_output_pending_status(mock_chat_completion):

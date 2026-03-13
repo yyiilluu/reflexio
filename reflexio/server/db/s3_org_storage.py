@@ -156,7 +156,8 @@ class S3OrganizationStorage:
         self.store = self._load_from_s3()
 
         logger.info(
-            f"S3OrganizationStorage initialized with {len(self.store.organizations)} organizations"
+            "S3OrganizationStorage initialized with %s organizations",
+            len(self.store.organizations),
         )
         print(
             f"S3OrganizationStorage initialized from {self.s3_path}/{self.org_file_key}"
@@ -198,10 +199,10 @@ class S3OrganizationStorage:
             return OrganizationsStore.from_dict(data)
 
         except Exception as e:
-            logger.error(f"Error loading organizations from S3: {str(e)}")
+            logger.error("Error loading organizations from S3: %s", e)
             tbs = traceback.format_exc().split("\n")
             for tb in tbs:
-                logger.error(f"  {tb}")
+                logger.error("  %s", tb)
             return OrganizationsStore()
 
     def _save_to_s3(self) -> bool:
@@ -231,10 +232,10 @@ class S3OrganizationStorage:
             return True
 
         except Exception as e:
-            logger.error(f"Error saving organizations to S3: {str(e)}")
+            logger.error("Error saving organizations to S3: %s", e)
             tbs = traceback.format_exc().split("\n")
             for tb in tbs:
-                logger.error(f"  {tb}")
+                logger.error("  %s", tb)
             return False
 
     def _dict_to_organization(self, org_dict: dict) -> db_models.Organization:

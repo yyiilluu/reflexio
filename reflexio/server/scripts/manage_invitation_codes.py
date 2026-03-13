@@ -20,7 +20,7 @@ from reflexio.server.db.db_operations import (
 )
 
 
-def _ensure_tables():
+def _ensure_tables() -> None:
     """Create tables in local SQLite if they don't exist yet."""
     if engine is not None:
         Base.metadata.create_all(bind=engine)
@@ -129,7 +129,7 @@ def list_codes(show_used: bool = False) -> None:
         print(f"{code:<25} {'Yes' if is_used else 'No':<8} {used_by:<30} {expires_str}")
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description="Manage invitation codes")
     subparsers = parser.add_subparsers(dest="command", required=True)
 

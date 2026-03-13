@@ -1,10 +1,16 @@
 """Service to generate user profiles from interactions"""
 
+from __future__ import annotations
+
 import logging
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from reflexio.server.api_endpoints.request_context import RequestContext
+    from reflexio.server.llm.litellm_client import LiteLLMClient
 
 from reflexio_commons.api_schema.internal_schema import RequestInteractionDataModel
 from reflexio_commons.api_schema.service_schemas import (
@@ -80,8 +86,8 @@ class ProfileGenerationService(
 
     def __init__(
         self,
-        llm_client,
-        request_context,
+        llm_client: LiteLLMClient,
+        request_context: RequestContext,
         allow_manual_trigger: bool = False,
         output_pending_status: bool = False,
     ) -> None:
@@ -227,7 +233,7 @@ class ProfileGenerationService(
                     str(e),
                 )
 
-    def check_and_update_profiles(self, profiles: list[UserProfile]):
+    def check_and_update_profiles(self, profiles: list[UserProfile]) -> None:
         """check if the profiles are expired and update them if they are"""
         raise NotImplementedError
 
@@ -503,7 +509,11 @@ class ProfileGenerationService(
     # Upgrade/Downgrade hook implementations (override base class methods)
     # ===============================
 
-    def _has_items_with_status(self, status, request) -> bool:  # noqa: ARG002
+    def _has_items_with_status(
+        self,
+        status: Status | None,
+        request: ProfileGenerationRequest,  # noqa: ARG002
+    ) -> bool:
         """Check if profiles exist with given status.
 
         Args:
@@ -516,7 +526,11 @@ class ProfileGenerationService(
         user_ids = self.storage.get_user_ids_with_status(status=status)  # type: ignore[reportOptionalMemberAccess]
         return len(user_ids) > 0
 
-    def _delete_items_by_status(self, status, request) -> int:  # noqa: ARG002
+    def _delete_items_by_status(
+        self,
+        status: Status,
+        request: ProfileGenerationRequest,  # noqa: ARG002
+    ) -> int:
         """Delete profiles with given status.
 
         Args:
@@ -530,10 +544,10 @@ class ProfileGenerationService(
 
     def _update_items_status(
         self,
-        old_status,
-        new_status,
-        request,  # noqa: ARG002
-        user_ids=None,  # noqa: ARG002
+        old_status: Status | None,
+        new_status: Status | None,
+        request: ProfileGenerationRequest,  # noqa: ARG002
+        user_ids: list[str] | None = None,  # noqa: ARG002
     ) -> int:
         """Update profiles from old_status to new_status.
 
@@ -550,7 +564,9 @@ class ProfileGenerationService(
             old_status, new_status, user_ids=user_ids
         )
 
-    def _get_affected_user_ids_for_upgrade(self, request) -> list[str] | None:
+    def _get_affected_user_ids_for_upgrade(
+        self, request: ProfileGenerationRequest
+    ) -> list[str] | None:
         """Get user IDs to filter by for upgrade operations.
 
         Args:
@@ -563,7 +579,9 @@ class ProfileGenerationService(
             return self.storage.get_user_ids_with_status(Status.PENDING)  # type: ignore[reportOptionalMemberAccess]
         return None
 
-    def _get_affected_user_ids_for_downgrade(self, request) -> list[str] | None:
+    def _get_affected_user_ids_for_downgrade(
+        self, request: ProfileGenerationRequest
+    ) -> list[str] | None:
         """Get user IDs to filter by for downgrade operations.
 
         Args:
@@ -576,7 +594,13 @@ class ProfileGenerationService(
             return self.storage.get_user_ids_with_status(Status.ARCHIVED)  # type: ignore[reportOptionalMemberAccess]
         return None
 
-    def _create_status_change_response(self, operation, success, counts, msg):
+    def _create_status_change_response(
+        self,
+        operation: StatusChangeOperation,
+        success: bool,
+        counts: dict,
+        msg: str,
+    ) -> UpgradeProfilesResponse | DowngradeProfilesResponse:
         """Create upgrade or downgrade response object for profiles.
 
         Args:

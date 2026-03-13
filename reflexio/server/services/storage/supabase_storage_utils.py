@@ -2,12 +2,18 @@
 Utility functions for Supabase storage operations
 """
 
+from __future__ import annotations
+
 import json
 import logging
 import re
 from datetime import datetime, timezone
-from typing import Any
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
+
+if TYPE_CHECKING:
+    from supabase import Client
 
 import psycopg2
 from reflexio_commons.api_schema.service_schemas import (
@@ -616,20 +622,16 @@ def get_latest_migration_version() -> str | None:
     Returns:
         str | None: The version string of the latest migration, or None if no migrations found
     """
-    import glob
-    import os
     from pathlib import Path
 
     import reflexio
 
-    migration_dir = (
-        Path(os.path.dirname(reflexio.__file__)).parent / "supabase" / "migrations"
-    )
-    migration_files = sorted(glob.glob(os.path.join(migration_dir, "*.sql")))
+    migration_dir = Path(reflexio.__file__).parent.parent / "supabase" / "migrations"
+    migration_files = sorted(migration_dir.glob("*.sql"))
     if not migration_files:
         return None
 
-    filename = os.path.basename(migration_files[-1])
+    filename = migration_files[-1].name
     return filename.split("_")[0]
 
 
@@ -663,7 +665,7 @@ def check_migration_needed(db_url: str) -> bool:
         cursor.close()
         return row is None
     except Exception as e:
-        logger.debug(f"check_migration_needed failed for {db_url}: {e}")
+        logger.debug("check_migration_needed failed for %s: %s", db_url, e)
         return False
     finally:
         if conn is not None:
@@ -685,10 +687,10 @@ def extract_db_url_from_config_json(config_json_str: str) -> str | None:
         storage_config = config_data.get("storage_config")
         if storage_config and "db_url" in storage_config:
             db_url = storage_config["db_url"]
-            return db_url if db_url else None
+            return db_url or None
         return None
     except Exception as e:
-        logger.debug(f"extract_db_url_from_config_json failed: {e}")
+        logger.debug("extract_db_url_from_config_json failed: %s", e)
         return None
 
 
@@ -709,7 +711,7 @@ def execute_sql_file_direct(db_url: str, file_path: str) -> list[Any]:
         cursor = conn.cursor()
 
         # Read and execute SQL file
-        with open(file_path, encoding="utf-8") as file:
+        with Path(file_path).open(encoding="utf-8") as file:
             sql_content = file.read()
 
         # Execute the SQL (split by semicolons for multiple statements)
@@ -750,8 +752,6 @@ def execute_migration(db_url: str) -> tuple[bool, str]:
     Returns:
         tuple[bool, str]: (success, message)
     """
-    import glob
-    import os
     from pathlib import Path
 
     import reflexio
@@ -760,9 +760,9 @@ def execute_migration(db_url: str) -> tuple[bool, str]:
     try:
         # Get migration files
         migration_dir = (
-            Path(os.path.dirname(reflexio.__file__)).parent / "supabase" / "migrations"
+            Path(reflexio.__file__).parent.parent / "supabase" / "migrations"
         )
-        migration_files = sorted(glob.glob(os.path.join(migration_dir, "*.sql")))
+        migration_files = sorted(migration_dir.glob("*.sql"))
         if not migration_files:
             return False, "No migration files found"
 
@@ -787,7 +787,7 @@ def execute_migration(db_url: str) -> tuple[bool, str]:
 
         for migration_file in migration_files:
             # Extract version from filename
-            filename = os.path.basename(migration_file)
+            filename = Path(migration_file).name
             version = filename.split("_")[0]
 
             # Check if migration already executed
@@ -798,7 +798,7 @@ def execute_migration(db_url: str) -> tuple[bool, str]:
 
             if cursor.fetchone() is None:
                 # Read and execute migration
-                with open(migration_file, encoding="utf-8") as f:
+                with Path(migration_file).open(encoding="utf-8") as f:
                     migration_sql = f.read()
 
                 try:
@@ -853,7 +853,7 @@ def execute_migration(db_url: str) -> tuple[bool, str]:
         return False, str(e)
 
 
-def get_organization_config(client, org_id: str) -> str | None:
+def get_organization_config(client: Client, org_id: str) -> str | None:
     """
     Get the configuration_json for an organization from Supabase.
 
@@ -877,7 +877,7 @@ def get_organization_config(client, org_id: str) -> str | None:
     return response.data[0].get("configuration_json")
 
 
-def set_organization_config(client, org_id: str, config_json: str) -> bool:
+def set_organization_config(client: Client, org_id: str, config_json: str) -> bool:
     """
     Set the configuration_json for an organization in Supabase.
 

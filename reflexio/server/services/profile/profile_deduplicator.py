@@ -482,7 +482,7 @@ class ProfileDeduplicator(BaseDeduplicator):
             if profile.custom_features:
                 merged.update(profile.custom_features)
 
-        return merged if merged else None
+        return merged or None
 
     def _merge_extractor_names(self, profiles: list[UserProfile]) -> list[str] | None:
         """
@@ -502,4 +502,4 @@ class ProfileDeduplicator(BaseDeduplicator):
                     if name not in seen:
                         seen.add(name)
                         merged.append(name)
-        return merged if merged else None
+        return merged or None

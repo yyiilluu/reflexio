@@ -96,8 +96,9 @@ class OpenAIClient:
                     "AZURE_OPENAI_DEPLOYMENT"
                 )
                 self.logger.info(
-                    f"Azure OpenAI client initialized with endpoint: {azure_endpoint}, "
-                    f"api_version: {azure_api_version}"
+                    "Azure OpenAI client initialized with endpoint: %s, api_version: %s",
+                    azure_endpoint,
+                    azure_api_version,
                 )
             except Exception as e:
                 raise OpenAIClientError(
@@ -117,7 +118,8 @@ class OpenAIClient:
                 self.is_azure = False
                 self.azure_deployment = None
                 self.logger.info(
-                    f"OpenAI client initialized with model: {self.config.model}"
+                    "OpenAI client initialized with model: %s",
+                    self.config.model,
                 )
             except Exception as e:
                 raise OpenAIClientError(
@@ -317,7 +319,7 @@ class OpenAIClient:
 
         for attempt in range(self.config.max_retries + 1):
             try:
-                self.logger.debug(f"Making OpenAI API request (attempt {attempt + 1})")
+                self.logger.debug("Making OpenAI API request (attempt %s)", attempt + 1)
 
                 if use_parse_api:
                     # Use parse API for Pydantic models
@@ -356,7 +358,10 @@ class OpenAIClient:
             except Exception as e:  # noqa: PERF203
                 last_exception = e
                 self.logger.warning(
-                    f"OpenAI API request failed (attempt {attempt + 1}/{self.config.max_retries + 1}): {str(e)}"
+                    "OpenAI API request failed (attempt %s/%s): %s",
+                    attempt + 1,
+                    self.config.max_retries + 1,
+                    e,
                 )
 
                 # Don't retry on certain errors
@@ -412,9 +417,9 @@ class OpenAIClient:
         for key, value in kwargs.items():
             if hasattr(self.config, key):
                 setattr(self.config, key, value)
-                self.logger.debug(f"Updated config: {key} = {value}")
+                self.logger.debug("Updated config: %s = %s", key, value)
             else:
-                self.logger.warning(f"Unknown config parameter: {key}")
+                self.logger.warning("Unknown config parameter: %s", key)
 
     def get_config(self) -> OpenAIConfig:
         """
@@ -448,7 +453,7 @@ class OpenAIClient:
 
         for attempt in range(self.config.max_retries + 1):
             try:
-                self.logger.debug(f"Getting embedding (attempt {attempt + 1})")
+                self.logger.debug("Getting embedding (attempt %s)", attempt + 1)
 
                 response = self.client.embeddings.create(model=model, input=text)
 
@@ -464,7 +469,10 @@ class OpenAIClient:
             except Exception as e:  # noqa: PERF203
                 last_exception = e
                 self.logger.warning(
-                    f"OpenAI embedding request failed (attempt {attempt + 1}/{self.config.max_retries + 1}): {str(e)}"
+                    "OpenAI embedding request failed (attempt %s/%s): %s",
+                    attempt + 1,
+                    self.config.max_retries + 1,
+                    e,
                 )
 
                 # Don't retry on certain errors

@@ -324,9 +324,9 @@ def test_aggregator_archives_then_deletes_on_success(
         )
         assert len(saved_feedbacks) > 0, "New feedbacks should be created"
         for feedback in saved_feedbacks:
-            assert (
-                feedback.feedback_content != "Old feedback 1"
-                and feedback.feedback_content != "Old feedback 2"
+            assert feedback.feedback_content not in (
+                "Old feedback 1",
+                "Old feedback 2",
             ), "Old feedbacks should not be present"
 
         # 2. Old feedbacks were deleted (not just archived)

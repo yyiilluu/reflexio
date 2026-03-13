@@ -1,9 +1,9 @@
 import json
 import logging
-import os
 import threading
 import time
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from reflexio_commons.api_schema.internal_schema import RequestInteractionDataModel
 from reflexio_commons.api_schema.retriever_schema import (
@@ -28,7 +28,7 @@ from reflexio_commons.api_schema.service_schemas import (
 )
 from reflexio_commons.config_schema import StorageConfigLocal
 
-import reflexio.data as data
+from reflexio import data
 from reflexio.server import LOCAL_STORAGE_PATH
 from reflexio.server.services.storage.error import StorageError
 from reflexio.server.services.storage.storage_base import BaseStorage
@@ -49,11 +49,11 @@ class LocalJsonStorage(BaseStorage):
         org_id: str,
         base_dir: str | None = None,
         config: StorageConfigLocal | None = None,
-    ):
+    ) -> None:
         self.config: StorageConfigLocal | None = config
         if self.config:
             base_dir = self.config.dir_path
-            if not os.path.isabs(base_dir):
+            if not Path(base_dir).is_absolute():
                 err_msg = f"Local Json Storage received a non absolute path {base_dir}"
                 logger.error(err_msg)
                 raise StorageError(err_msg)
@@ -62,38 +62,38 @@ class LocalJsonStorage(BaseStorage):
                 logger.error(err_msg)
                 raise StorageError(err_msg)
             try:
-                if not os.path.exists(base_dir):
-                    os.makedirs(base_dir, exist_ok=True)
+                if not Path(base_dir).exists():
+                    Path(base_dir).mkdir(parents=True, exist_ok=True)
             except OSError as e:
                 err_msg = f"Local Json Storage cannot create directory at {base_dir}"
                 logger.error(err_msg)
                 raise StorageError(err_msg) from e
 
         if base_dir is None:
-            base_dir = LOCAL_STORAGE_PATH or os.path.dirname(data.__file__)
+            base_dir = LOCAL_STORAGE_PATH or str(Path(data.__file__).parent)
         try:
-            if not os.path.exists(base_dir):
-                os.makedirs(base_dir, exist_ok=True)
+            if not Path(base_dir).exists():
+                Path(base_dir).mkdir(parents=True, exist_ok=True)
         except OSError as e:
             err_msg = f"Local Json Storage cannot create directory at {base_dir}"
             logger.error(err_msg)
             raise StorageError(err_msg) from e
-        if not os.path.isdir(base_dir):
+        if not Path(base_dir).is_dir():
             err_msg = f"Local Json Storage specified an invalid directory at {base_dir}"
             logger.error(err_msg)
             raise StorageError(err_msg)
-        logger.info(f"Local Json Storage for org {org_id} uses directory {base_dir}")
+        logger.info("Local Json Storage for org %s uses directory %s", org_id, base_dir)
         super().__init__(org_id, base_dir)
-        self.file_path = os.path.join(base_dir, f"user_profiles_{org_id}.json")
-        if not os.path.exists(self.file_path):
+        self.file_path = str(Path(base_dir) / f"user_profiles_{org_id}.json")
+        if not Path(self.file_path).exists():
             self._save({})
 
     def _load(self) -> dict:
-        with open(self.file_path, encoding="utf-8") as file:
+        with Path(self.file_path).open(encoding="utf-8") as file:
             return json.load(file)
 
-    def _save(self, all_memories: dict):
-        with open(self.file_path, "w", encoding="utf-8") as file:
+    def _save(self, all_memories: dict) -> None:
+        with Path(self.file_path).open("w", encoding="utf-8") as file:
             json.dump(all_memories, file)
 
     def _load_operation_states(self) -> tuple[dict, dict]:
@@ -245,7 +245,7 @@ class LocalJsonStorage(BaseStorage):
             for interaction_dict in interactions
         ]
 
-    def add_user_profile(self, user_id: str, user_profiles: list[UserProfile]):
+    def add_user_profile(self, user_id: str, user_profiles: list[UserProfile]) -> None:
         with self._lock:
             all_memories = self._load()
             if user_id not in all_memories:
@@ -287,7 +287,7 @@ class LocalJsonStorage(BaseStorage):
                     continue
         return max_id + 1
 
-    def add_user_interaction(self, user_id: str, interaction: Interaction):
+    def add_user_interaction(self, user_id: str, interaction: Interaction) -> None:
         with self._lock:
             all_memories = self._load()
             if user_id not in all_memories:
@@ -337,7 +337,7 @@ class LocalJsonStorage(BaseStorage):
 
             self._save(all_memories)
 
-    def delete_user_interaction(self, request: DeleteUserInteractionRequest):
+    def delete_user_interaction(self, request: DeleteUserInteractionRequest) -> None:
         with self._lock:
             all_memories = self._load()
             if (
@@ -357,7 +357,7 @@ class LocalJsonStorage(BaseStorage):
             ]
             self._save(all_memories)
 
-    def delete_user_profile(self, request: DeleteUserProfileRequest):
+    def delete_user_profile(self, request: DeleteUserProfileRequest) -> None:
         with self._lock:
             all_memories = self._load()
             if (
@@ -380,7 +380,7 @@ class LocalJsonStorage(BaseStorage):
 
     def update_user_profile_by_id(
         self, user_id: str, profile_id: str, new_profile: UserProfile
-    ):
+    ) -> None:
         with self._lock:
             all_memories = self._load()
             if user_id not in all_memories or "profiles" not in all_memories[user_id]:
@@ -397,7 +397,7 @@ class LocalJsonStorage(BaseStorage):
                     break
             self._save(all_memories)
 
-    def delete_all_interactions_for_user(self, user_id: str):
+    def delete_all_interactions_for_user(self, user_id: str) -> None:
         with self._lock:
             all_memories = self._load()
             if (
@@ -412,7 +412,7 @@ class LocalJsonStorage(BaseStorage):
             all_memories[user_id]["interactions"] = []
             self._save(all_memories)
 
-    def delete_all_profiles_for_user(self, user_id: str):
+    def delete_all_profiles_for_user(self, user_id: str) -> None:
         with self._lock:
             all_memories = self._load()
             if user_id not in all_memories or "profiles" not in all_memories[user_id]:
@@ -424,7 +424,7 @@ class LocalJsonStorage(BaseStorage):
             all_memories[user_id]["profiles"] = []
             self._save(all_memories)
 
-    def delete_all_profiles(self):
+    def delete_all_profiles(self) -> None:
         """Delete all profiles across all users."""
         with self._lock:
             all_memories = self._load()
@@ -433,7 +433,7 @@ class LocalJsonStorage(BaseStorage):
                     all_memories[user_id]["profiles"] = []
             self._save(all_memories)
 
-    def delete_all_interactions(self):
+    def delete_all_interactions(self) -> None:
         """Delete all interactions across all users."""
         with self._lock:
             all_memories = self._load()
@@ -567,7 +567,10 @@ class LocalJsonStorage(BaseStorage):
             # Atomic save
             self._save(all_memories)
             logger.info(
-                f"Updated {updated_count} profiles from {old_status} to {new_status}"
+                "Updated %s profiles from %s to %s",
+                updated_count,
+                old_status,
+                new_status,
             )
             return updated_count
 
@@ -607,7 +610,7 @@ class LocalJsonStorage(BaseStorage):
 
             # Atomic save
             self._save(all_memories)
-            logger.info(f"Deleted {deleted_count} profiles with status {status}")
+            logger.info("Deleted %s profiles with status %s", deleted_count, status)
             return deleted_count
 
     def get_user_ids_with_status(self, status: Status | None) -> list[str]:
@@ -653,7 +656,7 @@ class LocalJsonStorage(BaseStorage):
     # Request methods
     # ==============================
 
-    def add_request(self, request: Request):
+    def add_request(self, request: Request) -> None:
         """
         Add a request to storage.
 
@@ -701,7 +704,7 @@ class LocalJsonStorage(BaseStorage):
 
         return None
 
-    def delete_request(self, request_id: str):
+    def delete_request(self, request_id: str) -> None:
         """
         Delete a request by its ID and all associated interactions.
 
@@ -778,7 +781,7 @@ class LocalJsonStorage(BaseStorage):
             self._save(all_memories)
             return len(request_ids)
 
-    def delete_all_requests(self):
+    def delete_all_requests(self) -> None:
         """Delete all requests and their associated interactions."""
         with self._lock:
             all_memories = self._load()
@@ -884,7 +887,7 @@ class LocalJsonStorage(BaseStorage):
         # Group requests by session_id first
         groups_dict = {}
         for req in requests:
-            group_name = req.session_id if req.session_id else ""
+            group_name = req.session_id or ""
             if group_name not in groups_dict:
                 groups_dict[group_name] = []
             groups_dict[group_name].append(req)
@@ -986,7 +989,7 @@ class LocalJsonStorage(BaseStorage):
     # Profile Change Log methods
     # ==============================
 
-    def add_profile_change_log(self, profile_change_log: ProfileChangeLog):
+    def add_profile_change_log(self, profile_change_log: ProfileChangeLog) -> None:
         with self._lock:
             all_memories = self._load()
             if "profile_change_logs" not in all_memories:
@@ -1006,7 +1009,7 @@ class LocalJsonStorage(BaseStorage):
             for log_json in all_memories["profile_change_logs"][:limit]
         ]
 
-    def delete_profile_change_log_for_user(self, user_id: str):
+    def delete_profile_change_log_for_user(self, user_id: str) -> None:
         with self._lock:
             all_memories = self._load()
             if "profile_change_logs" not in all_memories:
@@ -1018,7 +1021,7 @@ class LocalJsonStorage(BaseStorage):
             ]
             self._save(all_memories)
 
-    def delete_all_profile_change_logs(self):
+    def delete_all_profile_change_logs(self) -> None:
         with self._lock:
             all_memories = self._load()
             if "profile_change_logs" in all_memories:
@@ -1031,7 +1034,7 @@ class LocalJsonStorage(BaseStorage):
 
     def add_feedback_aggregation_change_log(
         self, change_log: FeedbackAggregationChangeLog
-    ):
+    ) -> None:
         with self._lock:
             all_memories = self._load()
             if "feedback_aggregation_change_logs" not in all_memories:
@@ -1063,7 +1066,7 @@ class LocalJsonStorage(BaseStorage):
         logs.sort(key=lambda x: x.created_at, reverse=True)
         return logs[:limit]
 
-    def delete_all_feedback_aggregation_change_logs(self):
+    def delete_all_feedback_aggregation_change_logs(self) -> None:
         with self._lock:
             all_memories = self._load()
             if "feedback_aggregation_change_logs" in all_memories:
@@ -1172,7 +1175,7 @@ class LocalJsonStorage(BaseStorage):
     # Raw feedback methods
     # ==============================
 
-    def save_raw_feedbacks(self, raw_feedbacks: list[RawFeedback]):
+    def save_raw_feedbacks(self, raw_feedbacks: list[RawFeedback]) -> None:
         all_memories = self._load()
         if "raw_feedbacks" not in all_memories:
             all_memories["raw_feedbacks"] = []
@@ -1342,7 +1345,7 @@ class LocalJsonStorage(BaseStorage):
 
         return count
 
-    def delete_all_raw_feedbacks(self):
+    def delete_all_raw_feedbacks(self) -> None:
         all_memories = self._load()
         if "raw_feedbacks" in all_memories:
             all_memories["raw_feedbacks"] = []
@@ -1350,7 +1353,7 @@ class LocalJsonStorage(BaseStorage):
 
     def delete_all_raw_feedbacks_by_feedback_name(
         self, feedback_name: str, agent_version: str | None = None
-    ):
+    ) -> None:
         """
         Delete all raw feedbacks by feedback name from storage.
 
@@ -1372,7 +1375,10 @@ class LocalJsonStorage(BaseStorage):
             self._save(all_memories)
 
     def _should_delete_feedback(
-        self, feedback, feedback_name: str, agent_version: str | None
+        self,
+        feedback: Feedback | RawFeedback,
+        feedback_name: str,
+        agent_version: str | None,
     ) -> bool:
         """Helper to determine if a feedback should be deleted."""
         if feedback.feedback_name != feedback_name:
@@ -1381,13 +1387,13 @@ class LocalJsonStorage(BaseStorage):
             agent_version is not None and feedback.agent_version != agent_version
         )
 
-    def delete_all_feedbacks(self):
+    def delete_all_feedbacks(self) -> None:
         all_memories = self._load()
         if "feedbacks" in all_memories:
             all_memories["feedbacks"] = []
             self._save(all_memories)
 
-    def delete_feedback(self, feedback_id: int):
+    def delete_feedback(self, feedback_id: int) -> None:
         """Delete a feedback by ID.
 
         Args:
@@ -1405,7 +1411,7 @@ class LocalJsonStorage(BaseStorage):
             ]
             self._save(all_memories)
 
-    def delete_raw_feedback(self, raw_feedback_id: int):
+    def delete_raw_feedback(self, raw_feedback_id: int) -> None:
         """Delete a raw feedback by ID.
 
         Args:
@@ -1425,7 +1431,7 @@ class LocalJsonStorage(BaseStorage):
 
     def delete_all_feedbacks_by_feedback_name(
         self, feedback_name: str, agent_version: str | None = None
-    ):
+    ) -> None:
         """
         Delete all regular feedbacks by feedback name from storage.
 
@@ -1531,7 +1537,9 @@ class LocalJsonStorage(BaseStorage):
                 break
         return feedbacks
 
-    def update_feedback_status(self, feedback_id: int, feedback_status: FeedbackStatus):
+    def update_feedback_status(
+        self, feedback_id: int, feedback_status: FeedbackStatus
+    ) -> None:
         """
         Update the status of a specific feedback.
 
@@ -1565,7 +1573,7 @@ class LocalJsonStorage(BaseStorage):
 
     def archive_feedbacks_by_feedback_name(
         self, feedback_name: str, agent_version: str | None = None
-    ):
+    ) -> None:
         """
         Archive non-APPROVED feedbacks by setting their status field to 'archived'.
         APPROVED feedbacks are left untouched to preserve user-approved feedback.
@@ -1594,7 +1602,7 @@ class LocalJsonStorage(BaseStorage):
 
     def restore_archived_feedbacks_by_feedback_name(
         self, feedback_name: str, agent_version: str | None = None
-    ):
+    ) -> None:
         """
         Restore archived feedbacks by setting their status field to null.
 
@@ -1621,7 +1629,7 @@ class LocalJsonStorage(BaseStorage):
 
     def delete_archived_feedbacks_by_feedback_name(
         self, feedback_name: str, agent_version: str | None = None
-    ):
+    ) -> None:
         """
         Permanently delete feedbacks that have status='archived'.
 
@@ -1792,7 +1800,10 @@ class LocalJsonStorage(BaseStorage):
         all_memories["raw_feedbacks"] = updated_feedbacks
         self._save(all_memories)
         logger.info(
-            f"Updated {updated_count} raw feedbacks from {old_status} to {new_status}"
+            "Updated %s raw feedbacks from %s to %s",
+            updated_count,
+            old_status,
+            new_status,
         )
         return updated_count
 
@@ -1844,7 +1855,7 @@ class LocalJsonStorage(BaseStorage):
 
         all_memories["raw_feedbacks"] = new_feedbacks
         self._save(all_memories)
-        logger.info(f"Deleted {deleted_count} raw feedbacks with status {status}")
+        logger.info("Deleted %s raw feedbacks with status %s", deleted_count, status)
         return deleted_count
 
     def delete_raw_feedbacks_by_ids(self, raw_feedback_ids: list[int]) -> int:
@@ -2106,7 +2117,7 @@ class LocalJsonStorage(BaseStorage):
 
     def save_agent_success_evaluation_results(
         self, results: list[AgentSuccessEvaluationResult]
-    ):
+    ) -> None:
         """
         Save agent success evaluation results to storage.
 
@@ -2149,7 +2160,7 @@ class LocalJsonStorage(BaseStorage):
                 break
         return results
 
-    def delete_all_agent_success_evaluation_results(self):
+    def delete_all_agent_success_evaluation_results(self) -> None:
         """Delete all agent success evaluation results from storage."""
         all_memories = self._load()
         if "agent_success_evaluation_results" in all_memories:
@@ -2355,7 +2366,7 @@ class LocalJsonStorage(BaseStorage):
     # Operation State methods
     # ==============================
 
-    def create_operation_state(self, service_name: str, operation_state: dict):
+    def create_operation_state(self, service_name: str, operation_state: dict) -> None:
         """
         Create operation state for a service.
 
@@ -2377,7 +2388,7 @@ class LocalJsonStorage(BaseStorage):
             }
             self._save(all_memories)
 
-    def upsert_operation_state(self, service_name: str, operation_state: dict):
+    def upsert_operation_state(self, service_name: str, operation_state: dict) -> None:
         """
         Create or update operation state for a service.
 
@@ -2687,7 +2698,7 @@ class LocalJsonStorage(BaseStorage):
 
         return sessions, flat_interactions
 
-    def update_operation_state(self, service_name: str, operation_state: dict):
+    def update_operation_state(self, service_name: str, operation_state: dict) -> None:
         """
         Update operation state for a specific service.
 
@@ -2717,7 +2728,7 @@ class LocalJsonStorage(BaseStorage):
             return []
         return list(all_memories["operation_states"].values())
 
-    def delete_operation_state(self, service_name: str):
+    def delete_operation_state(self, service_name: str) -> None:
         """
         Delete operation state for a specific service.
 
@@ -2729,7 +2740,7 @@ class LocalJsonStorage(BaseStorage):
             all_memories["operation_states"].pop(service_name, None)
             self._save(all_memories)
 
-    def delete_all_operation_states(self):
+    def delete_all_operation_states(self) -> None:
         """Delete all operation states."""
         all_memories = self._load()
         all_memories["operation_states"] = {}
@@ -2855,7 +2866,7 @@ class LocalJsonStorage(BaseStorage):
                 max_id = s.skill_id
         return max_id + 1
 
-    def save_skills(self, skills: list[Skill]):
+    def save_skills(self, skills: list[Skill]) -> None:
         all_memories = self._load()
         if "skills" not in all_memories:
             all_memories["skills"] = []
@@ -2933,7 +2944,7 @@ class LocalJsonStorage(BaseStorage):
                 break
         return results
 
-    def update_skill_status(self, skill_id: int, skill_status: SkillStatus):
+    def update_skill_status(self, skill_id: int, skill_status: SkillStatus) -> None:
         all_memories = self._load()
         if "skills" not in all_memories:
             return
@@ -2946,7 +2957,7 @@ class LocalJsonStorage(BaseStorage):
         all_memories["skills"] = updated_skills
         self._save(all_memories)
 
-    def delete_skill(self, skill_id: int):
+    def delete_skill(self, skill_id: int) -> None:
         all_memories = self._load()
         if "skills" not in all_memories:
             return
@@ -2957,7 +2968,7 @@ class LocalJsonStorage(BaseStorage):
         ]
         self._save(all_memories)
 
-    def delete_all_skills(self):
+    def delete_all_skills(self) -> None:
         """Delete all skills for this organization."""
         all_memories = self._load()
         all_memories["skills"] = []

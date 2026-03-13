@@ -1,11 +1,12 @@
 import logging
 import os
 import sys
+from pathlib import Path
 
 import colorlog
 from dotenv import load_dotenv
 
-import reflexio.data as data
+from reflexio import data
 
 # Load environment variables from .env file
 load_dotenv()
@@ -36,14 +37,14 @@ CONFIG_S3_PATH = os.environ.get("CONFIG_S3_PATH", "").strip()
 # Local file related
 
 LOCAL_STORAGE_PATH = os.environ.get(
-    "LOCAL_STORAGE_PATH", os.path.dirname(data.__file__)
-).strip() or os.path.dirname(data.__file__)
+    "LOCAL_STORAGE_PATH", str(Path(data.__file__).parent)
+).strip() or str(Path(data.__file__).parent)
 
 # Local SQLite database file related
 
 SQLITE_FILE_DIRECTORY = os.environ.get(
-    "SQLITE_FILE_DIRECTORY", os.path.dirname(data.__file__)
-).strip() or os.path.dirname(data.__file__)
+    "SQLITE_FILE_DIRECTORY", str(Path(data.__file__).parent)
+).strip() or str(Path(data.__file__).parent)
 
 # Interaction cleanup configuration
 

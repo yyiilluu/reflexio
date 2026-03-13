@@ -1,5 +1,5 @@
-import os
 from abc import ABC, abstractmethod
+from pathlib import Path
 
 from reflexio_commons.api_schema.internal_schema import RequestInteractionDataModel
 from reflexio_commons.api_schema.retriever_schema import (
@@ -23,7 +23,7 @@ from reflexio_commons.api_schema.service_schemas import (
     UserProfile,
 )
 
-import reflexio.data as data
+from reflexio import data
 
 
 class BaseStorage(ABC):
@@ -31,10 +31,10 @@ class BaseStorage(ABC):
     Base class for storage
     """
 
-    def __init__(self, org_id: str, base_dir: str | None = None):
+    def __init__(self, org_id: str, base_dir: str | None = None) -> None:
         self.org_id = org_id
         if base_dir is None:
-            base_dir = os.path.dirname(data.__file__)
+            base_dir = str(Path(data.__file__).parent)
         self.base_dir = base_dir
 
     # ==============================
@@ -87,14 +87,14 @@ class BaseStorage(ABC):
 
     # create or update methods
     @abstractmethod
-    def add_user_profile(self, user_id: str, user_profiles: list[UserProfile]):
+    def add_user_profile(self, user_id: str, user_profiles: list[UserProfile]) -> None:
         """
         Add the user profile for a given user id
         """
         raise NotImplementedError
 
     @abstractmethod
-    def add_user_interaction(self, user_id: str, interaction: Interaction):
+    def add_user_interaction(self, user_id: str, interaction: Interaction) -> None:
         raise NotImplementedError
 
     @abstractmethod
@@ -112,34 +112,34 @@ class BaseStorage(ABC):
 
     # delete methods
     @abstractmethod
-    def delete_user_interaction(self, request: DeleteUserInteractionRequest):
+    def delete_user_interaction(self, request: DeleteUserInteractionRequest) -> None:
         raise NotImplementedError
 
     @abstractmethod
-    def delete_user_profile(self, request: DeleteUserProfileRequest):
+    def delete_user_profile(self, request: DeleteUserProfileRequest) -> None:
         raise NotImplementedError
 
     @abstractmethod
     def update_user_profile_by_id(
         self, user_id: str, profile_id: str, new_profile: UserProfile
-    ):
+    ) -> None:
         raise NotImplementedError
 
     @abstractmethod
-    def delete_all_interactions_for_user(self, user_id: str):
+    def delete_all_interactions_for_user(self, user_id: str) -> None:
         raise NotImplementedError
 
     @abstractmethod
-    def delete_all_profiles_for_user(self, user_id: str):
+    def delete_all_profiles_for_user(self, user_id: str) -> None:
         raise NotImplementedError
 
     @abstractmethod
-    def delete_all_profiles(self):
+    def delete_all_profiles(self) -> None:
         """Delete all profiles across all users."""
         raise NotImplementedError
 
     @abstractmethod
-    def delete_all_interactions(self):
+    def delete_all_interactions(self) -> None:
         """Delete all interactions across all users."""
         raise NotImplementedError
 
@@ -217,7 +217,7 @@ class BaseStorage(ABC):
     # ==============================
 
     @abstractmethod
-    def add_request(self, request: Request):
+    def add_request(self, request: Request) -> None:
         """
         Add a request to storage.
 
@@ -240,7 +240,7 @@ class BaseStorage(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def delete_request(self, request_id: str):
+    def delete_request(self, request_id: str) -> None:
         """
         Delete a request by its ID.
 
@@ -263,7 +263,7 @@ class BaseStorage(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def delete_all_requests(self):
+    def delete_all_requests(self) -> None:
         """Delete all requests and their associated interactions."""
         raise NotImplementedError
 
@@ -338,7 +338,7 @@ class BaseStorage(ABC):
     # ==============================
 
     @abstractmethod
-    def add_profile_change_log(self, profile_change_log: ProfileChangeLog):
+    def add_profile_change_log(self, profile_change_log: ProfileChangeLog) -> None:
         """Add a profile change log entry"""
         raise NotImplementedError
 
@@ -348,12 +348,12 @@ class BaseStorage(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def delete_profile_change_log_for_user(self, user_id: str):
+    def delete_profile_change_log_for_user(self, user_id: str) -> None:
         """Delete all profile change logs for a user"""
         raise NotImplementedError
 
     @abstractmethod
-    def delete_all_profile_change_logs(self):
+    def delete_all_profile_change_logs(self) -> None:
         """Delete all profile change logs"""
         raise NotImplementedError
 
@@ -364,7 +364,7 @@ class BaseStorage(ABC):
     @abstractmethod
     def add_feedback_aggregation_change_log(
         self, change_log: FeedbackAggregationChangeLog
-    ):
+    ) -> None:
         """Add a feedback aggregation change log entry."""
         raise NotImplementedError
 
@@ -379,7 +379,7 @@ class BaseStorage(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def delete_all_feedback_aggregation_change_logs(self):
+    def delete_all_feedback_aggregation_change_logs(self) -> None:
         """Delete all feedback aggregation change logs."""
         raise NotImplementedError
 
@@ -401,7 +401,9 @@ class BaseStorage(ABC):
     # ==============================
 
     @abstractmethod
-    def search_interaction(self, search_interaction_request: SearchInteractionRequest):
+    def search_interaction(
+        self, search_interaction_request: SearchInteractionRequest
+    ) -> list[Interaction]:
         raise NotImplementedError
 
     @abstractmethod
@@ -410,7 +412,7 @@ class BaseStorage(ABC):
         search_user_profile_request: SearchUserProfileRequest,
         status_filter: list[Status | None] | None = None,
         query_embedding: list[float] | None = None,
-    ):
+    ) -> list[UserProfile]:
         raise NotImplementedError
 
     # ==============================
@@ -418,7 +420,7 @@ class BaseStorage(ABC):
     # ==============================
 
     @abstractmethod
-    def save_raw_feedbacks(self, raw_feedbacks: list[RawFeedback]):
+    def save_raw_feedbacks(self, raw_feedbacks: list[RawFeedback]) -> None:
         raise NotImplementedError
 
     @abstractmethod
@@ -597,14 +599,14 @@ class BaseStorage(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def delete_all_raw_feedbacks(self):
+    def delete_all_raw_feedbacks(self) -> None:
         """Delete all raw feedbacks from storage."""
         raise NotImplementedError
 
     @abstractmethod
     def delete_all_raw_feedbacks_by_feedback_name(
         self, feedback_name: str, agent_version: str | None = None
-    ):
+    ) -> None:
         """
         Delete all raw feedbacks by feedback name from storage.
 
@@ -615,12 +617,12 @@ class BaseStorage(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def delete_all_feedbacks(self):
+    def delete_all_feedbacks(self) -> None:
         """Delete all regular feedbacks from storage."""
         raise NotImplementedError
 
     @abstractmethod
-    def delete_feedback(self, feedback_id: int):
+    def delete_feedback(self, feedback_id: int) -> None:
         """Delete a feedback by ID.
 
         Args:
@@ -629,7 +631,7 @@ class BaseStorage(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def delete_raw_feedback(self, raw_feedback_id: int):
+    def delete_raw_feedback(self, raw_feedback_id: int) -> None:
         """Delete a raw feedback by ID.
 
         Args:
@@ -640,7 +642,7 @@ class BaseStorage(ABC):
     @abstractmethod
     def delete_all_feedbacks_by_feedback_name(
         self, feedback_name: str, agent_version: str | None = None
-    ):
+    ) -> None:
         """
         Delete all regular feedbacks by feedback name from storage.
 
@@ -651,7 +653,9 @@ class BaseStorage(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def update_feedback_status(self, feedback_id: int, feedback_status: FeedbackStatus):
+    def update_feedback_status(
+        self, feedback_id: int, feedback_status: FeedbackStatus
+    ) -> None:
         """
         Update the status of a specific feedback.
 
@@ -667,7 +671,7 @@ class BaseStorage(ABC):
     @abstractmethod
     def archive_feedbacks_by_feedback_name(
         self, feedback_name: str, agent_version: str | None = None
-    ):
+    ) -> None:
         """
         Archive non-APPROVED feedbacks by setting their status field to 'archived'.
         APPROVED feedbacks are left untouched to preserve user-approved feedback.
@@ -692,7 +696,7 @@ class BaseStorage(ABC):
     @abstractmethod
     def restore_archived_feedbacks_by_feedback_name(
         self, feedback_name: str, agent_version: str | None = None
-    ):
+    ) -> None:
         """
         Restore archived feedbacks by setting their status field to null.
 
@@ -716,7 +720,7 @@ class BaseStorage(ABC):
     @abstractmethod
     def delete_archived_feedbacks_by_feedback_name(
         self, feedback_name: str, agent_version: str | None = None
-    ):
+    ) -> None:
         """
         Permanently delete feedbacks that have status='archived'.
 
@@ -819,7 +823,7 @@ class BaseStorage(ABC):
     @abstractmethod
     def save_agent_success_evaluation_results(
         self, results: list[AgentSuccessEvaluationResult]
-    ):
+    ) -> None:
         """
         Save agent success evaluation results to storage.
 
@@ -845,7 +849,7 @@ class BaseStorage(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def delete_all_agent_success_evaluation_results(self):
+    def delete_all_agent_success_evaluation_results(self) -> None:
         """Delete all agent success evaluation results from storage."""
         raise NotImplementedError
 
@@ -877,7 +881,7 @@ class BaseStorage(ABC):
     # ==============================
 
     @abstractmethod
-    def create_operation_state(self, service_name: str, operation_state: dict):
+    def create_operation_state(self, service_name: str, operation_state: dict) -> None:
         """
         Create operation state for a service.
 
@@ -888,7 +892,7 @@ class BaseStorage(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def upsert_operation_state(self, service_name: str, operation_state: dict):
+    def upsert_operation_state(self, service_name: str, operation_state: dict) -> None:
         """
         Create or update operation state for a service.
 
@@ -970,7 +974,7 @@ class BaseStorage(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def update_operation_state(self, service_name: str, operation_state: dict):
+    def update_operation_state(self, service_name: str, operation_state: dict) -> None:
         """
         Update operation state for a specific service.
 
@@ -991,7 +995,7 @@ class BaseStorage(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def delete_operation_state(self, service_name: str):
+    def delete_operation_state(self, service_name: str) -> None:
         """
         Delete operation state for a specific service.
 
@@ -1001,7 +1005,7 @@ class BaseStorage(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def delete_all_operation_states(self):
+    def delete_all_operation_states(self) -> None:
         """Delete all operation states."""
         raise NotImplementedError
 
@@ -1010,7 +1014,7 @@ class BaseStorage(ABC):
     # ==============================
 
     @abstractmethod
-    def save_skills(self, skills: list[Skill]):
+    def save_skills(self, skills: list[Skill]) -> None:
         """
         Save skills with embeddings.
 
@@ -1070,7 +1074,7 @@ class BaseStorage(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def update_skill_status(self, skill_id: int, skill_status: SkillStatus):
+    def update_skill_status(self, skill_id: int, skill_status: SkillStatus) -> None:
         """
         Update the status of a specific skill.
 
@@ -1081,7 +1085,7 @@ class BaseStorage(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def delete_skill(self, skill_id: int):
+    def delete_skill(self, skill_id: int) -> None:
         """
         Delete a skill by ID.
 
@@ -1091,7 +1095,7 @@ class BaseStorage(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def delete_all_skills(self):
+    def delete_all_skills(self) -> None:
         """Delete all skills for this organization."""
         raise NotImplementedError
 

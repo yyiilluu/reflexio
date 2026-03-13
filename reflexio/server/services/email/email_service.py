@@ -128,11 +128,13 @@ class EmailService:
                 },
             )
             logger.info(
-                f"Verification email sent to {to_email}, MessageId: {response['MessageId']}"
+                "Verification email sent to %s, MessageId: %s",
+                to_email,
+                response["MessageId"],
             )
             return True
         except ClientError as e:
-            logger.error(f"Failed to send email to {to_email}: {e}")
+            logger.error("Failed to send email to %s: %s", to_email, e)
             return False
 
 

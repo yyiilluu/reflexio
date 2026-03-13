@@ -46,7 +46,9 @@ def is_s3_config_storage_ready() -> bool:
 
 
 class SimpleConfigurator:
-    def __init__(self, org_id: str, base_dir: str | None = None, config: Config = None):  # type: ignore[reportArgumentType]
+    def __init__(
+        self, org_id: str, base_dir: str | None = None, config: Config | None = None
+    ) -> None:
         self.org_id = org_id
         self.base_dir = base_dir
 
@@ -91,7 +93,7 @@ class SimpleConfigurator:
             return ""
         return context.strip()
 
-    def set_config(self, config: Config):
+    def set_config(self, config: Config) -> None:
         self.config = config
         self.config_storage.save_config(config=config)
 
@@ -99,14 +101,14 @@ class SimpleConfigurator:
         self,
         config_name: str,
         config_value: str | int | float | bool | list | dict | BaseModel,
-    ):
+    ) -> None:
         if config_name not in self.config.model_fields:
             raise ValueError(f"Invalid config name: {config_name}")
 
         setattr(self.config, config_name, config_value)
         self.set_config(config=self.config)
 
-    def delete_config_by_name(self, config_name: str):
+    def delete_config_by_name(self, config_name: str) -> None:
         """
         Delete a config
         Args:
@@ -119,7 +121,7 @@ class SimpleConfigurator:
         setattr(self.config, config_name, default_value)
         self.set_config(config=self.config)
 
-    def delete_all_configs(self):
+    def delete_all_configs(self) -> None:
         """
         Delete all configs
         """
@@ -155,7 +157,7 @@ class SimpleConfigurator:
         """
         storage: BaseStorage
         if isinstance(storage_config, StorageConfigLocal):
-            logger.info(f"Using local storage for org {self.org_id}")
+            logger.info("Using local storage for org %s", self.org_id)
             storage = LocalJsonStorage(
                 org_id=self.org_id,
                 base_dir=self.base_dir,
@@ -226,8 +228,8 @@ class SimpleConfigurator:
                 return True, "Storage initialized successfully"
             return False, "Failed to create storage"
         except StorageError as e:
-            logger.error(f"Storage initialization failed: {e.message}")
+            logger.error("Storage initialization failed: %s", e.message)
             return False, e.message
         except Exception as e:
-            logger.error(f"Storage initialization failed: {str(e)}")
+            logger.error("Storage initialization failed: %s", e)
             return False, str(e)

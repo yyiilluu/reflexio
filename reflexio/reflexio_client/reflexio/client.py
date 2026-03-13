@@ -3,9 +3,10 @@ import logging
 import os
 import time
 import warnings
+from collections.abc import Callable, Coroutine
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
-from typing import TypeVar
+from typing import Any, TypeVar
 from urllib.parse import urljoin
 
 import aiohttp
@@ -109,7 +110,9 @@ class ReflexioClient:
     # Shared thread pool for all instances to maximize efficiency
     _thread_pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="reflexio")
 
-    def __init__(self, api_key: str = "", url_endpoint: str = "", timeout: int = 300):
+    def __init__(
+        self, api_key: str = "", url_endpoint: str = "", timeout: int = 300
+    ) -> None:
         """Initialize the Reflexio client.
 
         The client authenticates using an API key. You can provide the key directly
@@ -143,7 +146,7 @@ class ReflexioClient:
             }
         return {}
 
-    def _convert_to_model(self, data: dict | object, model_class):
+    def _convert_to_model(self, data: dict | object, model_class: type[T]) -> T:
         """Convert dict to model instance if needed.
 
         Args:
@@ -155,13 +158,13 @@ class ReflexioClient:
         """
         if isinstance(data, dict):
             return model_class(**data)
-        return data
+        return data  # type: ignore[reportReturnType]
 
     def _build_request(
         self,
         request: T | dict | None,
         model_class: type[T],
-        **kwargs,
+        **kwargs: Any,
     ) -> T:
         """Build request object from request param or kwargs.
 
@@ -179,7 +182,12 @@ class ReflexioClient:
         filtered_kwargs = {k: v for k, v in kwargs.items() if v is not None}
         return model_class(**filtered_kwargs)
 
-    def _fire_and_forget(self, async_func, *args, **kwargs):
+    def _fire_and_forget(
+        self,
+        async_func: Callable[..., Coroutine[Any, Any, Any]],
+        *args: Any,
+        **kwargs: Any,
+    ) -> None:
         """Execute an async request in fire-and-forget mode.
 
         Args:
@@ -194,8 +202,8 @@ class ReflexioClient:
             self._thread_pool.submit(lambda: asyncio.run(async_func(*args, **kwargs)))
 
     async def _make_async_request(
-        self, method: str, endpoint: str, headers: dict | None = None, **kwargs
-    ):
+        self, method: str, endpoint: str, headers: dict | None = None, **kwargs: Any
+    ) -> Any:
         """Make an async HTTP request to the API."""
         url = urljoin(self.base_url, endpoint)
 
@@ -212,8 +220,8 @@ class ReflexioClient:
             return await response.json()
 
     def _make_request(
-        self, method: str, endpoint: str, headers: dict | None = None, **kwargs
-    ):
+        self, method: str, endpoint: str, headers: dict | None = None, **kwargs: Any
+    ) -> Any:
         """Make an HTTP request to the API.
 
         Args:

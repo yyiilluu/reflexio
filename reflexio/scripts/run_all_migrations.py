@@ -80,12 +80,12 @@ def get_local_config_db_url(org_id: str = "self-host-org") -> str | None:
     Returns:
         str | None: The db_url from storage config, or None if not found/applicable
     """
-    import reflexio.data as data
+    from reflexio import data
 
-    config_dir = os.path.join(os.path.dirname(data.__file__), "configs")
-    config_file = os.path.join(config_dir, f"config_{org_id}.json")
+    config_dir = Path(data.__file__).parent / "configs"
+    config_file = config_dir / f"config_{org_id}.json"
 
-    if not os.path.exists(config_file):
+    if not config_file.exists():
         logger.warning(f"Config file not found: {config_file}")
         return None
 
@@ -93,7 +93,7 @@ def get_local_config_db_url(org_id: str = "self-host-org") -> str | None:
         # Get FERNET_KEYS for decryption
         fernet_keys = os.environ.get("FERNET_KEYS", "").strip()
 
-        with open(config_file, encoding="utf-8") as f:
+        with config_file.open(encoding="utf-8") as f:
             config_raw = f.read()
 
         # Decrypt if encryption is configured

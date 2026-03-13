@@ -748,8 +748,8 @@ def test_add_and_get_requests(supabase_storage, test_data):
     assert found_request.source == request.source
     assert found_request.agent_version == request.agent_version
     # DB may return None for empty session_id, treat both as equivalent
-    expected_group = request.session_id if request.session_id else None
-    actual_group = found_request.session_id if found_request.session_id else None
+    expected_group = request.session_id or None
+    actual_group = found_request.session_id or None
     assert actual_group == expected_group
 
     # Verify interactions

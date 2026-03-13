@@ -1,4 +1,10 @@
+from __future__ import annotations
+
 import logging
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from reflexio.server.services.query_rewriter import QueryRewriter
 
 from reflexio_commons.api_schema.retriever_schema import (
     DashboardStats,
@@ -76,6 +82,8 @@ from reflexio_commons.api_schema.service_schemas import (
     RerunFeedbackGenerationResponse,
     RerunProfileGenerationRequest,
     RerunProfileGenerationResponse,
+    Skill,
+    SkillStatus,
     Status,
     UpgradeProfilesRequest,
     UpgradeProfilesResponse,
@@ -116,7 +124,7 @@ class Reflexio:
         org_id: str,
         storage_base_dir: str | None = None,
         configurator: SimpleConfigurator | None = None,
-    ):
+    ) -> None:
         """Initialize Reflexio with organization ID and storage directory.
 
         Args:
@@ -169,7 +177,7 @@ class Reflexio:
             raise RuntimeError(STORAGE_NOT_CONFIGURED_MSG)
         return storage
 
-    def _get_query_rewriter(self):
+    def _get_query_rewriter(self) -> QueryRewriter:
         """Lazily create and cache a QueryRewriter instance.
 
         Returns:
@@ -689,7 +697,7 @@ class Reflexio:
                 success=False, msg=f"Failed to get dashboard stats: {str(e)}"
             )
 
-    def run_feedback_aggregation(self, agent_version: str, feedback_name: str):
+    def run_feedback_aggregation(self, agent_version: str, feedback_name: str) -> None:
         """Run feedback aggregation for a given agent version.
 
         Args:
@@ -713,7 +721,7 @@ class Reflexio:
         )
         feedback_aggregator.run(feedback_aggregator_request)
 
-    def run_skill_generation(self, agent_version: str, feedback_name: str):
+    def run_skill_generation(self, agent_version: str, feedback_name: str) -> dict:
         """Run skill generation for a given agent version.
 
         Args:
@@ -745,10 +753,10 @@ class Reflexio:
     def get_skills(
         self,
         limit: int = 100,
-        feedback_name=None,
-        agent_version=None,
-        skill_status=None,
-    ):
+        feedback_name: str | None = None,
+        agent_version: str | None = None,
+        skill_status: SkillStatus | None = None,
+    ) -> list[Skill]:
         """Get skills from storage."""
         if not self._is_storage_configured():
             raise ValueError(STORAGE_NOT_CONFIGURED_MSG)
@@ -761,13 +769,13 @@ class Reflexio:
 
     def search_skills(
         self,
-        query=None,
-        feedback_name=None,
-        agent_version=None,
-        skill_status=None,
-        threshold=0.5,
-        count=10,
-    ):
+        query: str | None = None,
+        feedback_name: str | None = None,
+        agent_version: str | None = None,
+        skill_status: SkillStatus | None = None,
+        threshold: float = 0.5,
+        count: int = 10,
+    ) -> list[Skill]:
         """Search skills with hybrid search."""
         if not self._is_storage_configured():
             raise ValueError(STORAGE_NOT_CONFIGURED_MSG)
@@ -781,19 +789,24 @@ class Reflexio:
             match_count=count,
         )
 
-    def update_skill_status(self, skill_id: int, skill_status):
+    def update_skill_status(self, skill_id: int, skill_status: SkillStatus) -> None:
         """Update skill status."""
         if not self._is_storage_configured():
             raise ValueError(STORAGE_NOT_CONFIGURED_MSG)
         self._get_storage().update_skill_status(skill_id, skill_status)
 
-    def delete_skill(self, skill_id: int):
+    def delete_skill(self, skill_id: int) -> None:
         """Delete a skill by ID."""
         if not self._is_storage_configured():
             raise ValueError(STORAGE_NOT_CONFIGURED_MSG)
         self._get_storage().delete_skill(skill_id)
 
-    def export_skills(self, feedback_name=None, agent_version=None, skill_status=None):
+    def export_skills(
+        self,
+        feedback_name: str | None = None,
+        agent_version: str | None = None,
+        skill_status: SkillStatus | None = None,
+    ) -> str:
         """Export skills as markdown."""
         if not self._is_storage_configured():
             raise ValueError(STORAGE_NOT_CONFIGURED_MSG)
@@ -982,9 +995,7 @@ class Reflexio:
                     feedback_name=fb.feedback_name,
                     feedback_content=fb.feedback_content,
                     feedback_status=fb.feedback_status,
-                    feedback_metadata=(
-                        fb.feedback_metadata if fb.feedback_metadata else ""
-                    ),
+                    feedback_metadata=(fb.feedback_metadata or ""),
                 )
                 for fb in request.feedbacks
             ]
