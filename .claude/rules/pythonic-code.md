@@ -47,6 +47,7 @@ paths:
 
 - Use generator expressions `(x for x in ...)` instead of list comprehensions when only iterating once
 - Use `yield` in functions that produce large sequences to avoid loading everything into memory
+- Use `yield from` to delegate to sub-generators — cleaner than a manual `for` loop and correctly propagates `.send()`, `.throw()`, and return values
 
 ## 7. Decorators
 
@@ -59,3 +60,4 @@ paths:
 - Each function should have a single responsibility
 - Keep cyclomatic complexity under 10; refactor complex branches into helper functions or dispatch tables
 - Max 3 levels of indentation per function; refactor deeper nesting with early returns, guard clauses, or helper functions
+- Use guard clauses (early `return`/`raise`/`continue`) to handle edge cases upfront and keep the happy path at the left margin
