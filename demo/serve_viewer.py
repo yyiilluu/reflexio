@@ -29,6 +29,15 @@ load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env")
 # Add demo/ to path so we can import sibling modules
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from evaluate_conversations import (
+    ComparisonResult,
+    compare_conversations,
+    evaluate_single,
+    load_evaluation,
+    match_scenario as eval_match_scenario,
+    save_evaluation,
+    EVALUATIONS_DIR,
+)
 from reflexio.reflexio_client.reflexio import InteractionData, ReflexioClient, ToolUsed
 from scenarios import SCENARIOS
 from simulate_conversation import (
@@ -416,6 +425,46 @@ async def reflexio_status():
     return JSONResponse({"logged_in": reflexio_client is not None})
 
 
+def _load_interactions_from_file(filepath: Path) -> list[InteractionData]:
+    """
+    Load conversation turns from a JSONL file and convert them to InteractionData objects.
+
+    Args:
+        filepath (Path): Path to the JSONL conversation file
+
+    Returns:
+        list[InteractionData]: List of interaction objects ready for Reflexio publish
+    """
+    interactions = []
+    with open(filepath) as f:
+        for line in f:
+            if not line.strip():
+                continue
+            turn = json.loads(line)
+            role = "User" if turn["role"] == "customer" else "Assistant"
+            tool_interactions = turn.get("tool_interactions")
+            if tool_interactions:
+                tools_used = [
+                    ToolUsed(
+                        tool_name=ti["function_name"],
+                        tool_input=ti.get("arguments", {}),
+                    )
+                    for ti in tool_interactions
+                ]
+                interactions.append(
+                    InteractionData(
+                        role=role,
+                        content=turn["content"],
+                        tools_used=tools_used,
+                    )
+                )
+            else:
+                interactions.append(
+                    InteractionData(role=role, content=turn["content"])
+                )
+    return interactions
+
+
 @app.post("/api/reflexio/publish")
 async def reflexio_publish(req: ReflexioPublishRequest):
     """
@@ -432,34 +481,7 @@ async def reflexio_publish(req: ReflexioPublishRequest):
         raise HTTPException(status_code=404, detail="Conversation file not found")
 
     try:
-        interactions = []
-        with open(filepath) as f:
-            for line in f:
-                if not line.strip():
-                    continue
-                turn = json.loads(line)
-                role = "User" if turn["role"] == "customer" else "Assistant"
-                tool_interactions = turn.get("tool_interactions")
-                if tool_interactions:
-                    tools_used = [
-                        ToolUsed(
-                            tool_name=ti["function_name"],
-                            tool_input=ti.get("arguments", {}),
-                        )
-                        for ti in tool_interactions
-                    ]
-                    interactions.append(
-                        InteractionData(
-                            role=role,
-                            content=turn["content"],
-                            tools_used=tools_used,
-                        )
-                    )
-                else:
-                    interactions.append(
-                        InteractionData(role=role, content=turn["content"])
-                    )
-
+        interactions = _load_interactions_from_file(filepath)
         reflexio_client.publish_interaction(
             user_id=req.user_id,
             interactions=interactions,
@@ -542,6 +564,295 @@ async def mem0_publish(req: Mem0PublishRequest):
     except Exception as e:
         logger.warning(f"mem0 publish failed: {e}")
         raise HTTPException(status_code=500, detail=f"Publish failed: {e}")
+
+
+# --- Evaluation endpoints ---
+
+
+class EvaluateRequest(BaseModel):
+    baseline_file: str
+    enhanced_file: str
+    judge_model: str = "gpt-5-mini"
+
+
+class RunComparisonRequest(BaseModel):
+    scenario: str
+    model: str = "gpt-5-mini"
+    judge_model: str = "gpt-5-mini"
+    max_turns: int = 30
+    reflexio_user_id: str = ""
+    reflexio_agent_version: str = "demo-v1"
+    skip_publish: bool = False
+
+
+@app.post("/api/evaluate")
+async def evaluate_pair(req: EvaluateRequest):
+    """
+    Evaluate a pair of existing conversations and save the result.
+    """
+    for fname in [req.baseline_file, req.enhanced_file]:
+        if "\\" in fname or ".." in fname:
+            raise HTTPException(status_code=400, detail=f"Invalid filename: {fname}")
+
+    baseline_path = (OUTPUT_DIR / req.baseline_file).resolve()
+    enhanced_path = (OUTPUT_DIR / req.enhanced_file).resolve()
+
+    if not baseline_path.is_relative_to(OUTPUT_DIR) or not baseline_path.exists():
+        raise HTTPException(
+            status_code=404, detail=f"Baseline file not found: {req.baseline_file}"
+        )
+    if not enhanced_path.is_relative_to(OUTPUT_DIR) or not enhanced_path.exists():
+        raise HTTPException(
+            status_code=404, detail=f"Enhanced file not found: {req.enhanced_file}"
+        )
+
+    try:
+        result = compare_conversations(baseline_path, enhanced_path, req.judge_model)
+        eval_path = save_evaluation(result)
+        return JSONResponse(
+            {
+                "success": True,
+                "evaluation": result.model_dump(),
+                "evaluation_file": eval_path.name,
+            }
+        )
+    except Exception as e:
+        logger.warning(f"Evaluation failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Evaluation failed: {e}")
+
+
+def _stream_baseline_simulation(req: RunComparisonRequest):
+    """
+    Run baseline simulation and yield SSE events for each turn.
+
+    Args:
+        req (RunComparisonRequest): The comparison request
+
+    Yields:
+        str: SSE event strings
+
+    Returns via final 'done' yield: baseline_filename is embedded in the done event
+    """
+    yield _sse_event(
+        "status",
+        {"phase": "baseline", "message": "Starting baseline simulation..."},
+    )
+
+    baseline_filename = None
+    for item in simulate_stream(req.scenario, req.model, req.max_turns):
+        if item["event"] == "turn":
+            yield _sse_event("turn", {**item, "phase": "baseline"})
+        elif item["event"] == "done":
+            baseline_filename = item["filename"]
+        elif item["event"] == "scenario":
+            yield _sse_event("scenario", item)
+
+    yield _sse_event("_baseline_done", {"filename": baseline_filename})
+
+
+def _stream_publish_to_reflexio(req: RunComparisonRequest, baseline_filename: str):
+    """
+    Publish baseline conversation to Reflexio and yield SSE status events.
+
+    Args:
+        req (RunComparisonRequest): The comparison request
+        baseline_filename (str): Filename of the baseline JSONL
+
+    Yields:
+        str: SSE event strings
+    """
+    if req.skip_publish:
+        yield _sse_event(
+            "status",
+            {"phase": "publish", "message": "Skipping publish (skip_publish=true)"},
+        )
+        return
+
+    yield _sse_event(
+        "status",
+        {"phase": "publish", "message": "Publishing baseline to Reflexio..."},
+    )
+    baseline_path = OUTPUT_DIR / baseline_filename
+    interactions = _load_interactions_from_file(baseline_path)
+    reflexio_client.publish_interaction(
+        user_id=req.reflexio_user_id or "demo-user",
+        interactions=interactions,
+        source="demo-comparison",
+        agent_version=req.reflexio_agent_version,
+        wait_for_response=True,
+    )
+    yield _sse_event(
+        "status",
+        {"phase": "publish", "message": f"Published {len(interactions)} interactions"},
+    )
+
+
+def _stream_enhanced_simulation(req: RunComparisonRequest):
+    """
+    Run enhanced simulation with Reflexio context and yield SSE events for each turn.
+
+    Args:
+        req (RunComparisonRequest): The comparison request
+
+    Yields:
+        str: SSE event strings
+    """
+    yield _sse_event(
+        "status",
+        {"phase": "enhanced", "message": "Starting enhanced simulation with Reflexio..."},
+    )
+    rc = {
+        "client": reflexio_client,
+        "user_id": req.reflexio_user_id or "demo-user",
+        "agent_version": req.reflexio_agent_version,
+    }
+
+    enhanced_filename = None
+    for item in simulate_stream(
+        req.scenario, req.model, req.max_turns, reflexio_config=rc
+    ):
+        if item["event"] == "turn":
+            yield _sse_event("turn", {**item, "phase": "enhanced"})
+        elif item["event"] == "done":
+            enhanced_filename = item["filename"]
+
+    yield _sse_event("_enhanced_done", {"filename": enhanced_filename})
+
+
+def _stream_evaluation(
+    baseline_filename: str, enhanced_filename: str, judge_model: str
+):
+    """
+    Evaluate baseline vs enhanced conversations and yield SSE result events.
+
+    Args:
+        baseline_filename (str): Filename of the baseline JSONL
+        enhanced_filename (str): Filename of the enhanced JSONL
+        judge_model (str): LLM model to use as judge
+
+    Yields:
+        str: SSE event strings
+    """
+    yield _sse_event(
+        "status",
+        {"phase": "evaluation", "message": "Evaluating conversations..."},
+    )
+    baseline_path = OUTPUT_DIR / baseline_filename
+    enhanced_path = OUTPUT_DIR / enhanced_filename
+    result = compare_conversations(baseline_path, enhanced_path, judge_model)
+    eval_path = save_evaluation(result)
+
+    yield _sse_event("evaluation", result.model_dump())
+    yield _sse_event(
+        "done",
+        {
+            "evaluation_file": eval_path.name,
+            "baseline_file": baseline_filename,
+            "enhanced_file": enhanced_filename,
+        },
+    )
+
+
+@app.post("/api/compare/stream")
+async def run_comparison_stream(req: RunComparisonRequest):
+    """
+    Stream a full comparison pipeline via SSE: baseline sim -> publish -> enhanced sim -> evaluate.
+    """
+    if req.scenario not in SCENARIOS:
+        raise HTTPException(status_code=400, detail=f"Unknown scenario: {req.scenario}")
+    if reflexio_client is None:
+        raise HTTPException(status_code=401, detail="Not logged in to Reflexio")
+
+    def event_generator():
+        try:
+            # Phase 1: Baseline simulation
+            baseline_filename = None
+            for event in _stream_baseline_simulation(req):
+                data = json.loads(event.split("data: ", 1)[1].split("\n")[0])
+                if data.get("event") == "_baseline_done":
+                    baseline_filename = data["filename"]
+                    continue
+                yield event
+
+            # Phase 2: Publish to Reflexio
+            yield from _stream_publish_to_reflexio(req, baseline_filename)
+
+            # Phase 3: Enhanced simulation
+            enhanced_filename = None
+            for event in _stream_enhanced_simulation(req):
+                data = json.loads(event.split("data: ", 1)[1].split("\n")[0])
+                if data.get("event") == "_enhanced_done":
+                    enhanced_filename = data["filename"]
+                    continue
+                yield event
+
+            # Phase 4: Evaluation
+            yield from _stream_evaluation(
+                baseline_filename, enhanced_filename, req.judge_model
+            )
+
+        except Exception as e:
+            logger.exception("Comparison stream failed")
+            yield _sse_event("error", {"message": str(e)})
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+def _sse_event(event_type: str, data: dict) -> str:
+    """Format a dict as an SSE event string."""
+    payload = {"event": event_type, **data}
+    return f"event: {event_type}\ndata: {json.dumps(payload)}\n\n"
+
+
+@app.get("/api/evaluations")
+async def list_evaluations():
+    """List all saved evaluation results."""
+    EVALUATIONS_DIR.mkdir(parents=True, exist_ok=True)
+    evaluations = []
+    for filepath in sorted(EVALUATIONS_DIR.glob("*_eval.json"), reverse=True):
+        try:
+            result = load_evaluation(filepath)
+            evaluations.append(
+                {
+                    "filename": filepath.name,
+                    "scenario_name": result.scenario_name,
+                    "winner": result.winner,
+                    "baseline_score": result.baseline_metrics.overall_score,
+                    "enhanced_score": result.enhanced_metrics.overall_score,
+                    "evaluated_at": result.evaluated_at,
+                    "judge_model": result.judge_model,
+                }
+            )
+        except Exception as e:
+            logger.warning(f"Failed to load evaluation {filepath.name}: {e}")
+    return JSONResponse(evaluations)
+
+
+@app.get("/api/evaluation/{filename}")
+async def get_evaluation(filename: str):
+    """Get a specific evaluation result."""
+    if "\\" in filename or ".." in filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    filepath = (EVALUATIONS_DIR / filename).resolve()
+    if not filepath.is_relative_to(EVALUATIONS_DIR) or not filepath.exists():
+        raise HTTPException(status_code=404, detail="Evaluation not found")
+    try:
+        result = load_evaluation(filepath)
+        return JSONResponse(result.model_dump())
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to load evaluation: {e}")
+
+
+@app.delete("/api/evaluation/{filename}")
+async def delete_evaluation(filename: str):
+    """Delete an evaluation result."""
+    if "\\" in filename or ".." in filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    filepath = (EVALUATIONS_DIR / filename).resolve()
+    if not filepath.is_relative_to(EVALUATIONS_DIR) or not filepath.exists():
+        raise HTTPException(status_code=404, detail="Evaluation not found")
+    filepath.unlink()
+    return JSONResponse({"success": True})
 
 
 if __name__ == "__main__":
