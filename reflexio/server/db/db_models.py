@@ -32,6 +32,7 @@ class Organization(Base):
     interaction_count = Column(Integer, default=0)
     configuration_json = Column(String, default="")
     is_self_managed = Column(Boolean, default=False)
+    auth_provider = Column(String(20), default="email")
 
 
 class ApiToken(Base):

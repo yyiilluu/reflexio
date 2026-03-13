@@ -257,6 +257,7 @@ class S3OrganizationStorage:
         org.interaction_count = org_dict.get("interaction_count", 0)
         org.configuration_json = org_dict.get("configuration_json", "")
         org.is_self_managed = org_dict.get("is_self_managed", False)
+        org.auth_provider = org_dict.get("auth_provider", "email")
         return org
 
     def _organization_to_dict(self, org: db_models.Organization) -> dict:
@@ -283,6 +284,7 @@ class S3OrganizationStorage:
             "is_self_managed": org.is_self_managed
             if org.is_self_managed is not None
             else False,
+            "auth_provider": org.auth_provider or "email",
         }
 
     def get_organization_by_email(self, email: str) -> Optional[db_models.Organization]:

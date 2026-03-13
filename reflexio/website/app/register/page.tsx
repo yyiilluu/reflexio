@@ -6,7 +6,9 @@ import { useAuth } from "@/lib/auth-context"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { UserPlus, Loader2, AlertCircle, Mail, CheckCircle, Eye, EyeOff, Check, X } from "lucide-react"
+import { Separator } from "@/components/ui/separator"
+import { GoogleIcon } from "@/components/icons/oauth-icons"
+import { UserPlus, Loader2, AlertCircle, Mail, CheckCircle, Eye, EyeOff, Check, X, Github } from "lucide-react"
 import Link from "next/link"
 
 export default function RegisterPage() {
@@ -20,18 +22,22 @@ export default function RegisterPage() {
   const [showAutoVerifiedNotice, setShowAutoVerifiedNotice] = useState(false)
   const [showPasswords, setShowPasswords] = useState(false)
   const [invitationRequired, setInvitationRequired] = useState(false)
+  const [oauthProviders, setOauthProviders] = useState<string[]>([])
   const { register, isAuthenticated, isSelfHost } = useAuth()
   const router = useRouter()
 
   const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || ""
 
-  // Fetch registration config to determine if invitation code is required
+  // Fetch registration config to determine if invitation code is required and OAuth providers
   useEffect(() => {
     fetch(`${API_BASE_URL}/api/registration-config`)
       .then((res) => res.json())
       .then((data) => {
         if (data.invitation_code_required) {
           setInvitationRequired(true)
+        }
+        if (data.oauth_providers) {
+          setOauthProviders(data.oauth_providers)
         }
       })
       .catch(() => {
@@ -47,6 +53,7 @@ export default function RegisterPage() {
     hasSpecial: /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?`~]/.test(password),
   }
   const allChecksPassed = Object.values(passwordChecks).every(Boolean)
+
 
   // Redirect if already authenticated or in self-host mode
   useEffect(() => {
@@ -191,15 +198,90 @@ export default function RegisterPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              {/* Error Alert */}
-              {error && (
-                <div className="bg-destructive/10 border border-destructive/20 rounded-md p-3 flex items-start gap-2">
-                  <AlertCircle className="h-5 w-5 text-destructive flex-shrink-0 mt-0.5" />
-                  <p className="text-sm text-destructive">{error}</p>
-                </div>
-              )}
+            {/* Error Alert */}
+            {error && (
+              <div className="bg-destructive/10 border border-destructive/20 rounded-md p-3 flex items-start gap-2 mb-4">
+                <AlertCircle className="h-5 w-5 text-destructive flex-shrink-0 mt-0.5" />
+                <p className="text-sm text-destructive">{error}</p>
+              </div>
+            )}
 
+            {/* Invitation Code Field (shown at top when required) */}
+            {invitationRequired && (
+              <div className="space-y-2 mb-4">
+                <label
+                  htmlFor="invitationCodeTop"
+                  className="block text-sm font-medium"
+                >
+                  Invitation Code
+                </label>
+                <Input
+                  id="invitationCodeTop"
+                  type="text"
+                  value={invitationCode}
+                  onChange={(e) => {
+                    const sanitized = e.target.value
+                      .trimStart()
+                      .replace(/\s+$/, "")
+                      .toUpperCase()
+                      .replace(/[^A-Z0-9\-]/g, "")
+                    setInvitationCode(sanitized)
+                  }}
+                  required
+                  autoComplete="off"
+                  disabled={isLoading}
+                  placeholder="REFLEXIO-XXXX-XXXX"
+                />
+              </div>
+            )}
+
+            {/* OAuth Buttons */}
+            {oauthProviders.length > 0 && (
+              <div className="space-y-3 mb-4">
+                <div className="grid gap-2">
+                  {oauthProviders.includes("google") && (
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      disabled={invitationRequired && !invitationCode}
+                      onClick={() => {
+                        const params = invitationCode ? `?invitation_code=${encodeURIComponent(invitationCode)}` : ""
+                        window.location.href = `${API_BASE_URL}/api/auth/google/register${params}`
+                      }}
+                    >
+                      <GoogleIcon className="h-4 w-4 mr-2" />
+                      Sign up with Google
+                    </Button>
+                  )}
+                  {oauthProviders.includes("github") && (
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      disabled={invitationRequired && !invitationCode}
+                      onClick={() => {
+                        const params = invitationCode ? `?invitation_code=${encodeURIComponent(invitationCode)}` : ""
+                        window.location.href = `${API_BASE_URL}/api/auth/github/register${params}`
+                      }}
+                    >
+                      <Github className="h-4 w-4 mr-2" />
+                      Sign up with GitHub
+                    </Button>
+                  )}
+                </div>
+                <div className="relative">
+                  <div className="absolute inset-0 flex items-center">
+                    <Separator className="w-full" />
+                  </div>
+                  <div className="relative flex justify-center text-xs uppercase">
+                    <span className="bg-card px-2 text-muted-foreground">
+                      Or register with email
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <form onSubmit={handleSubmit} className="space-y-4">
               {/* Email Field */}
               <div className="space-y-2">
                 <label
@@ -316,32 +398,33 @@ export default function RegisterPage() {
                 </div>
               </div>
 
-              {/* Invitation Code Field */}
-              <div className="space-y-2">
-                <label
-                  htmlFor="invitationCode"
-                  className="block text-sm font-medium"
-                >
-                  Invitation Code {!invitationRequired && <span className="text-muted-foreground font-normal">(optional)</span>}
-                </label>
-                <Input
-                  id="invitationCode"
-                  type="text"
-                  value={invitationCode}
-                  onChange={(e) => {
-                    const sanitized = e.target.value
-                      .trimStart()
-                      .replace(/\s+$/, "")
-                      .toUpperCase()
-                      .replace(/[^A-Z0-9\-]/g, "")
-                    setInvitationCode(sanitized)
-                  }}
-                  required={invitationRequired}
-                  autoComplete="off"
-                  disabled={isLoading}
-                  placeholder="REFLEXIO-XXXX-XXXX"
-                />
-              </div>
+              {/* Invitation Code Field (only show in form when optional) */}
+              {!invitationRequired && (
+                <div className="space-y-2">
+                  <label
+                    htmlFor="invitationCode"
+                    className="block text-sm font-medium"
+                  >
+                    Invitation Code <span className="text-muted-foreground font-normal">(optional)</span>
+                  </label>
+                  <Input
+                    id="invitationCode"
+                    type="text"
+                    value={invitationCode}
+                    onChange={(e) => {
+                      const sanitized = e.target.value
+                        .trimStart()
+                        .replace(/\s+$/, "")
+                        .toUpperCase()
+                        .replace(/[^A-Z0-9\-]/g, "")
+                      setInvitationCode(sanitized)
+                    }}
+                    autoComplete="off"
+                    disabled={isLoading}
+                    placeholder="REFLEXIO-XXXX-XXXX"
+                  />
+                </div>
+              )}
 
               {/* Submit Button */}
               <Button

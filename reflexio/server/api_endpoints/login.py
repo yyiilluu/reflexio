@@ -232,30 +232,30 @@ def register_organization(
     org_email: str,
     password: str,
     session: Session,
+    auth_provider: str = "email",
 ) -> db_models.Organization:
     """
     Register a new organization.
 
     Args:
         org_email (str): Organization email
-        password (str): Plain-text password
+        password (str): Plain-text password (empty string for OAuth accounts)
         session (Session): Database session
+        auth_provider (str): Authentication provider ("email", "google", "github")
 
     Returns:
         db_models.Organization: The created organization
     """
-    org = authenticate_organization(
-        org_email=org_email, password=password, session=session
-    )
-    if org:
+    existing = get_organization_by_email(session=session, email=org_email)
+    if existing:
         raise HTTPException(
             status_code=status.HTTP_412_PRECONDITION_FAILED,
             detail="This email is already registered. Please sign in or use a different email.",
         )
 
-    hashed_password = get_password_hash(password)
+    hashed_password = get_password_hash(password) if password else ""
     org_model = db_models.Organization(
-        email=org_email, hashed_password=hashed_password
+        email=org_email, hashed_password=hashed_password, auth_provider=auth_provider
     )
     org = create_organization(organization=org_model, session=session)
     return org
