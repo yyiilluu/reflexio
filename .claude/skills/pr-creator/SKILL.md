@@ -24,7 +24,26 @@ Run these checks before anything else:
    - If there are commits on `main` that should be in the PR, they are already on the new branch (it forked from `main`). After creating the PR, optionally reset `main` back to `origin/main` to keep it clean.
 5. **Check remote tracking** — verify the current branch tracks a remote and is pushed up-to-date. If not, push with `-u` flag.
 
-### Step 2: Analyze Changes
+### Step 2: Sync with Base Branch
+
+Ensure the feature branch is up-to-date with the base branch to avoid merge conflicts in the PR:
+
+1. **Fetch latest remote** — run `git fetch origin main` (or the base branch)
+2. **Check for divergence** — run `git log HEAD..origin/main --oneline` to see if main has new commits
+3. **Rebase if needed** — if there are new commits on main:
+   a. If there are uncommitted changes, stash them first: `git stash`
+   b. Run `git rebase origin/main`
+   c. **Resolve conflicts** — if the rebase hits conflicts:
+      - Read the conflicting files to understand both sides
+      - Resolve by keeping the correct version (prefer the feature branch changes unless they conflict with newer main changes)
+      - Stage resolved files: `git add <file>`
+      - Continue: `git rebase --continue`
+      - Repeat until rebase completes
+   d. If changes were stashed, pop them: `git stash pop`
+      - If the stash pop conflicts, resolve those too
+4. **Verify clean state** — run `git status` to confirm no unresolved conflicts remain
+
+### Step 3: Analyze Changes
 
 Understand the full scope of changes that will be in the PR:
 
@@ -35,7 +54,7 @@ Understand the full scope of changes that will be in the PR:
 
 **Important:** Look at ALL commits, not just the latest one.
 
-### Step 3: Draft the PR
+### Step 4: Draft the PR
 
 #### Title
 
@@ -71,7 +90,7 @@ Guidelines for the body:
 - Do NOT include any "Generated with Claude Code" footer or bot attribution lines
 - Do NOT include `Co-Authored-By` lines
 
-### Step 4: Create the PR
+### Step 5: Create the PR
 
 Run `gh pr create` using a HEREDOC for the body to preserve formatting:
 
@@ -94,7 +113,7 @@ EOF
 - Any `Co-Authored-By` trailer
 - Any "Generated with Claude Code" footer
 
-### Step 5: Report
+### Step 6: Report
 
 - Return the PR URL so the user can review it
 - If `gh pr create` fails, diagnose the error and suggest fixes
