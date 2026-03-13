@@ -101,9 +101,15 @@ ignore = [
 "__init__.py" = ["F401", "F403"]
 "reflexio/tests/**" = ["S101", "ARG001", "ARG002"]
 "conftest.py" = ["ARG001"]
+"reflexio/reflexio_commons/tests/**" = ["S101", "ARG001", "ARG002"]
+"notebooks/**" = ["S101", "F821", "S105", "S106"]
+"reflexio/scripts/**" = ["S101"]
+"reflexio/server/api.py" = ["B008", "ARG001", "ARG002"]
+"reflexio/server/api_endpoints/**" = ["B008", "ARG001", "ARG002"]
+"demo/**" = ["S101"]
 
 [tool.ruff.lint.mccabe]
-max-complexity = 10
+max-complexity = 20
 
 [tool.ruff.format]
 quote-style = "double"

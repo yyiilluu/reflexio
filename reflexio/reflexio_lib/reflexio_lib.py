@@ -1,105 +1,105 @@
 import logging
-from typing import Optional, Union
 
+from reflexio_commons.api_schema.retriever_schema import (
+    DashboardStats,
+    GetAgentSuccessEvaluationResultsRequest,
+    GetAgentSuccessEvaluationResultsResponse,
+    GetDashboardStatsRequest,
+    GetDashboardStatsResponse,
+    GetFeedbacksRequest,
+    GetFeedbacksResponse,
+    GetInteractionsRequest,
+    GetInteractionsResponse,
+    GetProfileStatisticsResponse,
+    GetRawFeedbacksRequest,
+    GetRawFeedbacksResponse,
+    GetRequestsRequest,
+    GetRequestsResponse,
+    GetUserProfilesRequest,
+    GetUserProfilesResponse,
+    PeriodStats,
+    RequestData,
+    SearchFeedbackRequest,
+    SearchFeedbackResponse,
+    SearchInteractionRequest,
+    SearchInteractionResponse,
+    SearchRawFeedbackRequest,
+    SearchRawFeedbackResponse,
+    SearchUserProfileRequest,
+    SearchUserProfileResponse,
+    Session,
+    SetConfigResponse,
+    TimeSeriesDataPoint,
+    UnifiedSearchRequest,
+    UnifiedSearchResponse,
+    UpdateFeedbackStatusRequest,
+    UpdateFeedbackStatusResponse,
+)
 from reflexio_commons.api_schema.service_schemas import (
-    ProfileChangeLogResponse,
-    FeedbackAggregationChangeLogResponse,
-    PublishUserInteractionRequest,
-    PublishUserInteractionResponse,
-    AddRawFeedbackRequest,
-    AddRawFeedbackResponse,
     AddFeedbackRequest,
     AddFeedbackResponse,
-    RawFeedback,
-    Feedback,
-    DeleteUserProfileRequest,
-    DeleteUserProfileResponse,
-    DeleteUserInteractionRequest,
-    DeleteUserInteractionResponse,
-    DeleteRequestRequest,
-    DeleteRequestResponse,
-    DeleteSessionRequest,
-    DeleteSessionResponse,
+    AddRawFeedbackRequest,
+    AddRawFeedbackResponse,
+    CancelOperationRequest,
+    CancelOperationResponse,
     DeleteFeedbackRequest,
     DeleteFeedbackResponse,
     DeleteRawFeedbackRequest,
     DeleteRawFeedbackResponse,
-    RerunProfileGenerationRequest,
-    RerunProfileGenerationResponse,
-    ManualProfileGenerationRequest,
-    ManualProfileGenerationResponse,
-    RerunFeedbackGenerationRequest,
-    RerunFeedbackGenerationResponse,
-    ManualFeedbackGenerationRequest,
-    ManualFeedbackGenerationResponse,
-    UpgradeProfilesRequest,
-    UpgradeProfilesResponse,
+    DeleteRequestRequest,
+    DeleteRequestResponse,
+    DeleteSessionRequest,
+    DeleteSessionResponse,
+    DeleteUserInteractionRequest,
+    DeleteUserInteractionResponse,
+    DeleteUserProfileRequest,
+    DeleteUserProfileResponse,
     DowngradeProfilesRequest,
     DowngradeProfilesResponse,
-    UpgradeRawFeedbacksRequest,
-    UpgradeRawFeedbacksResponse,
     DowngradeRawFeedbacksRequest,
     DowngradeRawFeedbacksResponse,
-    Status,
-    OperationStatus,
-    OperationStatusInfo,
+    Feedback,
+    FeedbackAggregationChangeLogResponse,
     GetOperationStatusRequest,
     GetOperationStatusResponse,
-    CancelOperationRequest,
-    CancelOperationResponse,
+    ManualFeedbackGenerationRequest,
+    ManualFeedbackGenerationResponse,
+    ManualProfileGenerationRequest,
+    ManualProfileGenerationResponse,
+    OperationStatus,
+    OperationStatusInfo,
+    ProfileChangeLogResponse,
+    PublishUserInteractionRequest,
+    PublishUserInteractionResponse,
+    RawFeedback,
+    RerunFeedbackGenerationRequest,
+    RerunFeedbackGenerationResponse,
+    RerunProfileGenerationRequest,
+    RerunProfileGenerationResponse,
+    Status,
+    UpgradeProfilesRequest,
+    UpgradeProfilesResponse,
+    UpgradeRawFeedbacksRequest,
+    UpgradeRawFeedbacksResponse,
 )
-from reflexio_commons.api_schema.retriever_schema import (
-    GetProfileStatisticsResponse,
-    SearchInteractionRequest,
-    SearchInteractionResponse,
-    SearchUserProfileRequest,
-    SearchUserProfileResponse,
-    GetInteractionsRequest,
-    GetInteractionsResponse,
-    GetUserProfilesRequest,
-    GetUserProfilesResponse,
-    SetConfigResponse,
-    GetRawFeedbacksRequest,
-    GetRawFeedbacksResponse,
-    GetFeedbacksRequest,
-    GetFeedbacksResponse,
-    SearchRawFeedbackRequest,
-    SearchRawFeedbackResponse,
-    SearchFeedbackRequest,
-    SearchFeedbackResponse,
-    GetAgentSuccessEvaluationResultsRequest,
-    GetAgentSuccessEvaluationResultsResponse,
-    GetRequestsRequest,
-    GetRequestsResponse,
-    RequestData,
-    Session,
-    UpdateFeedbackStatusRequest,
-    UpdateFeedbackStatusResponse,
-    GetDashboardStatsRequest,
-    GetDashboardStatsResponse,
-    DashboardStats,
-    PeriodStats,
-    TimeSeriesDataPoint,
-    UnifiedSearchRequest,
-    UnifiedSearchResponse,
-)
+from reflexio_commons.config_schema import Config
+
+from reflexio.server.api_endpoints.request_context import RequestContext
 from reflexio.server.llm.litellm_client import LiteLLMClient, LiteLLMConfig
+from reflexio.server.services.configurator.configurator import SimpleConfigurator
 from reflexio.server.services.feedback.feedback_aggregator import FeedbackAggregator
+from reflexio.server.services.feedback.feedback_generation_service import (
+    FeedbackGenerationService,
+)
 from reflexio.server.services.feedback.feedback_service_utils import (
     FeedbackAggregatorRequest,
 )
 from reflexio.server.services.generation_service import GenerationService
+from reflexio.server.services.operation_state_utils import OperationStateManager
 from reflexio.server.services.profile.profile_generation_service import (
     ProfileGenerationService,
 )
-from reflexio.server.services.feedback.feedback_generation_service import (
-    FeedbackGenerationService,
-)
-from reflexio.server.api_endpoints.request_context import RequestContext
-from reflexio.server.services.configurator.configurator import SimpleConfigurator
-from reflexio_commons.config_schema import Config
-
-from reflexio.server.services.operation_state_utils import OperationStateManager
+from reflexio.server.services.storage.storage_base import BaseStorage
 from reflexio.server.site_var.site_var_manager import SiteVarManager
 
 logger = logging.getLogger(__name__)
@@ -114,8 +114,8 @@ class Reflexio:
     def __init__(
         self,
         org_id: str,
-        storage_base_dir: Optional[str] = None,
-        configurator: SimpleConfigurator = None,
+        storage_base_dir: str | None = None,
+        configurator: SimpleConfigurator | None = None,
     ):
         """Initialize Reflexio with organization ID and storage directory.
 
@@ -141,7 +141,11 @@ class Reflexio:
         generation_model_name = (
             config_llm_config.generation_model_name
             if config_llm_config and config_llm_config.generation_model_name
-            else model_setting.get("default_generation_model_name", "gpt-5-mini")
+            else (
+                model_setting.get("default_generation_model_name", "gpt-5-mini")
+                if isinstance(model_setting, dict)
+                else "gpt-5-mini"
+            )
         )
 
         llm_config = LiteLLMConfig(
@@ -157,6 +161,13 @@ class Reflexio:
             bool: True if storage is configured, False otherwise
         """
         return self.request_context.is_storage_configured()
+
+    def _get_storage(self) -> BaseStorage:
+        """Return storage, raising if not configured."""
+        storage = self.request_context.storage
+        if storage is None:
+            raise RuntimeError(STORAGE_NOT_CONFIGURED_MSG)
+        return storage
 
     def _get_query_rewriter(self):
         """Lazily create and cache a QueryRewriter instance.
@@ -175,9 +186,7 @@ class Reflexio:
             )
         return self._query_rewriter
 
-    def _rewrite_query(
-        self, query: Optional[str], enabled: bool = False
-    ) -> Optional[str]:
+    def _rewrite_query(self, query: str | None, enabled: bool = False) -> str | None:
         """Rewrite a search query using the query rewriter if enabled.
 
         Returns the rewritten FTS query, or None if rewriting is disabled,
@@ -202,7 +211,7 @@ class Reflexio:
 
     def publish_interaction(
         self,
-        request: Union[PublishUserInteractionRequest, dict],
+        request: PublishUserInteractionRequest | dict,
     ) -> PublishUserInteractionResponse:
         """Publish user interactions.
 
@@ -231,7 +240,7 @@ class Reflexio:
 
     def search_interactions(
         self,
-        request: Union[SearchInteractionRequest, dict],
+        request: SearchInteractionRequest | dict,
     ) -> SearchInteractionResponse:
         """Search for user interactions.
 
@@ -247,13 +256,13 @@ class Reflexio:
             )
         if isinstance(request, dict):
             request = SearchInteractionRequest(**request)
-        interactions = self.request_context.storage.search_interaction(request)
+        interactions = self._get_storage().search_interaction(request)
         return SearchInteractionResponse(success=True, interactions=interactions)
 
     def search_profiles(
         self,
-        request: Union[SearchUserProfileRequest, dict],
-        status_filter: Optional[list[Optional[Status]]] = None,
+        request: SearchUserProfileRequest | dict,
+        status_filter: list[Status | None] | None = None,
     ) -> SearchUserProfileResponse:
         """Search for user profiles.
 
@@ -277,7 +286,7 @@ class Reflexio:
         )
         if rewritten:
             request = request.model_copy(update={"query": rewritten})
-        profiles = self.request_context.storage.search_user_profile(
+        profiles = self._get_storage().search_user_profile(
             request, status_filter=status_filter
         )
         return SearchUserProfileResponse(success=True, user_profiles=profiles)
@@ -290,7 +299,7 @@ class Reflexio:
         """
         if not self._is_storage_configured():
             return ProfileChangeLogResponse(success=True, profile_change_logs=[])
-        changelogs = self.request_context.storage.get_profile_change_logs()
+        changelogs = self._get_storage().get_profile_change_logs()
         return ProfileChangeLogResponse(success=True, profile_change_logs=changelogs)
 
     def get_feedback_aggregation_change_logs(
@@ -307,7 +316,7 @@ class Reflexio:
         """
         if not self._is_storage_configured():
             return FeedbackAggregationChangeLogResponse(success=True, change_logs=[])
-        change_logs = self.request_context.storage.get_feedback_aggregation_change_logs(
+        change_logs = self._get_storage().get_feedback_aggregation_change_logs(
             feedback_name=feedback_name, agent_version=agent_version
         )
         return FeedbackAggregationChangeLogResponse(
@@ -316,7 +325,7 @@ class Reflexio:
 
     def delete_profile(
         self,
-        request: Union[DeleteUserProfileRequest, dict],
+        request: DeleteUserProfileRequest | dict,
     ) -> DeleteUserProfileResponse:
         """Delete user profiles.
 
@@ -333,14 +342,14 @@ class Reflexio:
         if isinstance(request, dict):
             request = DeleteUserProfileRequest(**request)
         try:
-            self.request_context.storage.delete_user_profile(request)
+            self._get_storage().delete_user_profile(request)
             return DeleteUserProfileResponse(success=True)
         except Exception as e:
             return DeleteUserProfileResponse(success=False, message=str(e))
 
     def delete_interaction(
         self,
-        request: Union[DeleteUserInteractionRequest, dict],
+        request: DeleteUserInteractionRequest | dict,
     ) -> DeleteUserInteractionResponse:
         """Delete user interactions.
 
@@ -357,14 +366,14 @@ class Reflexio:
         if isinstance(request, dict):
             request = DeleteUserInteractionRequest(**request)
         try:
-            self.request_context.storage.delete_user_interaction(request)
+            self._get_storage().delete_user_interaction(request)
             return DeleteUserInteractionResponse(success=True)
         except Exception as e:
             return DeleteUserInteractionResponse(success=False, message=str(e))
 
     def delete_request(
         self,
-        request: Union[DeleteRequestRequest, dict],
+        request: DeleteRequestRequest | dict,
     ) -> DeleteRequestResponse:
         """Delete a request and all its associated interactions.
 
@@ -381,14 +390,14 @@ class Reflexio:
         if isinstance(request, dict):
             request = DeleteRequestRequest(**request)
         try:
-            self.request_context.storage.delete_request(request.request_id)
+            self._get_storage().delete_request(request.request_id)
             return DeleteRequestResponse(success=True)
         except Exception as e:
             return DeleteRequestResponse(success=False, message=str(e))
 
     def delete_session(
         self,
-        request: Union[DeleteSessionRequest, dict],
+        request: DeleteSessionRequest | dict,
     ) -> DeleteSessionResponse:
         """Delete all requests and interactions in a session.
 
@@ -405,9 +414,7 @@ class Reflexio:
         if isinstance(request, dict):
             request = DeleteSessionRequest(**request)
         try:
-            deleted_count = self.request_context.storage.delete_session(
-                request.session_id
-            )
+            deleted_count = self._get_storage().delete_session(request.session_id)
             return DeleteSessionResponse(
                 success=True, deleted_requests_count=deleted_count
             )
@@ -416,7 +423,7 @@ class Reflexio:
 
     def delete_feedback(
         self,
-        request: Union[DeleteFeedbackRequest, dict],
+        request: DeleteFeedbackRequest | dict,
     ) -> DeleteFeedbackResponse:
         """Delete a feedback by ID.
 
@@ -433,14 +440,14 @@ class Reflexio:
         if isinstance(request, dict):
             request = DeleteFeedbackRequest(**request)
         try:
-            self.request_context.storage.delete_feedback(request.feedback_id)
+            self._get_storage().delete_feedback(request.feedback_id)
             return DeleteFeedbackResponse(success=True)
         except Exception as e:
             return DeleteFeedbackResponse(success=False, message=str(e))
 
     def delete_raw_feedback(
         self,
-        request: Union[DeleteRawFeedbackRequest, dict],
+        request: DeleteRawFeedbackRequest | dict,
     ) -> DeleteRawFeedbackResponse:
         """Delete a raw feedback by ID.
 
@@ -457,14 +464,14 @@ class Reflexio:
         if isinstance(request, dict):
             request = DeleteRawFeedbackRequest(**request)
         try:
-            self.request_context.storage.delete_raw_feedback(request.raw_feedback_id)
+            self._get_storage().delete_raw_feedback(request.raw_feedback_id)
             return DeleteRawFeedbackResponse(success=True)
         except Exception as e:
             return DeleteRawFeedbackResponse(success=False, message=str(e))
 
     def get_interactions(
         self,
-        request: Union[GetInteractionsRequest, dict],
+        request: GetInteractionsRequest | dict,
     ) -> GetInteractionsResponse:
         """Get user interactions.
 
@@ -480,9 +487,7 @@ class Reflexio:
             )
         if isinstance(request, dict):
             request = GetInteractionsRequest(**request)
-        interactions = self.request_context.storage.get_user_interaction(
-            request.user_id
-        )
+        interactions = self._get_storage().get_user_interaction(request.user_id)
         interactions = sorted(interactions, key=lambda x: x.created_at, reverse=True)
 
         # Apply time filters
@@ -507,8 +512,8 @@ class Reflexio:
 
     def get_profiles(
         self,
-        request: Union[GetUserProfilesRequest, dict],
-        status_filter: Optional[list[Optional[Status]]] = None,
+        request: GetUserProfilesRequest | dict,
+        status_filter: list[Status | None] | None = None,
     ) -> GetUserProfilesResponse:
         """Get user profiles.
 
@@ -534,7 +539,7 @@ class Reflexio:
             else:
                 status_filter = [None]  # Default to current profiles
 
-        profiles = self.request_context.storage.get_user_profile(
+        profiles = self._get_storage().get_user_profile(
             request.user_id, status_filter=status_filter
         )
         profiles = sorted(
@@ -566,7 +571,7 @@ class Reflexio:
     def get_all_profiles(
         self,
         limit: int = 100,
-        status_filter: Optional[list[Optional[Status]]] = None,
+        status_filter: list[Status | None] | None = None,
     ) -> GetUserProfilesResponse:
         """Get all user profiles across all users.
 
@@ -583,7 +588,7 @@ class Reflexio:
             )
         if status_filter is None:
             status_filter = [None]  # Default to current profiles
-        profiles = self.request_context.storage.get_all_profiles(
+        profiles = self._get_storage().get_all_profiles(
             limit=limit, status_filter=status_filter
         )
         profiles = sorted(
@@ -604,12 +609,12 @@ class Reflexio:
             return GetInteractionsResponse(
                 success=True, interactions=[], msg=STORAGE_NOT_CONFIGURED_MSG
             )
-        interactions = self.request_context.storage.get_all_interactions(limit=limit)
+        interactions = self._get_storage().get_all_interactions(limit=limit)
         interactions = sorted(interactions, key=lambda x: x.created_at, reverse=True)
         return GetInteractionsResponse(success=True, interactions=interactions)
 
     def get_dashboard_stats(
-        self, request: Union[GetDashboardStatsRequest, dict]
+        self, request: GetDashboardStatsRequest | dict
     ) -> GetDashboardStatsResponse:
         """Get dashboard statistics including counts and time-series data.
 
@@ -644,8 +649,8 @@ class Reflexio:
                 request = GetDashboardStatsRequest(**request)
 
             # Get stats from storage layer
-            stats_dict = self.request_context.storage.get_dashboard_stats(
-                days_back=request.days_back
+            stats_dict = self._get_storage().get_dashboard_stats(
+                days_back=request.days_back or 30
             )
 
             # Convert dict to Pydantic models
@@ -720,10 +725,10 @@ class Reflexio:
         """
         if not self._is_storage_configured():
             raise ValueError(STORAGE_NOT_CONFIGURED_MSG)
-        from reflexio.server.services.feedback.skill_generator import SkillGenerator
         from reflexio.server.services.feedback.feedback_service_utils import (
             SkillGeneratorRequest,
         )
+        from reflexio.server.services.feedback.skill_generator import SkillGenerator
 
         skill_generator = SkillGenerator(
             llm_client=self.llm_client,
@@ -747,7 +752,7 @@ class Reflexio:
         """Get skills from storage."""
         if not self._is_storage_configured():
             raise ValueError(STORAGE_NOT_CONFIGURED_MSG)
-        return self.request_context.storage.get_skills(
+        return self._get_storage().get_skills(
             limit=limit,
             feedback_name=feedback_name,
             agent_version=agent_version,
@@ -767,7 +772,7 @@ class Reflexio:
         if not self._is_storage_configured():
             raise ValueError(STORAGE_NOT_CONFIGURED_MSG)
         rewritten = self._rewrite_query(query)
-        return self.request_context.storage.search_skills(
+        return self._get_storage().search_skills(
             query=rewritten or query,
             feedback_name=feedback_name,
             agent_version=agent_version,
@@ -780,13 +785,13 @@ class Reflexio:
         """Update skill status."""
         if not self._is_storage_configured():
             raise ValueError(STORAGE_NOT_CONFIGURED_MSG)
-        self.request_context.storage.update_skill_status(skill_id, skill_status)
+        self._get_storage().update_skill_status(skill_id, skill_status)
 
     def delete_skill(self, skill_id: int):
         """Delete a skill by ID."""
         if not self._is_storage_configured():
             raise ValueError(STORAGE_NOT_CONFIGURED_MSG)
-        self.request_context.storage.delete_skill(skill_id)
+        self._get_storage().delete_skill(skill_id)
 
     def export_skills(self, feedback_name=None, agent_version=None, skill_status=None):
         """Export skills as markdown."""
@@ -796,14 +801,14 @@ class Reflexio:
             render_skills_markdown,
         )
 
-        skills = self.request_context.storage.get_skills(
+        skills = self._get_storage().get_skills(
             feedback_name=feedback_name,
             agent_version=agent_version,
             skill_status=skill_status,
         )
         return render_skills_markdown(skills)
 
-    def set_config(self, config: Union[Config, dict]) -> SetConfigResponse:
+    def set_config(self, config: Config | dict) -> SetConfigResponse:
         """Set configuration for the organization.
 
         Args:
@@ -821,9 +826,7 @@ class Reflexio:
             # like get_config() don't expose storage_config for security).
             storage_config = config.storage_config
             if storage_config is None:
-                storage_config = (
-                    self.request_context.configurator.get_current_storage_configuration()
-                )
+                storage_config = self.request_context.configurator.get_current_storage_configuration()
                 config.storage_config = storage_config
 
             # Check if storage config is ready to test
@@ -867,7 +870,7 @@ class Reflexio:
 
     def get_raw_feedbacks(
         self,
-        request: Union[GetRawFeedbacksRequest, dict],
+        request: GetRawFeedbacksRequest | dict,
     ) -> GetRawFeedbacksResponse:
         """Get raw feedbacks.
 
@@ -885,8 +888,8 @@ class Reflexio:
             request = GetRawFeedbacksRequest(**request)
 
         try:
-            raw_feedbacks = self.request_context.storage.get_raw_feedbacks(
-                limit=request.limit,
+            raw_feedbacks = self._get_storage().get_raw_feedbacks(
+                limit=request.limit or 100,
                 feedback_name=request.feedback_name,
                 status_filter=request.status_filter,
             )
@@ -896,7 +899,7 @@ class Reflexio:
 
     def add_raw_feedback(
         self,
-        request: Union[AddRawFeedbackRequest, dict],
+        request: AddRawFeedbackRequest | dict,
     ) -> AddRawFeedbackResponse:
         """Add raw feedback directly to storage.
 
@@ -945,7 +948,7 @@ class Reflexio:
                     )
                 )
 
-            self.request_context.storage.save_raw_feedbacks(normalized_feedbacks)
+            self._get_storage().save_raw_feedbacks(normalized_feedbacks)
             return AddRawFeedbackResponse(
                 success=True, added_count=len(normalized_feedbacks)
             )
@@ -954,7 +957,7 @@ class Reflexio:
 
     def add_feedback(
         self,
-        request: Union[AddFeedbackRequest, dict],
+        request: AddFeedbackRequest | dict,
     ) -> AddFeedbackResponse:
         """Add aggregated feedback directly to storage.
 
@@ -973,21 +976,20 @@ class Reflexio:
 
         try:
             # Normalize feedbacks - only keep required fields, reset others to defaults
-            normalized_feedbacks = []
-            for fb in request.feedbacks:
-                normalized_feedbacks.append(
-                    Feedback(
-                        agent_version=fb.agent_version,
-                        feedback_name=fb.feedback_name,
-                        feedback_content=fb.feedback_content,
-                        feedback_status=fb.feedback_status,
-                        feedback_metadata=(
-                            fb.feedback_metadata if fb.feedback_metadata else ""
-                        ),
-                    )
+            normalized_feedbacks = [
+                Feedback(
+                    agent_version=fb.agent_version,
+                    feedback_name=fb.feedback_name,
+                    feedback_content=fb.feedback_content,
+                    feedback_status=fb.feedback_status,
+                    feedback_metadata=(
+                        fb.feedback_metadata if fb.feedback_metadata else ""
+                    ),
                 )
+                for fb in request.feedbacks
+            ]
 
-            self.request_context.storage.save_feedbacks(normalized_feedbacks)
+            self._get_storage().save_feedbacks(normalized_feedbacks)
             return AddFeedbackResponse(
                 success=True, added_count=len(normalized_feedbacks)
             )
@@ -996,7 +998,7 @@ class Reflexio:
 
     def get_feedbacks(
         self,
-        request: Union[GetFeedbacksRequest, dict],
+        request: GetFeedbacksRequest | dict,
     ) -> GetFeedbacksResponse:
         """Get feedbacks.
 
@@ -1014,11 +1016,13 @@ class Reflexio:
             request = GetFeedbacksRequest(**request)
 
         try:
-            feedbacks = self.request_context.storage.get_feedbacks(
-                limit=request.limit,
+            feedbacks = self._get_storage().get_feedbacks(
+                limit=request.limit or 100,
                 feedback_name=request.feedback_name,
                 status_filter=request.status_filter,
-                feedback_status_filter=request.feedback_status_filter,
+                feedback_status_filter=[request.feedback_status_filter]
+                if request.feedback_status_filter
+                else None,
             )
             return GetFeedbacksResponse(success=True, feedbacks=feedbacks)
         except Exception as e:
@@ -1026,7 +1030,7 @@ class Reflexio:
 
     def search_raw_feedbacks(
         self,
-        request: Union[SearchRawFeedbackRequest, dict],
+        request: SearchRawFeedbackRequest | dict,
     ) -> SearchRawFeedbackResponse:
         """Search raw feedbacks with advanced filtering and semantic search.
 
@@ -1048,7 +1052,7 @@ class Reflexio:
                 self._rewrite_query(request.query, enabled=bool(request.query_rewrite))
                 or request.query
             )
-            raw_feedbacks = self.request_context.storage.search_raw_feedbacks(
+            raw_feedbacks = self._get_storage().search_raw_feedbacks(
                 query=query,
                 user_id=request.user_id,
                 agent_version=request.agent_version,
@@ -1071,7 +1075,7 @@ class Reflexio:
 
     def search_feedbacks(
         self,
-        request: Union[SearchFeedbackRequest, dict],
+        request: SearchFeedbackRequest | dict,
     ) -> SearchFeedbackResponse:
         """Search feedbacks with advanced filtering and semantic search.
 
@@ -1093,7 +1097,7 @@ class Reflexio:
                 self._rewrite_query(request.query, enabled=bool(request.query_rewrite))
                 or request.query
             )
-            feedbacks = self.request_context.storage.search_feedbacks(
+            feedbacks = self._get_storage().search_feedbacks(
                 query=query,
                 agent_version=request.agent_version,
                 feedback_name=request.feedback_name,
@@ -1114,7 +1118,7 @@ class Reflexio:
 
     def get_agent_success_evaluation_results(
         self,
-        request: Union[GetAgentSuccessEvaluationResultsRequest, dict],
+        request: GetAgentSuccessEvaluationResultsRequest | dict,
     ) -> GetAgentSuccessEvaluationResultsResponse:
         """Get agent success evaluation results.
 
@@ -1134,8 +1138,8 @@ class Reflexio:
             request = GetAgentSuccessEvaluationResultsRequest(**request)
 
         try:
-            results = self.request_context.storage.get_agent_success_evaluation_results(
-                limit=request.limit, agent_version=request.agent_version
+            results = self._get_storage().get_agent_success_evaluation_results(
+                limit=request.limit or 100, agent_version=request.agent_version
             )
             return GetAgentSuccessEvaluationResultsResponse(
                 success=True, agent_success_evaluation_results=results
@@ -1147,7 +1151,7 @@ class Reflexio:
 
     def get_requests(
         self,
-        request: Union[GetRequestsRequest, dict],
+        request: GetRequestsRequest | dict,
     ) -> GetRequestsResponse:
         """Get requests with their associated interactions, grouped by session.
 
@@ -1166,7 +1170,7 @@ class Reflexio:
 
         try:
             # Get requests with interactions from storage (already grouped by session)
-            grouped_results = self.request_context.storage.get_sessions(
+            grouped_results = self._get_storage().get_sessions(
                 user_id=request.user_id,
                 request_id=request.request_id,
                 session_id=request.session_id,
@@ -1210,7 +1214,7 @@ class Reflexio:
 
     def update_feedback_status(
         self,
-        request: Union[UpdateFeedbackStatusRequest, dict],
+        request: UpdateFeedbackStatusRequest | dict,
     ) -> UpdateFeedbackStatusResponse:
         """Update the status of a specific feedback.
 
@@ -1228,7 +1232,7 @@ class Reflexio:
             request = UpdateFeedbackStatusRequest(**request)
 
         try:
-            self.request_context.storage.update_feedback_status(
+            self._get_storage().update_feedback_status(
                 feedback_id=request.feedback_id,
                 feedback_status=request.feedback_status,
             )
@@ -1240,7 +1244,7 @@ class Reflexio:
 
     def rerun_profile_generation(
         self,
-        request: Union[RerunProfileGenerationRequest, dict],
+        request: RerunProfileGenerationRequest | dict,
     ) -> RerunProfileGenerationResponse:
         """Rerun profile generation for one or all users with filtered interactions.
 
@@ -1268,11 +1272,11 @@ class Reflexio:
         )
 
         # Delegate to service
-        return service.run_rerun(request)
+        return service.run_rerun(request)  # type: ignore[reportArgumentType]
 
     def manual_profile_generation(
         self,
-        request: Union[ManualProfileGenerationRequest, dict],
+        request: ManualProfileGenerationRequest | dict,
     ) -> ManualProfileGenerationResponse:
         """Manually trigger profile generation with window-sized interactions and CURRENT output.
 
@@ -1310,7 +1314,7 @@ class Reflexio:
 
     def rerun_feedback_generation(
         self,
-        request: Union[RerunFeedbackGenerationRequest, dict],
+        request: RerunFeedbackGenerationRequest | dict,
     ) -> RerunFeedbackGenerationResponse:
         """Rerun feedback generation with filtered interactions.
 
@@ -1338,11 +1342,11 @@ class Reflexio:
         )
 
         # Delegate to service
-        return service.run_rerun(request)
+        return service.run_rerun(request)  # type: ignore[reportArgumentType]
 
     def manual_feedback_generation(
         self,
-        request: Union[ManualFeedbackGenerationRequest, dict],
+        request: ManualFeedbackGenerationRequest | dict,
     ) -> ManualFeedbackGenerationResponse:
         """Manually trigger feedback generation with window-sized interactions and CURRENT output.
 
@@ -1385,7 +1389,7 @@ class Reflexio:
 
     def upgrade_all_profiles(
         self,
-        request: Union[UpgradeProfilesRequest, dict] = None,
+        request: UpgradeProfilesRequest | dict | None = None,
     ) -> UpgradeProfilesResponse:
         """Upgrade all profiles by deleting old ARCHIVED, archiving CURRENT, and promoting PENDING.
 
@@ -1418,11 +1422,11 @@ class Reflexio:
         )
 
         # Delegate to service
-        return service.run_upgrade(request)
+        return service.run_upgrade(request)  # type: ignore[reportArgumentType]
 
     def downgrade_all_profiles(
         self,
-        request: Union[DowngradeProfilesRequest, dict] = None,
+        request: DowngradeProfilesRequest | dict | None = None,
     ) -> DowngradeProfilesResponse:
         """Downgrade all profiles by archiving CURRENT and restoring ARCHIVED.
 
@@ -1455,7 +1459,7 @@ class Reflexio:
         )
 
         # Delegate to service
-        return service.run_downgrade(request)
+        return service.run_downgrade(request)  # type: ignore[reportArgumentType]
 
     def get_profile_statistics(self) -> GetProfileStatisticsResponse:
         """Get profile count statistics by status.
@@ -1473,7 +1477,7 @@ class Reflexio:
                 msg=STORAGE_NOT_CONFIGURED_MSG,
             )
         try:
-            stats = self.request_context.storage.get_profile_statistics()
+            stats = self._get_storage().get_profile_statistics()
             return GetProfileStatisticsResponse(success=True, **stats)
         except Exception as e:
             return GetProfileStatisticsResponse(
@@ -1481,7 +1485,7 @@ class Reflexio:
             )
 
     def get_operation_status(
-        self, request: Union[GetOperationStatusRequest, dict]
+        self, request: GetOperationStatusRequest | dict
     ) -> GetOperationStatusResponse:
         """Get the status of an operation.
 
@@ -1505,7 +1509,7 @@ class Reflexio:
             progress_key = f"{request.service_name}::{org_id}::progress"
 
             # Get operation state from storage
-            state_entry = self.request_context.storage.get_operation_state(progress_key)
+            state_entry = self._get_storage().get_operation_state(progress_key)
 
             if not state_entry:
                 return GetOperationStatusResponse(
@@ -1520,10 +1524,11 @@ class Reflexio:
             # Auto-recover stale IN_PROGRESS operations so the frontend
             # doesn't show "in progress" forever after a crash/restart
             if operation_state.get("status") == OperationStatus.IN_PROGRESS.value:
+                from datetime import datetime, timezone
+
                 from reflexio.server.services.operation_state_utils import (
                     BATCH_STALE_PROGRESS_SECONDS,
                 )
-                from datetime import datetime, timezone
 
                 started_at = operation_state.get("started_at")
                 if started_at is not None:
@@ -1542,7 +1547,7 @@ class Reflexio:
                             f"Auto-recovered: operation was stuck for {elapsed}s "
                             f"(threshold: {BATCH_STALE_PROGRESS_SECONDS}s)"
                         )
-                        self.request_context.storage.update_operation_state(
+                        self._get_storage().update_operation_state(
                             progress_key, operation_state
                         )
 
@@ -1559,7 +1564,7 @@ class Reflexio:
             )
 
     def cancel_operation(
-        self, request: Union[CancelOperationRequest, dict]
+        self, request: CancelOperationRequest | dict
     ) -> CancelOperationResponse:
         """Cancel an in-progress operation (rerun or manual generation).
 
@@ -1590,7 +1595,7 @@ class Reflexio:
             cancelled_services = []
             for svc in service_names:
                 mgr = OperationStateManager(
-                    storage=self.request_context.storage,
+                    storage=self._get_storage(),
                     org_id=self.request_context.org_id,
                     service_name=svc,
                 )
@@ -1603,12 +1608,11 @@ class Reflexio:
                     cancelled_services=cancelled_services,
                     msg=f"Cancellation requested for: {', '.join(cancelled_services)}",
                 )
-            else:
-                return CancelOperationResponse(
-                    success=True,
-                    cancelled_services=[],
-                    msg="No in-progress operations found to cancel",
-                )
+            return CancelOperationResponse(
+                success=True,
+                cancelled_services=[],
+                msg="No in-progress operations found to cancel",
+            )
 
         except Exception as e:
             return CancelOperationResponse(
@@ -1617,7 +1621,7 @@ class Reflexio:
 
     def unified_search(
         self,
-        request: Union[UnifiedSearchRequest, dict],
+        request: UnifiedSearchRequest | dict,
         org_id: str,
     ) -> UnifiedSearchResponse:
         """
@@ -1645,14 +1649,14 @@ class Reflexio:
         return run_unified_search(
             request=request,
             org_id=org_id,
-            storage=self.request_context.storage,
+            storage=self._get_storage(),
             api_key_config=api_key_config,
             prompt_manager=self.request_context.prompt_manager,
         )
 
     def upgrade_all_raw_feedbacks(
         self,
-        request: Union[UpgradeRawFeedbacksRequest, dict] = None,
+        request: UpgradeRawFeedbacksRequest | dict | None = None,
     ) -> UpgradeRawFeedbacksResponse:
         """Upgrade all raw feedbacks by deleting old ARCHIVED, archiving CURRENT, and promoting PENDING.
 
@@ -1686,11 +1690,11 @@ class Reflexio:
         )
 
         # Delegate to service
-        return service.run_upgrade(request)
+        return service.run_upgrade(request)  # type: ignore[reportArgumentType]
 
     def downgrade_all_raw_feedbacks(
         self,
-        request: Union[DowngradeRawFeedbacksRequest, dict] = None,
+        request: DowngradeRawFeedbacksRequest | dict | None = None,
     ) -> DowngradeRawFeedbacksResponse:
         """Downgrade all raw feedbacks by archiving CURRENT and restoring ARCHIVED.
 
@@ -1724,4 +1728,4 @@ class Reflexio:
         )
 
         # Delegate to service
-        return service.run_downgrade(request)
+        return service.run_downgrade(request)  # type: ignore[reportArgumentType]

@@ -34,7 +34,6 @@ import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 # Add parent directories to path for imports
 script_dir = Path(__file__).resolve().parent
@@ -51,8 +50,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 from reflexio.server.services.storage.supabase_storage_utils import (
-    is_localhost_url,
     extract_db_url_from_config_json,
+    is_localhost_url,
 )
 
 
@@ -71,7 +70,7 @@ def get_self_host_mode() -> bool:
     return os.getenv("SELF_HOST", "false").lower() == "true"
 
 
-def get_local_config_db_url(org_id: str = "self-host-org") -> Optional[str]:
+def get_local_config_db_url(org_id: str = "self-host-org") -> str | None:
     """
     Load local config and extract db_url for self-host mode.
 
@@ -311,7 +310,7 @@ def run_self_host_migration(dry_run: bool = False) -> list[MigrationResult]:
 def run_cloud_migrations(
     dry_run: bool = False,
     continue_on_error: bool = False,
-    target_org_id: Optional[str] = None,
+    target_org_id: str | None = None,
 ) -> list[MigrationResult]:
     """
     Run migrations for all organizations in cloud mode.
@@ -458,8 +457,7 @@ def main() -> int:
                 f"{failed_count} migration(s) failed, but continuing (--continue-on-error)"
             )
         return 0
-    else:
-        return 1 if failed_count > 0 else 0
+    return 1 if failed_count > 0 else 0
 
 
 if __name__ == "__main__":

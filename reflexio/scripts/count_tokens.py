@@ -264,11 +264,11 @@ Examples:
 
     # Count tokens
     if target_path.is_file():
-        print(f"📄 Type: Single file\n")
+        print("📄 Type: Single file\n")
         result = count_tokens_in_file(target_path, args.model)
         print_results([result], show_details=False)
     elif target_path.is_dir():
-        print(f"📁 Type: Directory")
+        print("📁 Type: Directory")
         print(f"🔍 Extensions: {', '.join(extensions)}\n")
         results = count_tokens_in_directory(target_path, extensions, args.model)
         print_results(results, show_details=not args.no_details)

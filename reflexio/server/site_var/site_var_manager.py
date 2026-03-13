@@ -1,8 +1,8 @@
 import json
 import logging
 import os
+
 import redis
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +14,7 @@ class SiteVarManager:
     Supports both .json and .txt files.
     """
 
-    def __init__(self, source_dir: Optional[str] = None, enable_redis: bool = False):
+    def __init__(self, source_dir: str | None = None, enable_redis: bool = False):
         """
         Initialize the SiteVarManager with a source directory for site variable files.
 
@@ -40,7 +40,7 @@ class SiteVarManager:
             )
             os.makedirs(self.source_dir, exist_ok=True)
 
-    def get_site_var(self, name: str) -> Optional[str | dict]:
+    def get_site_var(self, name: str) -> str | dict | None:
         """
         Get a site variable by name. Checks in-memory cache first, then Redis cache (if enabled), then loads from file.
         Supports both JSON and text files.
@@ -62,7 +62,7 @@ class SiteVarManager:
                 cached_value = self.redis.get(name)
                 if cached_value is not None:
                     logger.debug("Retrieved site var %s from Redis cache", name)
-                    decoded_value = cached_value.decode("utf-8")
+                    decoded_value = cached_value.decode("utf-8")  # type: ignore[reportAttributeAccessIssue]
                     # Try to parse as JSON for dict values
                     try:
                         parsed_value = json.loads(decoded_value)
@@ -88,9 +88,8 @@ class SiteVarManager:
                     self.redis.set(name, redis_value)
                     logger.debug("Cached site var %s in Redis", name)
                 return content
-            else:
-                logger.warning("Site var %s not found in Redis or files", name)
-                return None
+            logger.warning("Site var %s not found in Redis or files", name)
+            return None
 
         except redis.RedisError as e:
             logger.error("Redis error while getting site var %s: %s", name, str(e))
@@ -181,7 +180,7 @@ class SiteVarManager:
             logger.error("Error listing site variables: %s", str(e))
             return []
 
-    def _find_file_path(self, name: str) -> Optional[str]:
+    def _find_file_path(self, name: str) -> str | None:
         """
         Find the file path for a site variable, checking both .json and .txt extensions.
 
@@ -196,12 +195,11 @@ class SiteVarManager:
 
         if os.path.exists(json_path):
             return json_path
-        elif os.path.exists(txt_path):
+        if os.path.exists(txt_path):
             return txt_path
-        else:
-            return None
+        return None
 
-    def _load_file_content(self, file_path: str) -> Optional[str | dict]:
+    def _load_file_content(self, file_path: str) -> str | dict | None:
         """
         Load content from a file, handling both JSON and text files.
 
@@ -218,10 +216,8 @@ class SiteVarManager:
 
             if file_path.endswith(".txt"):
                 with open(file_path, encoding="utf-8") as f:
-                    content = f.read().strip()
-                # For text files, return content as-is
-                return content
-            elif file_path.endswith(".json"):
+                    return f.read().strip()
+            if file_path.endswith(".json"):
                 try:
                     # Parse to validate JSON, then return as string
                     with open(file_path, encoding="utf-8") as f:
@@ -239,7 +235,7 @@ class SiteVarManager:
             logger.error("Error reading file %s: %s", file_path, str(e))
             return None
 
-    def _load_from_file(self, name: str) -> Optional[str | dict]:
+    def _load_from_file(self, name: str) -> str | dict | None:
         """
         Load a site variable directly from file (fallback method).
 
@@ -266,7 +262,6 @@ class SiteVarManager:
         """
         if filename.endswith(".json"):
             return filename[:-5]
-        elif filename.endswith(".txt"):
+        if filename.endswith(".txt"):
             return filename[:-4]
-        else:
-            return filename
+        return filename

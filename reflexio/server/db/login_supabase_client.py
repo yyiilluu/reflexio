@@ -6,18 +6,16 @@ login database, which stores organization credentials and API keys.
 """
 
 import logging
-from typing import Optional
 
-from supabase import create_client, Client
-
-from reflexio.server import LOGIN_SUPABASE_URL, LOGIN_SUPABASE_KEY
+from reflexio.server import LOGIN_SUPABASE_KEY, LOGIN_SUPABASE_URL
+from supabase import Client, create_client
 
 logger = logging.getLogger(__name__)
 
-_login_supabase_client: Optional[Client] = None
+_login_supabase_client: Client | None = None
 
 
-def get_login_supabase_client() -> Optional[Client]:
+def get_login_supabase_client() -> Client | None:
     """
     Get the singleton Supabase client for the login database.
 

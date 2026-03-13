@@ -6,29 +6,29 @@ import json
 import logging
 import re
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any
 from urllib.parse import urlparse
 
+import psycopg2
 from reflexio_commons.api_schema.service_schemas import (
-    UserProfile,
-    Interaction,
-    Request,
-    ProfileTimeToLive,
-    UserActionType,
-    ProfileChangeLog,
-    RawFeedback,
-    Feedback,
-    FeedbackSnapshot,
-    FeedbackUpdateEntry,
-    FeedbackAggregationChangeLog,
-    Skill,
-    SkillStatus,
     AgentSuccessEvaluationResult,
     BlockingIssue,
     BlockingIssueKind,
+    Feedback,
+    FeedbackAggregationChangeLog,
+    FeedbackSnapshot,
+    FeedbackUpdateEntry,
+    Interaction,
+    ProfileChangeLog,
+    ProfileTimeToLive,
+    RawFeedback,
+    Request,
+    Skill,
+    SkillStatus,
     ToolUsed,
+    UserActionType,
+    UserProfile,
 )
-import psycopg2
 
 logger = logging.getLogger(__name__)
 
@@ -547,14 +547,14 @@ def response_to_skill(item: dict[str, Any]) -> Skill:
     blocking_issues = []
     blocking_issues_data = item.get("blocking_issues")
     if blocking_issues_data and isinstance(blocking_issues_data, list):
-        for bi in blocking_issues_data:
-            if isinstance(bi, dict):
-                blocking_issues.append(
-                    BlockingIssue(
-                        kind=BlockingIssueKind(bi["kind"]),
-                        details=bi.get("details", ""),
-                    )
-                )
+        blocking_issues.extend(
+            BlockingIssue(
+                kind=BlockingIssueKind(bi["kind"]),
+                details=bi.get("details", ""),
+            )
+            for bi in blocking_issues_data
+            if isinstance(bi, dict)
+        )
 
     # Parse created_at timestamp
     created_at = item.get("created_at")
@@ -609,16 +609,17 @@ def is_localhost_url(db_url: str) -> bool:
         return False
 
 
-def get_latest_migration_version() -> Optional[str]:
+def get_latest_migration_version() -> str | None:
     """
     Get the version prefix of the latest migration file on disk.
 
     Returns:
         str | None: The version string of the latest migration, or None if no migrations found
     """
-    import os
     import glob
+    import os
     from pathlib import Path
+
     import reflexio
 
     migration_dir = (
@@ -669,7 +670,7 @@ def check_migration_needed(db_url: str) -> bool:
             conn.close()
 
 
-def extract_db_url_from_config_json(config_json_str: str) -> Optional[str]:
+def extract_db_url_from_config_json(config_json_str: str) -> str | None:
     """
     Parse a (already-decrypted) config JSON string and extract the database URL.
 
@@ -749,9 +750,10 @@ def execute_migration(db_url: str) -> tuple[bool, str]:
     Returns:
         tuple[bool, str]: (success, message)
     """
-    import os
     import glob
+    import os
     from pathlib import Path
+
     import reflexio
     from reflexio.server.services.storage.supabase_migrations import DATA_MIGRATIONS
 
@@ -829,8 +831,7 @@ def execute_migration(db_url: str) -> tuple[bool, str]:
 
         if executed_migrations:
             return True, f"Executed migrations: {', '.join(executed_migrations)}"
-        else:
-            return True, "All migrations already applied"
+        return True, "All migrations already applied"
 
     except psycopg2.OperationalError as e:
         error_msg = str(e)
@@ -842,13 +843,12 @@ def execute_migration(db_url: str) -> tuple[bool, str]:
                 False,
                 f"DNS resolution failed. Try using the pooler URL (port 6543) for IPv4 support. Error: {error_msg}",
             )
-        elif "connection refused" in error_msg.lower():
+        if "connection refused" in error_msg.lower():
             return (
                 False,
                 f"Connection refused. Check if your IP is allowed in Supabase network settings. Error: {error_msg}",
             )
-        else:
-            return False, f"Database connection error: {error_msg}"
+        return False, f"Database connection error: {error_msg}"
     except Exception as e:
         return False, str(e)
 

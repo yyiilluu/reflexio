@@ -13,13 +13,13 @@ import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any
 
 import litellm
 from dotenv import load_dotenv
 from pydantic import BaseModel
-
 from reflexio_commons.config_schema import APIKeyConfig
+
 from reflexio.server.llm.llm_utils import is_pydantic_model
 
 # Load environment variables from .env file
@@ -50,12 +50,12 @@ class LiteLLMConfig:
 
     model: str
     temperature: float = 0.7
-    max_tokens: Optional[int] = None
+    max_tokens: int | None = None
     timeout: int = 120
     max_retries: int = 1
     retry_delay: float = 1.0
     top_p: float = 1.0
-    api_key_config: Optional[APIKeyConfig] = None
+    api_key_config: APIKeyConfig | None = None
 
 
 class LiteLLMClientError(Exception):
@@ -116,8 +116,8 @@ class LiteLLMClient:
         self._api_key, self._api_base, self._api_version = self._resolve_api_key()
 
     def _resolve_api_key(
-        self, model: Optional[str] = None, for_embedding: bool = False
-    ) -> tuple[Optional[str], Optional[str], Optional[str]]:
+        self, model: str | None = None, for_embedding: bool = False
+    ) -> tuple[str | None, str | None, str | None]:
         """
         Resolve API key, base URL, and version from api_key_config based on model name.
 
@@ -180,11 +180,11 @@ class LiteLLMClient:
     def generate_response(
         self,
         prompt: str,
-        system_message: Optional[str] = None,
-        images: Optional[list[Union[str, bytes, dict]]] = None,
-        image_media_type: Optional[str] = None,
+        system_message: str | None = None,
+        images: list[str | bytes | dict] | None = None,
+        image_media_type: str | None = None,
         **kwargs,
-    ) -> Union[str, BaseModel]:
+    ) -> str | BaseModel:
         """
         Generate a response using the configured LLM.
 
@@ -229,9 +229,9 @@ class LiteLLMClient:
     def generate_chat_response(
         self,
         messages: list[dict[str, Any]],
-        system_message: Optional[str] = None,
+        system_message: str | None = None,
         **kwargs,
-    ) -> Union[str, BaseModel]:
+    ) -> str | BaseModel:
         """
         Generate a response from a list of chat messages.
 
@@ -266,16 +266,16 @@ class LiteLLMClient:
             # Check if first message is already a system message
             if final_messages and final_messages[0].get("role") == "system":
                 # Merge with existing system message
-                final_messages[0][
-                    "content"
-                ] = f"{system_message}\n\n{final_messages[0]['content']}"
+                final_messages[0]["content"] = (
+                    f"{system_message}\n\n{final_messages[0]['content']}"
+                )
             else:
                 final_messages.insert(0, {"role": "system", "content": system_message})
 
         return self._make_request(final_messages, **kwargs)
 
     def get_embedding(
-        self, text: str, model: Optional[str] = None, dimensions: Optional[int] = None
+        self, text: str, model: str | None = None, dimensions: int | None = None
     ) -> list[float]:
         """
         Get embedding vector for the given text.
@@ -312,13 +312,13 @@ class LiteLLMClient:
             response = litellm.embedding(**params, timeout=self.config.timeout)
             return response.data[0]["embedding"]
         except Exception as e:
-            raise LiteLLMClientError(f"Embedding generation failed: {str(e)}")
+            raise LiteLLMClientError(f"Embedding generation failed: {str(e)}") from e
 
     def get_embeddings(
         self,
         texts: list[str],
-        model: Optional[str] = None,
-        dimensions: Optional[int] = None,
+        model: str | None = None,
+        dimensions: int | None = None,
     ) -> list[list[float]]:
         """
         Get embedding vectors for multiple texts in a single API call.
@@ -360,11 +360,13 @@ class LiteLLMClient:
             sorted_data = sorted(response.data, key=lambda x: x["index"])
             return [item["embedding"] for item in sorted_data]
         except Exception as e:
-            raise LiteLLMClientError(f"Batch embedding generation failed: {str(e)}")
+            raise LiteLLMClientError(
+                f"Batch embedding generation failed: {str(e)}"
+            ) from e
 
     def _make_request(
         self, messages: list[dict[str, Any]], **kwargs
-    ) -> Union[str, BaseModel]:
+    ) -> str | BaseModel:
         """
         Make a request to the LLM with retry logic.
 
@@ -468,7 +470,7 @@ class LiteLLMClient:
             )
             try:
                 response = litellm.completion(**params)
-                content = response.choices[0].message.content
+                content = response.choices[0].message.content  # type: ignore[reportAttributeAccessIssue]
                 elapsed_seconds = time.perf_counter() - request_start
 
                 # Log token usage with cache statistics
@@ -505,7 +507,9 @@ class LiteLLMClient:
 
                 # Handle structured output parsing
                 return self._maybe_parse_structured_output(
-                    content, response_format, parse_structured_output
+                    content,  # type: ignore[reportArgumentType]
+                    response_format,
+                    parse_structured_output,  # type: ignore[reportArgumentType]
                 )
 
             except Exception as e:
@@ -529,7 +533,7 @@ class LiteLLMClient:
                 # Check if error is non-retryable
                 if self._is_non_retryable_error(error_str):
                     self.logger.error(f"Non-retryable error: {e}")
-                    raise LiteLLMClientError(f"API call failed: {str(e)}")
+                    raise LiteLLMClientError(f"API call failed: {str(e)}") from e
 
                 # Log retry attempt or final failure
                 if attempt < max_retries - 1:
@@ -598,9 +602,9 @@ class LiteLLMClient:
     def _build_user_content(
         self,
         prompt: str,
-        images: Optional[list[Union[str, bytes, dict]]] = None,
-        image_media_type: Optional[str] = None,
-    ) -> Union[str, list[dict[str, Any]]]:
+        images: list[str | bytes | dict] | None = None,
+        image_media_type: str | None = None,
+    ) -> str | list[dict[str, Any]]:
         """
         Build user content with optional images.
 
@@ -633,7 +637,7 @@ class LiteLLMClient:
                 if image.startswith(("http://", "https://")):
                     # URL - use directly
                     content_blocks.append(
-                        {"type": "image_url", "image_url": {"url": image}}
+                        {"type": "image_url", "image_url": {"url": image}}  # type: ignore[reportArgumentType]
                     )
                 else:
                     # File path
@@ -718,7 +722,7 @@ class LiteLLMClient:
         content: str,
         response_format: Any,
         parse_structured_output: bool,
-    ) -> Union[str, BaseModel]:
+    ) -> str | BaseModel:
         """
         Parse structured output if applicable.
 
@@ -822,13 +826,11 @@ class LiteLLMClient:
                         result.append("'")
                         i += 2
                         continue
-                    else:
-                        result.append(ch)
-                        result.append(next_ch)
-                        i += 2
-                        continue
-                else:
                     result.append(ch)
+                    result.append(next_ch)
+                    i += 2
+                    continue
+                result.append(ch)
             elif ch == '"' and not in_single:
                 in_double = not in_double
                 result.append(ch)
@@ -886,9 +888,7 @@ class LiteLLMClient:
         s = "".join(output)
 
         # Remove trailing commas before } or ]
-        s = re.sub(r",\s*([}\]])", r"\1", s)
-
-        return s
+        return re.sub(r",\s*([}\]])", r"\1", s)
 
     def _is_non_retryable_error(self, error_str: str) -> bool:
         """
@@ -938,10 +938,10 @@ class LiteLLMClient:
 def create_litellm_client(
     model: str,
     temperature: float = 0.7,
-    max_tokens: Optional[int] = None,
+    max_tokens: int | None = None,
     timeout: int = 60,
     max_retries: int = 3,
-    api_key_config: Optional[APIKeyConfig] = None,
+    api_key_config: APIKeyConfig | None = None,
     **kwargs,
 ) -> LiteLLMClient:
     """

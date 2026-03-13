@@ -1,19 +1,21 @@
 import json
 import logging
 import traceback
-from reflexio.server.services.configurator.config_storage import ConfigStorage
+
 from reflexio_commons.config_schema import (
     Config,
 )
-from reflexio.server.db.db_models import Organization
+
 from reflexio.server import FERNET_KEYS
-from reflexio.utils.encrypt_manager import EncryptManager
 from reflexio.server.db.database import SessionLocal
+from reflexio.server.db.db_models import Organization
 from reflexio.server.db.login_supabase_client import get_login_supabase_client
+from reflexio.server.services.configurator.config_storage import ConfigStorage
 from reflexio.server.services.storage.supabase_storage_utils import (
     get_organization_config,
     set_organization_config,
 )
+from reflexio.utils.encrypt_manager import EncryptManager
 
 logger = logging.getLogger(__name__)
 
@@ -52,8 +54,7 @@ class RdsConfigStorage(ConfigStorage):
         # Use Supabase client if SessionLocal is None
         if SessionLocal is None:
             return self._load_config_supabase()
-        else:
-            return self._load_config_session()
+        return self._load_config_session()
 
     def _load_config_supabase(self) -> Config:
         """
@@ -78,8 +79,7 @@ class RdsConfigStorage(ConfigStorage):
             config_raw_decrypted = self.encrypt_manager.decrypt(
                 encrypted_value=str(config_raw_encrypted)
             )
-            config = Config(**json.loads(str(config_raw_decrypted)))
-            return config
+            return Config(**json.loads(str(config_raw_decrypted)))
         except Exception as e:
             logger.error(f"Error loading config via Supabase: {e}")
             return self.get_default_config()
@@ -107,8 +107,7 @@ class RdsConfigStorage(ConfigStorage):
                     config_raw_decrypted = self.encrypt_manager.decrypt(
                         encrypted_value=str(config_raw_encrypted)
                     )
-                config = Config(**json.loads(str(config_raw_decrypted)))
-                return config
+                return Config(**json.loads(str(config_raw_decrypted)))
             except Exception:
                 return self.get_default_config()
 
@@ -183,7 +182,7 @@ class RdsConfigStorage(ConfigStorage):
                 if not config_raw_encrypted:
                     return
 
-                org.configuration_json = config_raw_encrypted
+                org.configuration_json = config_raw_encrypted  # type: ignore[reportAttributeAccessIssue]
                 session.commit()
             except Exception as e:
                 logger.error(f"{str(e)}")

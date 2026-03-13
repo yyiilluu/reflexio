@@ -3,7 +3,8 @@ import os
 import shutil
 import tempfile
 import unittest
-from unittest.mock import Mock, patch, mock_open
+from unittest.mock import Mock, mock_open, patch
+
 import redis
 
 from reflexio.server.site_var.site_var_manager import SiteVarManager
@@ -41,9 +42,10 @@ class TestSiteVarManager(unittest.TestCase):
 
     def test_init_with_default_source_dir(self):
         """Test initialization with default source directory."""
-        with patch("os.path.exists", return_value=False), patch(
-            "os.makedirs"
-        ) as mock_makedirs:
+        with (
+            patch("os.path.exists", return_value=False),
+            patch("os.makedirs") as mock_makedirs,
+        ):
             manager = SiteVarManager()
             mock_makedirs.assert_called_once()
             # Default enable_redis is False
@@ -75,8 +77,12 @@ class TestSiteVarManager(unittest.TestCase):
         # Mock file content - use string for mock_open
         json_content = '{"test": "data"}'
 
-        with patch("builtins.open", mock_open(read_data=json_content)), patch(
-            "os.path.join", return_value=os.path.join(self.temp_dir, "test_var.json")
+        with (
+            patch("builtins.open", mock_open(read_data=json_content)),
+            patch(
+                "os.path.join",
+                return_value=os.path.join(self.temp_dir, "test_var.json"),
+            ),
         ):
             result = self.site_var_manager.get_site_var("test_var")
 

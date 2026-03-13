@@ -1,9 +1,10 @@
-import os
 import logging
+import os
 import time
-from typing import Any, Optional, Union
 from dataclasses import dataclass
-from openai import OpenAI, AzureOpenAI
+from typing import Any
+
+from openai import AzureOpenAI, OpenAI
 from pydantic import BaseModel
 
 from reflexio.server.llm.llm_utils import is_pydantic_model
@@ -20,11 +21,11 @@ class OpenAIConfig:
     """
 
     # Common settings
-    api_key: Optional[str] = None  # OpenAI API key
+    api_key: str | None = None  # OpenAI API key
     model: str = "gpt-5-mini"
     temperature: float = 0.7
-    max_tokens: Optional[int] = None
-    max_completion_tokens: Optional[int] = None
+    max_tokens: int | None = None
+    max_completion_tokens: int | None = None
     top_p: float = 1.0
     frequency_penalty: float = 0.0
     presence_penalty: float = 0.0
@@ -33,10 +34,10 @@ class OpenAIConfig:
     retry_delay: float = 1.0
 
     # Azure OpenAI specific settings
-    azure_api_key: Optional[str] = None
-    azure_endpoint: Optional[str] = None
+    azure_api_key: str | None = None
+    azure_endpoint: str | None = None
     azure_api_version: str = "2024-08-01-preview"
-    azure_deployment: Optional[str] = None  # If None, uses model name as deployment
+    azure_deployment: str | None = None  # If None, uses model name as deployment
 
 
 class OpenAIClientError(Exception):
@@ -49,7 +50,7 @@ class OpenAIClient:
     Supports both OpenAI and Azure OpenAI providers.
     """
 
-    def __init__(self, config: Optional[OpenAIConfig] = None):
+    def __init__(self, config: OpenAIConfig | None = None):
         """
         Initialize the OpenAI client.
 
@@ -71,7 +72,7 @@ class OpenAIClient:
         )
 
         if azure_api_key:
-            print(f"Azure OpenAI API key found")
+            print("Azure OpenAI API key found")
             # Use Azure OpenAI
             if not azure_endpoint:
                 raise OpenAIClientError(
@@ -101,7 +102,7 @@ class OpenAIClient:
             except Exception as e:
                 raise OpenAIClientError(
                     f"Failed to initialize Azure OpenAI client: {str(e)}"
-                )
+                ) from e
         else:
             # Use standard OpenAI
             api_key = self.config.api_key or os.getenv("OPENAI_API_KEY")
@@ -119,9 +120,11 @@ class OpenAIClient:
                     f"OpenAI client initialized with model: {self.config.model}"
                 )
             except Exception as e:
-                raise OpenAIClientError(f"Failed to initialize OpenAI client: {str(e)}")
+                raise OpenAIClientError(
+                    f"Failed to initialize OpenAI client: {str(e)}"
+                ) from e
 
-    def _get_model_for_request(self, model: Optional[str] = None) -> str:
+    def _get_model_for_request(self, model: str | None = None) -> str:
         """
         Get the model/deployment name to use for API requests.
 
@@ -140,8 +143,8 @@ class OpenAIClient:
         return model or self.config.model
 
     def generate_response(
-        self, prompt: str, system_message: Optional[str] = None, **kwargs
-    ) -> Union[str, BaseModel]:
+        self, prompt: str, system_message: str | None = None, **kwargs
+    ) -> str | BaseModel:
         """
         Generate a response from OpenAI API.
 
@@ -217,7 +220,7 @@ class OpenAIClient:
 
     def generate_chat_response(
         self, messages: list[dict[str, str]], **kwargs
-    ) -> Union[str, BaseModel]:
+    ) -> str | BaseModel:
         """
         Generate a response from a list of chat messages.
 
@@ -293,7 +296,7 @@ class OpenAIClient:
 
     def _make_request_with_retry(
         self, params: dict[str, Any], response_format: Any = None
-    ) -> Union[str, BaseModel]:
+    ) -> str | BaseModel:
         """
         Make OpenAI API request with retry logic.
 
@@ -334,26 +337,23 @@ class OpenAIClient:
                         raise OpenAIClientError("No parsed content from OpenAI API")
 
                     self.logger.debug(
-                        f"Successfully received parsed response from OpenAI API"
+                        "Successfully received parsed response from OpenAI API"
                     )
                     return parsed
-                else:
-                    # Use create API for dict-based formats
-                    response = self.client.chat.completions.create(**params)
+                # Use create API for dict-based formats
+                response = self.client.chat.completions.create(**params)
 
-                    if not response.choices:
-                        raise OpenAIClientError("No choices returned from OpenAI API")
+                if not response.choices:
+                    raise OpenAIClientError("No choices returned from OpenAI API")
 
-                    content = response.choices[0].message.content
-                    if content is None:
-                        raise OpenAIClientError(
-                            "Empty response content from OpenAI API"
-                        )
+                content = response.choices[0].message.content
+                if content is None:
+                    raise OpenAIClientError("Empty response content from OpenAI API")
 
-                    self.logger.debug(f"Successfully received response from OpenAI API")
-                    return content.strip()
+                self.logger.debug("Successfully received response from OpenAI API")
+                return content.strip()
 
-            except Exception as e:
+            except Exception as e:  # noqa: PERF203
                 last_exception = e
                 self.logger.warning(
                     f"OpenAI API request failed (attempt {attempt + 1}/{self.config.max_retries + 1}): {str(e)}"
@@ -458,10 +458,10 @@ class OpenAIClient:
                     )
 
                 embedding = response.data[0].embedding
-                self.logger.debug(f"Successfully received embedding from OpenAI API")
+                self.logger.debug("Successfully received embedding from OpenAI API")
                 return embedding
 
-            except Exception as e:
+            except Exception as e:  # noqa: PERF203
                 last_exception = e
                 self.logger.warning(
                     f"OpenAI embedding request failed (attempt {attempt + 1}/{self.config.max_retries + 1}): {str(e)}"
@@ -484,7 +484,7 @@ class OpenAIClient:
 
 # Convenience function for quick usage
 def create_openai_client(
-    api_key: Optional[str] = None,
+    api_key: str | None = None,
     model: str = "gpt-4",
     temperature: float = 0.7,
     **kwargs,
@@ -542,7 +542,7 @@ if __name__ == "__main__":
         client = OpenAIClient(config)
         print(f"✅ Client initialized successfully with model: {client.config.model}")
 
-        print(f"📋 Configuration:")
+        print("📋 Configuration:")
         print(f"   Model: {client.config.model}")
         print(f"   Temperature: {client.config.temperature}")
         print(f"   Max Tokens: {client.config.max_tokens}")

@@ -1,31 +1,31 @@
-from typing import Optional, Union
-import logging
 import hashlib
+import logging
 import os
 
 from pydantic import BaseModel
 from reflexio_commons.config_schema import (
     Config,
     StorageConfig,
-    StorageConfigTest,
     StorageConfigLocal,
     StorageConfigSupabase,
+    StorageConfigTest,
+)
+
+from reflexio.server import (
+    CONFIG_S3_ACCESS_KEY,
+    CONFIG_S3_PATH,
+    CONFIG_S3_REGION,
+    CONFIG_S3_SECRET_KEY,
 )
 from reflexio.server.services.configurator.local_json_config_storage import (
     LocalJsonConfigStorage,
 )
 from reflexio.server.services.configurator.rds_config_storage import RdsConfigStorage
 from reflexio.server.services.configurator.s3_config_storage import S3ConfigStorage
-from reflexio.server import (
-    CONFIG_S3_PATH,
-    CONFIG_S3_REGION,
-    CONFIG_S3_ACCESS_KEY,
-    CONFIG_S3_SECRET_KEY,
-)
-from reflexio.server.services.storage.storage_base import BaseStorage
-from reflexio.server.services.storage.local_json_storage import LocalJsonStorage
-from reflexio.server.services.storage.supabase_storage import SupabaseStorage
 from reflexio.server.services.storage.error import StorageError
+from reflexio.server.services.storage.local_json_storage import LocalJsonStorage
+from reflexio.server.services.storage.storage_base import BaseStorage
+from reflexio.server.services.storage.supabase_storage import SupabaseStorage
 
 logger = logging.getLogger(__name__)
 
@@ -46,9 +46,7 @@ def is_s3_config_storage_ready() -> bool:
 
 
 class SimpleConfigurator:
-    def __init__(
-        self, org_id: str, base_dir: Optional[str] = None, config: Config = None
-    ):
+    def __init__(self, org_id: str, base_dir: str | None = None, config: Config = None):  # type: ignore[reportArgumentType]
         self.org_id = org_id
         self.base_dir = base_dir
 
@@ -91,8 +89,7 @@ class SimpleConfigurator:
         context = self.get_config().agent_context_prompt
         if not context:
             return ""
-        else:
-            return context.strip()
+        return context.strip()
 
     def set_config(self, config: Config):
         self.config = config
@@ -101,7 +98,7 @@ class SimpleConfigurator:
     def set_config_by_name(
         self,
         config_name: str,
-        config_value: Union[str, int, float, bool, list, dict, BaseModel],
+        config_value: str | int | float | bool | list | dict | BaseModel,
     ):
         if config_name not in self.config.model_fields:
             raise ValueError(f"Invalid config name: {config_name}")
@@ -140,19 +137,19 @@ class SimpleConfigurator:
         return self.get_config().storage_config
 
     def get_storage_configuration_hash(
-        self, storage_config: Optional[StorageConfig] = None
+        self, storage_config: StorageConfig | None = None
     ) -> str:
         """
         This routine returns a hash of the storage configuration that uniquely identifies it.
         """
         if not storage_config:
             storage_config = self.get_current_storage_configuration()
-        encoded_data = storage_config.model_dump_json().encode("utf-8")
-        md5_hasher = hashlib.md5()
+        encoded_data = storage_config.model_dump_json().encode("utf-8")  # type: ignore[reportOptionalMemberAccess]
+        md5_hasher = hashlib.md5(usedforsecurity=False)  # noqa: S324
         md5_hasher.update(encoded_data)
         return md5_hasher.hexdigest()
 
-    def create_storage(self, storage_config: StorageConfig) -> Optional[BaseStorage]:
+    def create_storage(self, storage_config: StorageConfig) -> BaseStorage | None:
         """
         This routine creates a storage based on the given storage config type.
         """
@@ -191,24 +188,18 @@ class SimpleConfigurator:
             storage_config=self.get_current_storage_configuration(),
         ):
             return False
-        if self.get_config().storage_config_test == StorageConfigTest.FAILED:
-            return False
-        return True
+        return self.get_config().storage_config_test != StorageConfigTest.FAILED
 
     def is_storage_config_ready_to_test(self, storage_config: StorageConfig) -> bool:
         """
         Checks whether the given storage configuration has been fully filled in and ready for test connection
         """
         if isinstance(storage_config, StorageConfigLocal):
-            if storage_config.dir_path:
-                return True
-            else:
-                return False
-        elif isinstance(storage_config, StorageConfigSupabase):
-            if storage_config.key and storage_config.url and storage_config.db_url:
-                return True
-            else:
-                return False
+            return bool(storage_config.dir_path)
+        if isinstance(storage_config, StorageConfigSupabase):
+            return bool(
+                storage_config.key and storage_config.url and storage_config.db_url
+            )
         return False
 
     def test_and_init_storage_config(

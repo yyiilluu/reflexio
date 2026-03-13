@@ -10,16 +10,18 @@ Note: The local Supabase (SUPABASE_URL) is separate and used for user profile/me
 """
 
 import os
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
+
 from reflexio.server import (
-    SQLITE_FILE_DIRECTORY,
-    LOGIN_SUPABASE_URL,
-    LOGIN_SUPABASE_KEY,
+    CONFIG_S3_ACCESS_KEY,
     CONFIG_S3_PATH,
     CONFIG_S3_REGION,
-    CONFIG_S3_ACCESS_KEY,
     CONFIG_S3_SECRET_KEY,
+    LOGIN_SUPABASE_KEY,
+    LOGIN_SUPABASE_URL,
+    SQLITE_FILE_DIRECTORY,
 )
 
 # Check if in self-host mode

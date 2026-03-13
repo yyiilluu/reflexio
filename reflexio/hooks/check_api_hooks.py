@@ -1,5 +1,5 @@
-import sys
 import os
+import sys
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -11,9 +11,7 @@ from reflexio.server import OPENAI_API_KEY
 
 
 def check_for_api_keys() -> bool:
-    if OPENAI_API_KEY != "":
-        return True
-    return False
+    return OPENAI_API_KEY != ""
 
 
 def main() -> int:

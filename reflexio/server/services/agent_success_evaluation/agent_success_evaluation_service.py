@@ -1,15 +1,14 @@
-from dataclasses import dataclass
 import logging
-from typing import Optional
+from dataclasses import dataclass
 
 from reflexio_commons.api_schema.internal_schema import RequestInteractionDataModel
-
 from reflexio_commons.config_schema import AgentSuccessConfig
-from reflexio.server.services.agent_success_evaluation.agent_success_evaluator import (
-    AgentSuccessEvaluator,
-)
+
 from reflexio.server.services.agent_success_evaluation.agent_success_evaluation_utils import (
     AgentSuccessEvaluationRequest,
+)
+from reflexio.server.services.agent_success_evaluation.agent_success_evaluator import (
+    AgentSuccessEvaluator,
 )
 from reflexio.server.services.base_generation_service import BaseGenerationService
 
@@ -30,7 +29,7 @@ class AgentSuccessGenerationServiceConfig:
     session_id: str
     agent_version: str
     request_interaction_data_models: list[RequestInteractionDataModel]
-    source: Optional[str] = None
+    source: str | None = None
 
 
 class AgentSuccessEvaluationService(
@@ -86,7 +85,7 @@ class AgentSuccessEvaluationService(
         Returns:
             list[AgentSuccessConfig]: List of agent success configuration objects from YAML
         """
-        return self.configurator.get_config().agent_success_configs
+        return self.configurator.get_config().agent_success_configs  # type: ignore[reportReturnType]
 
     def _create_extractor(
         self,
@@ -129,25 +128,25 @@ class AgentSuccessEvaluationService(
             "Successfully completed %d %s evaluations for session: %s",
             len(all_results),
             self._get_service_name(),
-            self.service_config.session_id,
+            self.service_config.session_id,  # type: ignore[reportOptionalMemberAccess]
         )
 
         # Save results
         if all_results:
             try:
-                self.storage.save_agent_success_evaluation_results(all_results)
+                self.storage.save_agent_success_evaluation_results(all_results)  # type: ignore[reportOptionalMemberAccess]
                 self.last_run_saved_result_count = len(all_results)
                 logger.info(
                     "Saved %d agent success evaluation results for session: %s",
                     len(all_results),
-                    self.service_config.session_id,
+                    self.service_config.session_id,  # type: ignore[reportOptionalMemberAccess]
                 )
             except Exception as e:
                 self.last_run_save_failed = True
                 logger.error(
                     "Failed to save %s results for session: %s due to %s, exception type: %s",
                     self._get_service_name(),
-                    self.service_config.session_id,
+                    self.service_config.session_id,  # type: ignore[reportOptionalMemberAccess]
                     str(e),
                     type(e).__name__,
                 )
@@ -187,9 +186,7 @@ class AgentSuccessEvaluationService(
         """
         return False
 
-    def _get_lock_scope_id(
-        self, request: AgentSuccessEvaluationRequest
-    ) -> Optional[str]:
+    def _get_lock_scope_id(self, request: AgentSuccessEvaluationRequest) -> str | None:
         """
         Not used since _should_track_in_progress returns False.
 

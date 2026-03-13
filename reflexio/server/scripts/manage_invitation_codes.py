@@ -12,12 +12,12 @@ import secrets
 import string
 from datetime import datetime, timezone
 
+from reflexio.server.db.database import Base, engine
 from reflexio.server.db.db_operations import (
     create_invitation_code,
     db_session_context,
     get_login_supabase_client,
 )
-from reflexio.server.db.database import Base, engine
 
 
 def _ensure_tables():
@@ -60,7 +60,7 @@ def generate_codes(count: int, expires_in_days: int | None = None) -> list[str]:
     with db_session_context() as session:
         for _ in range(count):
             code = _generate_code()
-            create_invitation_code(session=session, code=code, expires_at=expires_at)
+            create_invitation_code(session=session, code=code, expires_at=expires_at)  # type: ignore[reportArgumentType]
             codes.append(code)
 
     return codes

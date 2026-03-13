@@ -1,14 +1,15 @@
 import json
 import os
 import traceback
-from typing import Optional
-from reflexio.server.services.configurator.config_storage import ConfigStorage
+
 from reflexio_commons.config_schema import (
     Config,
     StorageConfigLocal,
 )
-from reflexio.server import FERNET_KEYS
+
 import reflexio.data as data
+from reflexio.server import FERNET_KEYS
+from reflexio.server.services.configurator.config_storage import ConfigStorage
 from reflexio.utils.encrypt_manager import EncryptManager
 
 
@@ -18,7 +19,7 @@ class LocalJsonConfigStorage(ConfigStorage):
     Saves/loads configuration to/from local JSON files with encryption.
     """
 
-    def __init__(self, org_id: str, base_dir: Optional[str] = None):
+    def __init__(self, org_id: str, base_dir: str | None = None):
         super().__init__(org_id=org_id)
         if base_dir:
             # Ensure base_dir is absolute
@@ -35,7 +36,7 @@ class LocalJsonConfigStorage(ConfigStorage):
             self.config_file = os.path.join(self.base_dir, f"config_{org_id}.json")
 
         # Load fernet key from environment and set up the encryption manager.
-        self.encrypt_manager: Optional[EncryptManager] = None
+        self.encrypt_manager: EncryptManager | None = None
         if FERNET_KEYS:
             self.encrypt_manager = EncryptManager(fernet_keys=FERNET_KEYS)
 
@@ -110,9 +111,8 @@ class LocalJsonConfigStorage(ConfigStorage):
         Args:
             config (Config): Configuration object to save
         """
-        assert (
-            self.base_dir and self.config_file
-        ), "base_dir and config_file must be set"
+        if not (self.base_dir and self.config_file):
+            raise ValueError("base_dir and config_file must be set")
 
         os.makedirs(self.base_dir, exist_ok=True)
         try:
@@ -125,7 +125,7 @@ class LocalJsonConfigStorage(ConfigStorage):
                 else:
                     config_raw_encrypted = config_raw
 
-                f.write(config_raw_encrypted)
+                f.write(config_raw_encrypted)  # type: ignore[reportArgumentType]
         except Exception as e:
             print(f"{str(e)}")
             tbs = traceback.format_exc().split("\n")

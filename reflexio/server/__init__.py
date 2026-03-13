@@ -1,9 +1,11 @@
-import os
-import reflexio.data as data
 import logging
+import os
 import sys
-from dotenv import load_dotenv
+
 import colorlog
+from dotenv import load_dotenv
+
+import reflexio.data as data
 
 # Load environment variables from .env file
 load_dotenv()
