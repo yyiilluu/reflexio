@@ -64,6 +64,7 @@ def _supabase_row_to_organization(row: dict) -> db_models.Organization:
     org.is_verified = row.get("is_verified", False)
     org.interaction_count = row.get("interaction_count", 0)
     org.configuration_json = row.get("configuration_json", "")
+    org.auth_provider = row.get("auth_provider", "email")
     return org
 
 
@@ -183,6 +184,7 @@ def create_organization(
             if organization.interaction_count is not None
             else 0,
             "configuration_json": organization.configuration_json or "",
+            "auth_provider": organization.auth_provider or "email",
         }
         response = client.table("organizations").insert(data).execute()
         if response.data:
@@ -224,6 +226,7 @@ def update_organization(
             "is_verified": organization.is_verified,
             "interaction_count": organization.interaction_count,
             "configuration_json": organization.configuration_json or "",
+            "auth_provider": organization.auth_provider or "email",
         }
         response = (
             client.table("organizations")

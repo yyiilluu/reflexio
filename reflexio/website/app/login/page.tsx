@@ -6,7 +6,9 @@ import { useAuth } from "@/lib/auth-context"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { LogIn, Loader2, AlertCircle } from "lucide-react"
+import { Separator } from "@/components/ui/separator"
+import { GoogleIcon } from "@/components/icons/oauth-icons"
+import { LogIn, Loader2, AlertCircle, Github } from "lucide-react"
 import Link from "next/link"
 
 export default function LoginPage() {
@@ -14,8 +16,23 @@ export default function LoginPage() {
   const [password, setPassword] = useState("")
   const [error, setError] = useState("")
   const [isLoading, setIsLoading] = useState(false)
+  const [oauthProviders, setOauthProviders] = useState<string[]>([])
   const { login, isAuthenticated, isSelfHost } = useAuth()
   const router = useRouter()
+
+  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || ""
+
+  // Fetch OAuth providers config
+  useEffect(() => {
+    fetch(`${API_BASE_URL}/api/registration-config`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.oauth_providers) {
+          setOauthProviders(data.oauth_providers)
+        }
+      })
+      .catch(() => {})
+  }, [API_BASE_URL])
 
   // Redirect if already authenticated or in self-host mode
   useEffect(() => {
@@ -140,6 +157,48 @@ export default function LoginPage() {
                 )}
               </Button>
             </form>
+
+            {/* OAuth Buttons */}
+            {oauthProviders.length > 0 && (
+              <div className="mt-4 space-y-4">
+                <div className="relative">
+                  <div className="absolute inset-0 flex items-center">
+                    <Separator className="w-full" />
+                  </div>
+                  <div className="relative flex justify-center text-xs uppercase">
+                    <span className="bg-card px-2 text-muted-foreground">
+                      Or continue with
+                    </span>
+                  </div>
+                </div>
+                <div className="grid gap-2">
+                  {oauthProviders.includes("google") && (
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      onClick={() => {
+                        window.location.href = `${API_BASE_URL}/api/auth/google/login`
+                      }}
+                    >
+                      <GoogleIcon className="h-4 w-4 mr-2" />
+                      Sign in with Google
+                    </Button>
+                  )}
+                  {oauthProviders.includes("github") && (
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      onClick={() => {
+                        window.location.href = `${API_BASE_URL}/api/auth/github/login`
+                      }}
+                    >
+                      <Github className="h-4 w-4 mr-2" />
+                      Sign in with GitHub
+                    </Button>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Register Link */}
             <div className="mt-6 text-center">

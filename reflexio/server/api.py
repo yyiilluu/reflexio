@@ -159,6 +159,7 @@ from reflexio.server.cache.reflexio_cache import (
     invalidate_reflexio_cache,
 )
 from reflexio.server.api_endpoints import publisher_api, retriever_api
+from reflexio.server.api_endpoints.oauth import router as oauth_router, get_configured_oauth_providers
 from reflexio.server.services.email.email_service import get_email_service
 from reflexio.server.db.db_operations import (
     claim_invitation_code,
@@ -289,6 +290,9 @@ app.add_middleware(TimeoutMiddleware)
 # 3. Bot protection (innermost, runs first after CORS)
 app.add_middleware(BotProtectionMiddleware)
 
+# Mount OAuth router
+app.include_router(oauth_router)
+
 # Self-host mode configuration
 SELF_HOST_MODE = os.getenv("SELF_HOST", "false").lower() == "true"
 DEFAULT_ORG_ID = "self-host-org"
@@ -380,7 +384,9 @@ def get_registration_config():
     """Return public registration configuration (no auth required)."""
     return {
         "invitation_code_required": is_invitation_only_enabled(),
+        "oauth_providers": get_configured_oauth_providers(),
     }
+
 
 
 @app.post("/api/logout")
@@ -408,6 +414,16 @@ def login_for_access_token(
     session: Session = Depends(get_db_session),
 ):
     logger.info(f"Logging in for access token for user: {form_data.username}")
+    # Check if this email uses an OAuth provider before attempting password auth
+    existing_org = get_organization_by_email(session=session, email=form_data.username)
+    if existing_org:
+        org_provider = getattr(existing_org, "auth_provider", "email") or "email"
+        if org_provider != "email":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"This account uses {org_provider.capitalize()} sign-in. Please use the '{org_provider.capitalize()}' button to log in.",
+            )
+
     org = authenticate_organization(
         org_email=form_data.username,
         password=form_data.password,
