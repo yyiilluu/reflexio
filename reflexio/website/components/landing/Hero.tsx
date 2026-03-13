@@ -5,7 +5,7 @@ import Link from "next/link"
 import { Button } from "@/components/ui/button"
 
 const phrases = [
-  "Self-Correct From Feedback",
+  "Self-Correct From User Interactions",
   "Remember User Preferences",
   "Improve Autonomously",
 ]
@@ -48,8 +48,7 @@ export function Hero() {
         </h1>
 
         <p className="text-lg sm:text-xl text-slate-600 max-w-2xl mx-auto mb-10 leading-relaxed">
-        Most AI agents are static — they fail the same way every time until someone manually fixes them.
-        Reflexio adds a learning loop that turns user corrections and feedback into permanent behavioral improvements.
+        Reflexio adds a learning loop that turns user corrections and feedback into permanent behavioral improvements for AI agents.
         </p>
 
         <div className="flex flex-col sm:flex-row gap-4 justify-center">

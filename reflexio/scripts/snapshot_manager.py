@@ -85,8 +85,10 @@ def _public_tables_are_empty(db_url: str) -> tuple[bool, list[str]]:
 
         non_empty: list[str] = []
         for table in tables:
-            cursor.execute(f'SELECT EXISTS (SELECT 1 FROM public."{table}" LIMIT 1)')  # noqa: S608
-            if cursor.fetchone()[0]:
+            cursor.execute(
+                f'SELECT EXISTS (SELECT 1 FROM public."{table}" LIMIT 1)'
+            )  # noqa: S608
+            if (row := cursor.fetchone()) and row[0]:
                 non_empty.append(table)
 
         return not non_empty, non_empty

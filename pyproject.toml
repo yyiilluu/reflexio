@@ -33,7 +33,7 @@ dependencies = [
     "cachetools>=6.2.4",
     "colorlog>=6.10.1",
     "httpx>=0.28.1",
-    "pydantic[email]>=2.12.5",
+    "pydantic>=2.12.5",
 ]
 
 [dependency-groups]
