@@ -91,6 +91,12 @@ select = [
     "S",      # flake8-bandit (security checks)
     "N",      # pep8-naming conventions
     "ARG",    # flake8-unused-arguments
+    "G",      # flake8-logging-format (no f-strings in logging)
+    "PTH",    # flake8-use-pathlib (pathlib over os.path)
+    "FURB",   # refurb (modern Python idioms)
+    "FLY",    # flynt (string join → f-string)
+    "PLR1714",# pylint: repeated-equality-comparison → use `in`
+    "PLR1716",# pylint: boolean-chained-comparison → chain
 ]
 ignore = [
     "E501",   # line too long (handled by formatter/black)
@@ -99,8 +105,10 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401", "F403"]
-"reflexio/tests/**" = ["S101", "ARG001", "ARG002"]
+"reflexio/tests/**" = ["S101", "ARG001", "ARG002", "PTH"]
 "conftest.py" = ["ARG001"]
+"demo/**" = ["PTH", "G004"]
+"reflexio/scripts/**" = ["G004"]
 
 [tool.ruff.lint.mccabe]
 max-complexity = 10
