@@ -24,13 +24,15 @@ paths:
 
 ## 3. String Formatting
 
-- Always use f-strings for string interpolation
-- Never use `%` formatting or `.format()`
+- Always use f-strings for general string interpolation
+- Use `%`-style or comma separation in `logging` calls to defer formatting: `logging.info("User %s logged in", username)`
+- Use parameterized queries with driver placeholders (`%s`, `?`) for SQL — never f-strings — to prevent injection
 
 ## 4. Resource Management & Safety
 
 - Always use `with` statements (context managers) for files, locks, DB connections
-- Prefer EAFP (try/except) over LBYL (if/then check) for duck-typing scenarios
+- Prefer EAFP (try/except) over LBYL (if/then check) for high-level logic (file access, network calls, duck-typing)
+- In hot loops where failure rate exceeds ~5-10%, prefer LBYL — exception overhead is significant at scale
 - Catch specific exceptions, never bare `except:`
 
 ## 5. Standard Library
@@ -56,3 +58,4 @@ paths:
 - Keep functions short: 10-30 lines ideal, 50 lines max
 - Each function should have a single responsibility
 - Keep cyclomatic complexity under 10; refactor complex branches into helper functions or dispatch tables
+- Max 3 levels of indentation per function; refactor deeper nesting with early returns, guard clauses, or helper functions
