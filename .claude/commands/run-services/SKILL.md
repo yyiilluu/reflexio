@@ -10,10 +10,11 @@ Start all local development services with pre-flight dependency checks and autom
 ## Overview
 
 This command automates the full startup workflow:
+0. Starts Supabase (if not already running)
 1. Checks and installs missing dependencies
 2. Stops any existing services to free ports
 3. Starts all services via `run_services.sh`
-4. Health-checks each service
+4. Health-checks each service (including Supabase)
 5. Diagnoses and fixes failures, then retries (up to 2 retries)
 
 ## Port Configuration
@@ -25,6 +26,8 @@ Read port values from environment variables (respect worktree offsets):
 | Backend (FastAPI) | `BACKEND_PORT` | 8081 |
 | Frontend (Next.js) | `FRONTEND_PORT` | 8080 |
 | Docs (Fumadocs) | `DOCS_PORT` | 8082 |
+| Supabase REST | - | 54321 |
+| Supabase DB | - | 54322 |
 
 ## Execution Steps
 
@@ -55,6 +58,21 @@ Check if `node_modules` exists and has content. If missing or empty, install:
 ls reflexio/public_docs/node_modules/.package-lock.json 2>/dev/null || (cd reflexio/public_docs && npm install)
 ```
 
+### Step 2.5: Start Supabase
+
+Check if Supabase is running, start if not:
+```bash
+supabase status > /dev/null 2>&1 || supabase start
+```
+
+Health check:
+```bash
+curl --max-time 10 -s -o /dev/null -w "%{http_code}" http://127.0.0.1:54321/rest/v1/
+```
+Expected: 200
+
+If Supabase fails to start, check Docker Desktop is running and report to user.
+
 ### Step 3: Stop Existing Services
 
 Free ports before starting fresh:
@@ -76,6 +94,12 @@ Wait ~15 seconds for services to boot. Next.js compilation takes time on first r
 ### Step 5: Health Check Each Service
 
 Check each service individually. Use `curl --max-time 10 -s -o /dev/null -w "%{http_code}"` to get HTTP status codes.
+
+**Supabase:**
+```bash
+curl --max-time 10 -s -o /dev/null -w "%{http_code}" http://127.0.0.1:54321/rest/v1/
+```
+Expected: 200
 
 **Backend:**
 ```bash
@@ -144,6 +168,16 @@ Then retry from Step 4.
 **e. Script syntax errors or unknown errors**
 Report the error output to the user and suggest manual steps. Do not retry.
 
+**f. Supabase "docker not running"**
+Docker Desktop must be running for Supabase. Report to user and ask them to start Docker Desktop.
+
+**g. Supabase port conflict**
+Another Supabase instance on 54321. Fix:
+```bash
+supabase stop
+```
+Then retry from Step 2.5.
+
 #### Retry Logic
 
 - Maximum 2 retries after applying a fix
@@ -155,11 +189,12 @@ Report the error output to the user and suggest manual steps. Do not retry.
 Report a summary table:
 
 ```
-Service    | Port | Status
------------|------|-------
-Backend    | 8081 | Running
-Frontend   | 8080 | Running
-Docs       | 8082 | FAILED - [error summary]
+Service    | Port  | Status
+-----------|-------|-------
+Supabase   | 54321 | Running
+Backend    | 8081  | Running
+Frontend   | 8080  | Running
+Docs       | 8082  | FAILED - [error summary]
 ```
 
 If all services are running, confirm success. If any failed after retries, show:

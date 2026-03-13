@@ -46,4 +46,12 @@ fi
 # Stop docs
 pkill -f "next dev.*-p ${DOCS_PORT}" && echo "Stopped docs" || echo "Docs not running"
 
+# Stop Supabase
+if supabase status > /dev/null 2>&1; then
+    supabase stop
+    echo "Stopped Supabase"
+else
+    echo "Supabase not running"
+fi
+
 echo "All services stopped."
