@@ -39,13 +39,13 @@ Client (SDK/Web)
 ## Quick Start
 
 ```shell
-cp .env.example .env                 # Configure environment (set at least one LLM API key)
-uv sync                              # Install Python dependencies (includes workspace packages)
-cd reflexio/website && npm install && cd ../..          # Install frontend dependencies
-cd reflexio/public_docs && npm install && cd ../..      # Install docs dependencies
-./run_services.sh                    # Starts API (8081), Website (8080), Docs (8082), and Supabase
-./stop_services.sh                   # Stop app services (Supabase keeps running)
-./stop_services.sh --full            # Stop everything including Supabase
+cp .env.example .env                         # Configure environment (set at least one LLM API key)
+uv sync                                      # Install Python dependencies (includes workspace packages)
+npm --prefix reflexio/website install         # Install frontend dependencies
+npm --prefix reflexio/public_docs install     # Install docs dependencies
+./run_services.sh                             # Starts API (8081), Website (8080), Docs (8082), and Supabase
+./stop_services.sh                            # Stop app services (Supabase keeps running)
+./stop_services.sh --full                     # Stop everything including Supabase
 ```
 
 **Claude Code users:** Run `/run-services` (in claude code) instead of `./run_services.sh` (in bash) — it auto-installs missing dependencies, health-checks services, and diagnoses/fixes/retries on failure.
