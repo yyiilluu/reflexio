@@ -7,14 +7,16 @@ description: Git commit workflow with precommit hook handling, lint/type checkin
 
 Create a git commit with automatic precommit hook handling, test fixing, README updates, and API reference updates.
 
+**Note:** Steps 5 and the API Reference Update Guidelines are specific to the Reflexio project. They are skipped automatically when the referenced paths do not exist.
+
 ## Workflow
 
 1. **Check git status** - Run `git status` and `git diff --cached --name-only` to see staged/unstaged changes
-2. **Sync AI instruction files** - Run `diff CLAUDE.md GEMINI.md` and `diff CLAUDE.md AGENTS.md`. If either differs, copy CLAUDE.md content to the differing file(s) and stage them with `git add GEMINI.md AGENTS.md`. This keeps all three AI instruction files in sync on every commit.
+2. **Sync AI instruction files (only if CLAUDE.md changed)** — Run `git diff --cached --name-only` and check if `CLAUDE.md` is in the staged changeset. If yes, copy CLAUDE.md content to GEMINI.md and AGENTS.md, then stage them. If CLAUDE.md is NOT staged, skip this step entirely — do not overwrite other instruction files that may have been intentionally edited independently.
 3. **Stage files** - Add relevant untracked/modified files if needed. Do not modify or change gitignored files, such as `.env`. Never change `.env` file even if it is modified.
 4. **Check README updates** - Run through the README Update Guidelines checklist below. If ANY criteria match, update README files before proceeding.
-5. **Update API Reference docs** - If `reflexio/reflexio_client/reflexio/client.py` or `reflexio/reflexio_commons/reflexio_commons/api_schema/service_schemas.py` changed, update `reflexio/public_docs/api-reference/` (see API Reference Update Guidelines below)
-5.5. **Run lint and type checks on staged Python files**
+5. **Update API Reference docs (Reflexio-specific)** — If the files `reflexio/reflexio_client/reflexio/client.py` or `reflexio/reflexio_commons/reflexio_commons/api_schema/service_schemas.py` exist AND are in the staged changeset, update `reflexio/public_docs/api-reference/` (see API Reference Update Guidelines below). Otherwise skip.
+6. **Run lint and type checks on staged Python files**
    a. Get the list of staged Python files:
       ```bash
       git diff --cached --name-only --diff-filter=ACMR -- '*.py'
@@ -24,12 +26,12 @@ Create a git commit with automatic precommit hook handling, test fixing, README 
    c. **Ruff format**: Run `ruff format <files>`. Re-stage any modified files with `git add <files>`.
    d. **Ruff remaining errors**: Run `ruff check <files>`. If any errors remain that ruff could not auto-fix, **read each error, understand the issue, and fix the code yourself**. Re-stage fixes. Do NOT proceed with unfixed ruff errors.
    e. **Pyright type check**: Run `pyright <files>`. If any type errors are reported, **read each error, understand the type issue, and fix the code yourself**. Re-stage fixes. Do NOT proceed with unfixed pyright errors.
-6. **Attempt commit** - Run `git commit` which triggers precommit hooks
-7. **Handle hook results**:
+7. **Attempt commit** - Run `git commit` which triggers precommit hooks
+8. **Handle hook results**:
    - If hooks **modify files** (formatting, linting): Stage the modified files with `git add -u` and retry commit
    - If **unit tests fail**: Fix the failing tests, stage fixes, and retry commit
    - If hooks **pass**: Commit succeeds
-8. **Do NOT push** - Only commit locally
+9. **Do NOT push** - Only commit locally
 
 ## README Update Guidelines
 
@@ -55,6 +57,16 @@ git diff --name-only
 - [ ] Architecture pattern changed
 - [ ] Component relationships changed
 
+If **none** of the above criteria match, skip README updates entirely and proceed to the next step.
+
+**Pre-write criteria — before writing any README changes, confirm:**
+1. Can an LLM currently find the right file with the existing README? If yes, no update needed.
+2. Are there new files/directories that need documented paths?
+3. Are new API endpoints to list?
+4. Are there anti-patterns to highlight (NEVER/ALWAYS)?
+
+Only proceed with the update if at least one criterion identifies a gap.
+
 **Step 3: Update process:**
 1. Identify affected component(s) from the file paths
 2. Read existing README(s) in affected directories
@@ -65,12 +77,6 @@ git diff --name-only
 **Two-tier approach:**
 - **Main Code Map** (`README.md`) - High-level overview of all components
 - **Component Code Maps** (e.g., `reflexio/server/README.md`) - Detailed documentation
-
-**Verification before committing:**
-1. Can an LLM find the right file with current README?
-2. Are new files/directories documented with correct paths?
-3. Are new API endpoints listed?
-4. Are anti-patterns highlighted (NEVER/ALWAYS)?
 
 ## API Reference Update Guidelines
 
@@ -99,6 +105,7 @@ When changes are made to the Reflexio client or service schemas, update the API 
    - For schemas: Include field table with Type, Description, and Default columns
    - For enums: List all values with descriptions
 4. Maintain consistent formatting with existing documentation
+5. **Verify format consistency:** After updating, re-read the full documentation file and confirm the new section matches the structure and formatting of an adjacent existing section (same heading levels, table format, example style).
 
 **Documentation style:**
 - Use markdown tables for parameters and fields
@@ -117,25 +124,36 @@ Use conventional commit style:
 
 Types: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `style`
 
+**How to write the message:**
+- Read `git diff --cached` to understand the full scope of staged changes.
+- The subject line should summarize the *why*, not list files changed.
+- Include a body only for non-trivial changes — explain motivation, trade-offs, or context that isn't obvious from the diff.
+- If the staged changes span multiple unrelated concerns, note this to the user and suggest splitting into separate commits rather than writing a vague summary.
+- Check `git log --oneline -5` and match the existing commit style of the repo.
+
 **Do NOT include** `Co-Authored-By` lines in commit messages.
 
 ## Precommit Hook Retry Logic
 
 When precommit hooks fail due to file modifications:
 ```bash
-# After hooks modify files, stage them and retry
+# Check what was modified by hooks before re-staging
+git diff --name-only
+# Verify no unexpected files (binaries, generated assets) are being re-staged
 git add -u
 git commit -m "..."
 ```
+Before running `git add -u`, review the output of `git diff --name-only`. If unexpected files appear (compiled assets, binary files, generated artifacts), stage only the expected files explicitly instead of using `git add -u`.
 
-The retry may need to happen multiple times if hooks keep modifying files.
+Retry up to 3 times. If the commit still fails after 3 retries, stop and report the hook output to the user rather than retrying further.
 
 ## Unit Test Failure Handling
 
 When pytest fails during precommit:
 1. Read the test failure output to understand what failed
-2. Fix the failing test or the code causing the failure
-3. Stage the fixes with `git add`
-4. Retry the commit
+2. Fix the application code causing the failure first. Only modify the test itself if the test is clearly wrong (e.g., it tests old behavior that the current commit intentionally changes).
+3. **Never** delete or comment out assertions to make tests pass.
+4. Stage the fixes with `git add`
+5. Retry the commit
 
-Repeat until all tests pass.
+If tests still fail after 3 fix attempts, stop and report the failures to the user.
